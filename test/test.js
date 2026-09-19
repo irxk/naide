@@ -481,6 +481,97 @@ describe('NAIDE-X full pipeline', () => {
   });
 });
 
+describe('Parser stability', () => {
+  it('ignores semicolons (JS habit)', () => {
+    const js = transpile('str x = 1;\nstr y = 2;');
+    assert.ok(js.includes('const x = 1'));
+    assert.ok(js.includes('const y = 2'));
+  });
+
+  it('handles empty lines between blocks', () => {
+    const js = transpile('str a = 1\n\n\nstr b = 2');
+    assert.ok(js.includes('const a = 1'));
+    assert.ok(js.includes('const b = 2'));
+  });
+
+  it('handles empty lines inside functions', () => {
+    const js = transpile('fn test():\n  str a = 1\n\n  str b = 2\n  ret a');
+    assert.ok(js.includes('function test()'));
+    assert.ok(js.includes('const a = 1'));
+    assert.ok(js.includes('const b = 2'));
+  });
+
+  it('handles empty lines in server blocks', () => {
+    const src = 'server app port 3000:\n  cors "*"\n\n  get "/":\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('express'));
+    assert.ok(js.includes('app.get'));
+  });
+
+  it('handles empty lines in schema blocks', () => {
+    const src = 'schema User:\n  id auto\n\n  name str required';
+    const js = transpile(src);
+    assert.ok(js.includes('createSchema'));
+  });
+
+  it('handles strings with special chars', () => {
+    const js = transpile('str q = "SELECT * FROM users WHERE id = 1;"');
+    assert.ok(js.includes('SELECT'));
+  });
+
+  it('handles standalone ternary', () => {
+    const js = transpile('str size = if count > 10 then "big" else "small"');
+    assert.ok(js.includes('?'));
+    assert.ok(js.includes(':'));
+  });
+
+  it('errors on unterminated string', () => {
+    assert.throws(() => transpile('str x = "hello'), /[Uu]nterminated/);
+  });
+
+  it('handles CRLF line endings', () => {
+    const js = transpile('str a = 1\r\nstr b = 2\r\n');
+    assert.ok(js.includes('const a = 1'));
+    assert.ok(js.includes('const b = 2'));
+  });
+
+  it('handles complex realistic app with empty lines', () => {
+    const src = [
+      'db "data/"', '',
+      'env:', '  PORT int default(3000)', '  SECRET str required', '',
+      'schema User:', '  id auto', '  name str required', '',
+      'server app port PORT:', '  cors "*"', '  cookie', '',
+      '  crud "/api/users" User', '',
+      '  get "/":',  '    ret.html "<h1>Welcome</h1>"', '',
+      '  error (err, req, res):',
+      '    ret.status 500 {error: err.message}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('express'));
+    assert.ok(js.includes('createFileStore'));
+    assert.ok(js.includes('cookieParser'));
+    assert.ok(js.includes('err, req, res, next'));
+  });
+
+  it('provides helpful error messages', () => {
+    try {
+      transpile('if true\n  log "yes"');
+      assert.fail('should throw');
+    } catch (e) {
+      assert.ok(e.message.includes('COLON') || e.message.includes(':'));
+    }
+  });
+
+  it('shows source context in errors', () => {
+    try {
+      transpile('str a = 1\nif true\n  log "yes"');
+      assert.fail('should throw');
+    } catch (e) {
+      assert.ok(e.message.includes('>>') || e.message.includes('|'));
+    }
+  });
+});
+
 describe('Runtime unit tests', () => {
   it('hash and verify password', async () => {
     const { hash, verify } = await import('../src/runtime.js');

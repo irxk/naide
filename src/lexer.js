@@ -11,7 +11,7 @@ class Token {
 
 export class Lexer {
   constructor(source) {
-    this.source = source;
+    this.source = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     this.pos = 0;
     this.line = 1;
     this.col = 1;
@@ -75,6 +75,11 @@ export class Lexer {
 
       if (ch === '#') {
         this.skipComment();
+        continue;
+      }
+
+      if (ch === ';') {
+        this.advance();
         continue;
       }
 
@@ -195,7 +200,11 @@ export class Lexer {
       }
     }
 
-    if (this.peek() === quote) this.advance(); // skip closing quote
+    if (this.peek() === quote) {
+      this.advance();
+    } else {
+      throw new Error(`[NAIDE Lexer Error] Unterminated string starting at line ${startLine}:${startCol}`);
+    }
 
     if (current) parts.push({ type: 'text', value: current });
 
@@ -221,7 +230,11 @@ export class Lexer {
         value += this.advance();
       }
     }
-    if (this.peek() === '`') this.advance();
+    if (this.peek() === '`') {
+      this.advance();
+    } else {
+      throw new Error(`[NAIDE Lexer Error] Unterminated template string starting at line ${startLine}:${startCol}`);
+    }
     this.tokens.push(new Token(T.STRING, { parts: [{ type: 'text', value }], raw: value }, startLine, startCol));
   }
 
@@ -371,7 +384,7 @@ export class Lexer {
       case ':': this.tokens.push(new Token(T.COLON, ':', startLine, startCol)); break;
       case ',': this.tokens.push(new Token(T.COMMA, ',', startLine, startCol)); break;
       default:
-        throw new Error(`Unexpected character '${ch}' at line ${startLine}:${startCol}`);
+        throw new Error(`[NAIDE Lexer Error] Unexpected character '${ch}' at line ${startLine}:${startCol}`);
     }
   }
 

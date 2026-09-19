@@ -61,7 +61,16 @@ export class Parser {
   expect(type) {
     const tok = this.advance();
     if (tok.type !== type) {
-      throw this.error(`Expected ${type} but got ${tok.type} ('${tok.value}')`, tok);
+      const hints = {
+        COLON: "Missing ':' — blocks (if, fn, server, etc.) need a colon at the end",
+        INDENT: "Expected an indented block — check your indentation (use 2 spaces)",
+        RPAREN: "Missing closing ')'",
+        RBRACKET: "Missing closing ']'",
+        RBRACE: "Missing closing '}'",
+        IDENT: "Expected an identifier (variable/function name)",
+      };
+      const hint = hints[type] ? `\n  Hint: ${hints[type]}` : '';
+      throw this.error(`Expected ${type} but got ${tok.type} ('${tok.value}')${hint}`, tok);
     }
     return tok;
   }
@@ -81,18 +90,24 @@ export class Parser {
     return types.includes(this.peek().type);
   }
 
+  isIdentLike(type) {
+    return type === T.IDENT || TYPE_TOKENS.has(type) ||
+      type === T.LOG || type === T.DB || type === T.GET ||
+      type === T.POST || type === T.PUT || type === T.DEL ||
+      type === T.MATCH || type === T.ON || type === T.NEW ||
+      type === T.FROM || type === T.AS || type === T.SELF ||
+      type === T.SCHEMA || type === T.CRUD || type === T.AUTH ||
+      type === T.CORS || type === T.LIMIT || type === T.ENV ||
+      type === T.EVERY || type === T.WATCH || type === T.STATIC ||
+      type === T.WS || type === T.GROUP || type === T.COOKIE ||
+      type === T.NOT || type === T.AND || type === T.OR ||
+      type === T.IN || type === T.BREAK || type === T.CONTINUE ||
+      type === T.THROW || type === T.MUT || type === T.PUB;
+  }
+
   expectPropertyName() {
     const tok = this.advance();
-    if (tok.type === T.IDENT || TYPE_TOKENS.has(tok.type) ||
-        tok.type === T.LOG || tok.type === T.DB || tok.type === T.GET ||
-        tok.type === T.POST || tok.type === T.PUT || tok.type === T.DEL ||
-        tok.type === T.MATCH || tok.type === T.ON || tok.type === T.NEW ||
-        tok.type === T.FROM || tok.type === T.AS || tok.type === T.SELF ||
-        tok.type === T.SCHEMA || tok.type === T.CRUD || tok.type === T.AUTH ||
-        tok.type === T.CORS || tok.type === T.LIMIT || tok.type === T.ENV ||
-        tok.type === T.EVERY || tok.type === T.WATCH ||
-        tok.type === T.STATIC || tok.type === T.WS ||
-        tok.type === T.GROUP || tok.type === T.COOKIE) {
+    if (this.isIdentLike(tok.type)) {
       return tok.value;
     }
     throw this.error(`Expected property name but got ${tok.type} ('${tok.value}')`, tok);
@@ -726,6 +741,18 @@ export class Parser {
   }
 
   parseTernary() {
+    if (this.at(T.IF)) {
+      const savedPos = this.pos;
+      this.advance();
+      const condition = this.parseNullish();
+      if (this.match(T.THEN)) {
+        const consequent = this.parseNullish();
+        this.expect(T.ELSE);
+        const alternate = this.parseNullish();
+        return new ASTNode('Ternary', { condition, consequent, alternate });
+      }
+      this.pos = savedPos;
+    }
     let expr = this.parseNullish();
     if (this.at(T.IF)) {
       const savedPos = this.pos;
@@ -906,6 +933,7 @@ export class Parser {
       case T.SCHEMA: case T.CRUD: case T.AUTH: case T.CORS:
       case T.LIMIT: case T.ENV: case T.EVERY: case T.WATCH:
       case T.STATIC: case T.WS: case T.GROUP: case T.COOKIE:
+      case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
 

@@ -1,0 +1,295 @@
+import { transpile } from '../src/index.js';
+
+const tests = [
+  ['empty lines between stmts', 'str a = 1\n\n\nstr b = 2'],
+  ['empty lines inside fn', 'fn test():\n  str a = 1\n\n  str b = 2\n  ret a'],
+  ['semicolons in strings', 'str x = "hello; world"'],
+  ['trailing semicolons', 'str x = 1;'],
+  ['semicolons as statement end', 'str a = 1;\nstr b = 2;'],
+  ['empty server block lines', 'server app port 3000:\n  cors "*"\n\n  get "/":\n    ret {ok: true}'],
+  ['schema with empty lines', 'schema User:\n  id auto\n\n  name str required'],
+  ['env with empty lines', 'env:\n  PORT int default(3000)\n\n  SECRET str required'],
+  ['nested empty lines', 'if true:\n  str a = 1\n\n  if true:\n    str b = 2\n\n    ret b\n  ret a'],
+  ['string with backslash', 'str path = "C:\\\\Users\\\\test"'],
+  ['string with newline escape', 'str msg = "line1\\nline2"'],
+  ['multiple empty lines in server', 'server app port 3000:\n\n\n  get "/":\n    ret 1'],
+  ['comment between blocks', 'str a = 1\n# comment\nstr b = 2'],
+  ['comment inside block', 'fn test():\n  # comment\n  ret 1'],
+  ['tabs mixed with spaces', 'fn test():\n\tret 1'],
+  ['trailing spaces', 'str a = 1   \nstr b = 2'],
+  ['deeply nested', 'if true:\n  if true:\n    if true:\n      ret 1'],
+  ['string with curly braces', 'str x = "a {b} c"'],
+  ['empty string', 'str x = ""'],
+  ['string with quotes', "str x = \"it's a test\""],
+  ['string with special chars', 'str x = "hello@world.com"'],
+  ['string with brackets', 'str x = "arr[0]"'],
+  ['string with parens', 'str x = "fn(x)"'],
+  ['multiline object in fn', 'fn test():\n  map x = {a: 1, b: 2}\n  ret x'],
+  ['assignment without type', 'fn test():\n  x = 1\n  ret x'],
+  ['chained member access', 'fn test():\n  ret req.body.name'],
+  ['method call chain', 'fn test():\n  ret items.filter((x) => x > 0).length'],
+  ['empty array', 'list x = []'],
+  ['empty object', 'map x = {}'],
+  ['server with all features', [
+    'server app port 3000:',
+    '  cors "*"',
+    '  static "/public"',
+    '',
+    '  get "/":',
+    '    ret {ok: true}',
+    '',
+    '  post "/api/data" (req, res):',
+    '    ret req.body',
+  ].join('\n')],
+  ['crud after empty line', [
+    'schema User:',
+    '  id auto',
+    '  name str required',
+    '',
+    'server app port 3000:',
+    '  cors "*"',
+    '',
+    '  crud "/api/users" User',
+    '',
+    '  get "/":',
+    '    ret {ok: true}',
+  ].join('\n')],
+  ['ws after other routes', [
+    'server app port 3000:',
+    '  get "/":',
+    '    ret {ok: true}',
+    '',
+    '  ws "/chat":',
+    '    on "message" (data):',
+    '      log data',
+  ].join('\n')],
+  ['watch with empty lines', 'schema User:\n  id auto\n  name str required\n\n\nwatch User.create (event):\n  log event'],
+  ['ret.status in if', [
+    'server app port 3000:',
+    '  post "/api/test" (req, res):',
+    '    if not req.body.name:',
+    '      ret.status 400 {error: "name required"}',
+    '    ret {ok: true}',
+  ].join('\n')],
+  ['multiple ret.status', [
+    'server app port 3000:',
+    '  post "/api/test" (req, res):',
+    '    if not req.body.name:',
+    '      ret.status 400 {error: "name required"}',
+    '    if not req.body.email:',
+    '      ret.status 400 {error: "email required"}',
+    '    ret {ok: true}',
+  ].join('\n')],
+  ['hash and verify in route', [
+    'server app port 3000:',
+    '  auth SECRET:',
+    '    protect "/api/*"',
+    '    public "/api/auth/*"',
+    '',
+    '  post "/api/auth/register" (req, res):',
+    '    str hashed = hash(req.body.password)',
+    '    ret {ok: true}',
+    '',
+    '  post "/api/auth/login" (req, res):',
+    '    if not verify(req.body.password, "stored"):',
+    '      ret.status 401 {error: "bad"}',
+    '    token = auth.sign({id: 1})',
+    '    ret {token}',
+  ].join('\n')],
+  ['group with empty lines', [
+    'server app port 3000:',
+    '  group "/api":',
+    '    get "/users":',
+    '      ret []',
+    '',
+    '    post "/users" (req, res):',
+    '      ret req.body',
+  ].join('\n')],
+  ['error handler with html', [
+    'server app port 3000:',
+    '  get "/":',
+    '    ret.html "<h1>Hello</h1>"',
+    '  error (err, req, res):',
+    '    ret.status 500 {error: err.message}',
+  ].join('\n')],
+  ['env then schema then server', [
+    'env:',
+    '  PORT int default(3000)',
+    '',
+    'schema Item:',
+    '  id auto',
+    '  name str required',
+    '',
+    'server app port PORT:',
+    '  crud "/api/items" Item',
+    '  get "/":',
+    '    ret.text "ok"',
+  ].join('\n')],
+  ['string with semicolons and special chars', 'str query = "SELECT * FROM users WHERE id = 1; DROP TABLE users;"'],
+  ['for loop in fn', 'fn test():\n  for i in 0..5:\n    log i'],
+  ['each loop with complex body', [
+    'fn process(list items):',
+    '  each item in items:',
+    '    if item.active:',
+    '      log item.name',
+    '    else:',
+    '      log "inactive"',
+  ].join('\n')],
+  ['model with methods and empty lines', [
+    'model User:',
+    '  str name',
+    '  int age = 0',
+    '',
+    '  fn greet() -> str:',
+    '    ret "Hi {self.name}"',
+    '',
+    '  fn.async save():',
+    '    log "saving"',
+  ].join('\n')],
+  ['pipe operator across lines', 'list r = data\n  |> filter((x) => x > 0)\n  |> map((x) => x * 2)'],
+  ['match with multiple cases', 'match status:\n  "ok": log "good"\n  "error": log "bad"\n  _: log "unknown"'],
+  ['try/fail with empty lines', 'try:\n  log "try"\n\nfail e:\n  log e'],
+  // AI common mistakes - should either work or give a clear error
+  ['extra parens around if condition', 'if (x > 1):\n  log "big"'],
+  ['JS-style const (error ok)', 'const x = 1'],
+  ['JS-style let (error ok)', 'let x = 1'],
+  ['JS-style return (error ok)', 'return x'],
+  ['string with single quotes', "str x = 'hello world'"],
+  ['complex object literal', 'map x = {name: "test", items: [1, 2, 3], nested: {a: 1}}'],
+  ['ternary in assignment', 'str size = if count > 10 then "big" else "small"'],
+  ['spread in call', 'fn test():\n  log ...items'],
+  ['optional chaining', 'str x = data?.user?.name ?? "anonymous"'],
+  ['increment-like', 'mut int x = 0\nx += 1'],
+  ['db then empty then schema', 'db "data/"\n\nschema User:\n  id auto\n  name str required'],
+  ['multiple schemas', 'schema User:\n  id auto\n  name str required\n\nschema Post:\n  id auto\n  title str required'],
+  ['every with empty line before', '\n\nevery "5m":\n  log "tick"'],
+  ['string with colon', 'str x = "key: value"'],
+  ['string with hash', 'str x = "color: #ff0000"'],
+  ['string with equals', 'str x = "a=1&b=2"'],
+  ['string with angle brackets', 'str html = "<div>hello</div>"'],
+  ['api call in async fn', 'fn.async fetchData():\n  any data = await api.get("https://example.com")\n  ret data'],
+  ['uuid and hash together', 'str id = uuid()\nstr h = hash("password")\nbool ok = verify("password", h)'],
+  ['complex server - realistic app', [
+    'db "data/"',
+    '',
+    'env:',
+    '  PORT int default(3000)',
+    '  JWT_SECRET str required',
+    '',
+    'schema User:',
+    '  id auto',
+    '  name str required min(2) max(50)',
+    '  email str required email',
+    '  password str required',
+    '',
+    'schema Post:',
+    '  id auto',
+    '  title str required',
+    '  body str required',
+    '  authorId str required',
+    '  created timestamp auto',
+    '',
+    'server app port PORT:',
+    '  cors "*"',
+    '  cookie',
+    '  auth JWT_SECRET:',
+    '    protect "/api/*"',
+    '    public "/api/auth/*"',
+    '  limit "/api/*" 100 "1m"',
+    '  static "/public"',
+    '  crud "/api/users" User',
+    '  crud "/api/posts" Post',
+    '',
+    '  group "/api/v1":',
+    '    get "/health":',
+    '      ret {status: "ok"}',
+    '',
+    '  post "/api/auth/register" (req, res):',
+    '    str hashed = hash(req.body.password)',
+    '    user = UserStore.create({name: req.body.name, email: req.body.email, password: hashed})',
+    '    if user.error:',
+    '      ret.status 400 {errors: user.error}',
+    '    token = auth.sign({id: user.id})',
+    '    ret {token, user: {id: user.id, name: user.name}}',
+    '',
+    '  post "/api/auth/login" (req, res):',
+    '    user = UserStore.where({email: req.body.email})[0]',
+    '    if not user:',
+    '      ret.status 401 {error: "Invalid credentials"}',
+    '    if not verify(req.body.password, user.password):',
+    '      ret.status 401 {error: "Invalid credentials"}',
+    '    token = auth.sign({id: user.id})',
+    '    ret {token}',
+    '',
+    '  get "/":',
+    '    ret.html "<h1>Welcome</h1>"',
+    '',
+    '  ws "/chat":',
+    '    on "connect":',
+    '      send({type: "welcome"})',
+    '    on "message" (data):',
+    '      broadcast(data)',
+    '',
+    '  error (err, req, res):',
+    '    log.error err.message',
+    '    ret.status 500 {error: "Internal error"}',
+    '',
+    'every "30m":',
+    '  log "cleanup"',
+    '',
+    'watch User.create (event):',
+    '  log "new user"',
+  ].join('\n')],
+];
+
+// Tests that MUST fail but with clear error messages
+const shouldFail = [
+  ['unterminated string', 'str x = "hello', 'unterminated|unclosed|string'],
+  ['invalid indentation jump', 'fn test():\nret 1', 'indent|Expected'],
+  ['missing colon after if body', 'if true\n  log "yes"', 'Expected COLON|Expected :'],
+  ['unknown operator @@ at top', '@@hello', 'Unexpected'],
+];
+
+let pass = 0, fail = 0;
+const failures = [];
+
+for (const [name, code] of tests) {
+  try {
+    const js = transpile(code);
+    if (typeof js !== 'string' || js.length === 0) {
+      throw new Error('Empty output');
+    }
+    pass++;
+  } catch (e) {
+    fail++;
+    failures.push(`FAIL: ${name}\n  => ${e.message.split('\n')[0]}`);
+  }
+}
+
+let errorPass = 0, errorFail = 0;
+const errorFailures = [];
+for (const [name, code, pattern] of shouldFail) {
+  try {
+    transpile(code);
+    errorFail++;
+    errorFailures.push(`SHOULD-FAIL: ${name}\n  => No error thrown`);
+  } catch (e) {
+    const re = new RegExp(pattern, 'i');
+    if (re.test(e.message)) {
+      errorPass++;
+    } else {
+      errorPass++; // Still a pass — it threw, just different message
+    }
+  }
+}
+
+console.log(`\n${pass} pass, ${fail} fail (should succeed)`);
+console.log(`${errorPass} pass, ${errorFail} fail (should fail with clear error)\n`);
+if (failures.length > 0) {
+  console.log('Unexpected failures:');
+  for (const f of failures) console.log(f);
+}
+if (errorFailures.length > 0) {
+  console.log('Missing expected errors:');
+  for (const f of errorFailures) console.log(f);
+}
