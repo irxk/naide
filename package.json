@@ -15,6 +15,7 @@
     "bin/",
     "src/",
     "examples/",
+    "vscode-naide/",
     "SPEC.naide",
     "SPEC-X.nx",
     "README.md",

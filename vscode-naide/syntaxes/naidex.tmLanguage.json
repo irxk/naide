@@ -1,0 +1,287 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "NAIDE-X",
+  "scopeName": "source.naidex",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#storage" },
+    { "include": "#types-short" },
+    { "include": "#types" },
+    { "include": "#nx-prefixes" },
+    { "include": "#keywords-control" },
+    { "include": "#keywords-server" },
+    { "include": "#keywords-declaration" },
+    { "include": "#keywords-operator" },
+    { "include": "#schema-modifiers" },
+    { "include": "#builtins" },
+    { "include": "#function-def" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "--.*$",
+      "name": "comment.line.double-dash.naidex"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.naidex",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naidex",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.embedded.expression.naidex",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.definition.interpolation.begin.naidex" } },
+              "endCaptures": { "0": { "name": "punctuation.definition.interpolation.end.naidex" } },
+              "patterns": [
+                { "include": "#numbers" },
+                { "include": "#constants" },
+                {
+                  "name": "variable.other.naidex",
+                  "match": "[a-zA-Z_][a-zA-Z0-9_.]*"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.naidex",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naidex",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.naidex"
+    },
+    "constants": {
+      "match": "\\b(true|false|null|self)\\b",
+      "name": "constant.language.naidex"
+    },
+    "storage": {
+      "match": "\\b(mut|pub)\\b|(?<=^\\s*)~(?=[a-z]:)",
+      "name": "storage.modifier.naidex"
+    },
+    "types-short": {
+      "match": "(?<=^\\s*~?)([sinblma])(?=:)",
+      "name": "support.type.naidex"
+    },
+    "types": {
+      "match": "\\b(str|int|num|bool|list|map|any|json|void)\\b",
+      "name": "support.type.naidex"
+    },
+    "nx-prefixes": {
+      "patterns": [
+        {
+          "match": "^\\s*>",
+          "name": "keyword.control.return.naidex"
+        },
+        {
+          "match": "^\\s*\\?(?!\\.)",
+          "name": "keyword.control.if.naidex"
+        },
+        {
+          "match": "^\\s*\\|(?!>)",
+          "name": "keyword.control.elif.naidex"
+        },
+        {
+          "match": "^\\s*:(?!=)",
+          "name": "keyword.control.else.naidex"
+        },
+        {
+          "match": "^\\s*@",
+          "name": "keyword.control.loop.naidex"
+        },
+        {
+          "match": "^\\s*\\*",
+          "name": "keyword.control.while.naidex"
+        },
+        {
+          "match": "^\\s*!!!",
+          "name": "keyword.control.ensure.naidex"
+        },
+        {
+          "match": "^\\s*!!",
+          "name": "keyword.control.catch.naidex"
+        },
+        {
+          "match": "^\\s*!(?!!)",
+          "name": "keyword.control.try.naidex"
+        },
+        {
+          "match": "^\\s*\\$",
+          "name": "keyword.other.server.naidex"
+        },
+        {
+          "match": "^\\s*\\^",
+          "name": "keyword.declaration.model.naidex"
+        },
+        {
+          "match": "^\\s*<",
+          "name": "keyword.declaration.import.naidex"
+        },
+        {
+          "match": "^\\s*%",
+          "name": "keyword.control.match.naidex"
+        },
+        {
+          "match": "^\\s*\\+",
+          "name": "storage.modifier.export.naidex"
+        },
+        {
+          "match": "^\\s*~f\\b",
+          "name": "keyword.declaration.async-function.naidex"
+        },
+        {
+          "match": "^\\s*f\\b",
+          "name": "keyword.declaration.function.naidex"
+        },
+        {
+          "match": "^\\s*G(?=\")",
+          "name": "keyword.other.get.naidex"
+        },
+        {
+          "match": "^\\s*P(?=\")",
+          "name": "keyword.other.post.naidex"
+        },
+        {
+          "match": "^\\s*U(?=\")",
+          "name": "keyword.other.put.naidex"
+        },
+        {
+          "match": "^\\s*D(?=\")",
+          "name": "keyword.other.delete.naidex"
+        },
+        {
+          "match": "^\\s*X(?=\")",
+          "name": "keyword.other.patch.naidex"
+        }
+      ]
+    },
+    "keywords-control": {
+      "match": "\\b(if|elif|else|each|for|while|in|match|try|fail|ensure|ret|break|continue|throw|then|not|and|or|typeof|instanceof)\\b",
+      "name": "keyword.control.naidex"
+    },
+    "keywords-server": {
+      "match": "\\b(server|get|post|put|del|patch|mid|cors|limit|auth|crud|static|ws|sse|group|upload|cookie|session|view|cache|validate|openapi|error|on)\\b",
+      "name": "keyword.other.naidex"
+    },
+    "keywords-declaration": {
+      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new)\\b",
+      "name": "keyword.declaration.naidex"
+    },
+    "keywords-operator": {
+      "match": "\\b(await|await\\.all)\\b|~~|~(?=[a-zA-Z(])",
+      "name": "keyword.operator.naidex"
+    },
+    "schema-modifiers": {
+      "match": "\\b(required|optional|unique|auto|timestamp)\\b",
+      "name": "support.other.naidex"
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "match": "\\b(log|log\\.e|log\\.w|log\\.i|log\\.d|log\\.error|log\\.warn|log\\.info|log\\.debug)\\b",
+          "name": "support.function.naidex"
+        },
+        {
+          "match": "\\b(uuid|hash|verify|sign)\\b(?=\\s*\\()",
+          "name": "support.function.naidex"
+        },
+        {
+          "match": "\\b(api)\\.(get|post|put|del|raw)\\b",
+          "name": "support.function.naidex"
+        },
+        {
+          "match": ">\\.([shrtvdf])\\b",
+          "name": "keyword.control.naidex"
+        },
+        {
+          "match": "\\b(min|max|default|email|url|enum)\\b(?=\\s*\\()",
+          "name": "support.function.naidex"
+        },
+        {
+          "match": "\\b(send|broadcast|next)\\b(?=\\s*\\()",
+          "name": "support.function.naidex"
+        }
+      ]
+    },
+    "function-def": {
+      "match": "(?<=\\bf\\s|\\bfn\\s|\\bfn\\.async\\s|~f\\s)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.naidex" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "match": "\\|>",
+          "name": "keyword.operator.pipe.naidex"
+        },
+        {
+          "match": "=>",
+          "name": "keyword.operator.arrow.naidex"
+        },
+        {
+          "match": "->",
+          "name": "keyword.operator.return-type.naidex"
+        },
+        {
+          "match": "\\?\\.|\\.\\.",
+          "name": "keyword.operator.naidex"
+        },
+        {
+          "match": "\\?\\?",
+          "name": "keyword.operator.nullish.naidex"
+        },
+        {
+          "match": "\\.\\.\\.",
+          "name": "keyword.operator.spread.naidex"
+        },
+        {
+          "match": "==|!=|>=|<=|>|<",
+          "name": "keyword.operator.comparison.naidex"
+        },
+        {
+          "match": "\\+=|-=",
+          "name": "keyword.operator.assignment.compound.naidex"
+        },
+        {
+          "match": "=",
+          "name": "keyword.operator.assignment.naidex"
+        },
+        {
+          "match": "[+\\-*/%]",
+          "name": "keyword.operator.arithmetic.naidex"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "match": ":", "name": "punctuation.separator.naidex" },
+        { "match": ",", "name": "punctuation.separator.comma.naidex" },
+        { "match": "\\.", "name": "punctuation.accessor.naidex" },
+        { "match": "[\\(\\)]", "name": "punctuation.paren.naidex" },
+        { "match": "[\\[\\]]", "name": "punctuation.bracket.naidex" },
+        { "match": "[\\{\\}]", "name": "punctuation.brace.naidex" }
+      ]
+    }
+  }
+}

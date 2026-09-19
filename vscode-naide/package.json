@@ -1,0 +1,41 @@
+{
+  "name": "naide-lang",
+  "displayName": "NAIDE Language",
+  "description": "Syntax highlighting for NAIDE (.naide) and NAIDE-X (.nx) — AI-optimized language that transpiles to Node.js",
+  "version": "1.0.0",
+  "publisher": "irxk",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/irxk/naide"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "naide",
+        "aliases": ["NAIDE", "naide"],
+        "extensions": [".naide"],
+        "configuration": "./language-configuration-naide.json"
+      },
+      {
+        "id": "naidex",
+        "aliases": ["NAIDE-X", "naidex", "nx"],
+        "extensions": [".nx"],
+        "configuration": "./language-configuration-nx.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "naide",
+        "scopeName": "source.naide",
+        "path": "./syntaxes/naide.tmLanguage.json"
+      },
+      {
+        "language": "naidex",
+        "scopeName": "source.naidex",
+        "path": "./syntaxes/naidex.tmLanguage.json"
+      }
+    ]
+  }
+}

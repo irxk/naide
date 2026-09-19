@@ -1,0 +1,194 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "NAIDE",
+  "scopeName": "source.naide",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#storage" },
+    { "include": "#types" },
+    { "include": "#keywords-control" },
+    { "include": "#keywords-server" },
+    { "include": "#keywords-declaration" },
+    { "include": "#keywords-operator" },
+    { "include": "#schema-modifiers" },
+    { "include": "#builtins" },
+    { "include": "#function-def" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.naide"
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.naide",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naide",
+              "match": "\\\\."
+            },
+            {
+              "name": "meta.embedded.expression.naide",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.definition.interpolation.begin.naide" } },
+              "endCaptures": { "0": { "name": "punctuation.definition.interpolation.end.naide" } },
+              "patterns": [
+                { "include": "#numbers" },
+                { "include": "#constants" },
+                { "include": "#keywords-operator" },
+                {
+                  "name": "variable.other.naide",
+                  "match": "[a-zA-Z_][a-zA-Z0-9_.]*"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.naide",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.naide",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.naide"
+    },
+    "constants": {
+      "match": "\\b(true|false|null|self)\\b",
+      "name": "constant.language.naide"
+    },
+    "storage": {
+      "match": "\\b(mut|pub|const|let)\\b",
+      "name": "storage.modifier.naide"
+    },
+    "types": {
+      "match": "\\b(str|int|num|bool|list|map|any|json|void)\\b",
+      "name": "support.type.naide"
+    },
+    "keywords-control": {
+      "match": "\\b(if|elif|else|each|for|while|in|match|try|fail|ensure|ret|break|continue|throw|then|not|and|or|typeof|instanceof)\\b",
+      "name": "keyword.control.naide"
+    },
+    "keywords-server": {
+      "match": "\\b(server|get|post|put|del|patch|mid|cors|limit|auth|crud|static|ws|sse|group|upload|cookie|session|view|cache|validate|openapi|error|on)\\b",
+      "name": "keyword.other.naide"
+    },
+    "keywords-declaration": {
+      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new)\\b",
+      "name": "keyword.declaration.naide"
+    },
+    "keywords-operator": {
+      "match": "\\b(await|await\\.all)\\b",
+      "name": "keyword.operator.naide"
+    },
+    "schema-modifiers": {
+      "match": "\\b(required|optional|unique|auto|timestamp)\\b",
+      "name": "support.other.naide"
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "match": "\\b(log|log\\.error|log\\.warn|log\\.info|log\\.debug)\\b",
+          "name": "support.function.naide"
+        },
+        {
+          "match": "\\b(uuid|hash|verify|sign)\\b(?=\\s*\\()",
+          "name": "support.function.naide"
+        },
+        {
+          "match": "\\b(api)\\.(get|post|put|del|raw)\\b",
+          "name": "support.function.naide"
+        },
+        {
+          "match": "\\b(ret)\\.(status|redirect|html|text|file|download|render)\\b",
+          "name": "keyword.control.naide"
+        },
+        {
+          "match": "\\b(min|max|default|email|url|enum)\\b(?=\\s*\\()",
+          "name": "support.function.naide"
+        },
+        {
+          "match": "\\b(send|broadcast|next)\\b(?=\\s*\\()",
+          "name": "support.function.naide"
+        }
+      ]
+    },
+    "function-def": {
+      "match": "(?<=\\bfn\\s|\\bfn\\.async\\s)([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.naide" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "match": "\\|>",
+          "name": "keyword.operator.pipe.naide"
+        },
+        {
+          "match": "=>",
+          "name": "keyword.operator.arrow.naide"
+        },
+        {
+          "match": "->",
+          "name": "keyword.operator.return-type.naide"
+        },
+        {
+          "match": "\\?\\.|\\.\\.",
+          "name": "keyword.operator.naide"
+        },
+        {
+          "match": "\\?\\?",
+          "name": "keyword.operator.nullish.naide"
+        },
+        {
+          "match": "\\.\\.\\.",
+          "name": "keyword.operator.spread.naide"
+        },
+        {
+          "match": "==|!=|>=|<=|>|<",
+          "name": "keyword.operator.comparison.naide"
+        },
+        {
+          "match": "\\+=|-=",
+          "name": "keyword.operator.assignment.compound.naide"
+        },
+        {
+          "match": "=",
+          "name": "keyword.operator.assignment.naide"
+        },
+        {
+          "match": "[+\\-*/%]",
+          "name": "keyword.operator.arithmetic.naide"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "match": ":", "name": "punctuation.separator.naide" },
+        { "match": ",", "name": "punctuation.separator.comma.naide" },
+        { "match": "\\.", "name": "punctuation.accessor.naide" },
+        { "match": "[\\(\\)]", "name": "punctuation.paren.naide" },
+        { "match": "[\\[\\]]", "name": "punctuation.bracket.naide" },
+        { "match": "[\\{\\}]", "name": "punctuation.brace.naide" }
+      ]
+    }
+  }
+}

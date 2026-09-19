@@ -1,0 +1,32 @@
+{
+  "comments": {
+    "lineComment": "--"
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "surroundingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(fn|fn\\.async|if|elif|else|each|for|while|match|try|fail|ensure|server|model|on|schema|crud|auth|env|every|watch|ws|group|upload|queue|job|test|get|post|put|del|patch|error|sse|view|cache|mid|validate|openapi|static|session|cookie|cors|limit)\\b.*:\\s*$",
+    "decreaseIndentPattern": "^\\s*(elif|else|fail|ensure)\\b"
+  },
+  "folding": {
+    "offSide": true
+  },
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\-\\=\\+\\[\\{\\]\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
+}
