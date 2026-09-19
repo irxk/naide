@@ -96,6 +96,13 @@ export class Generator {
       case 'GroupDecl': return this.visitGroupTopLevel(node);
       case 'ErrorHandler': return this.visitErrorHandlerTopLevel(node);
       case 'CookieDecl': return this.visitCookieTopLevel(node);
+      case 'UploadDecl': return this.visitUploadTopLevel(node);
+      case 'SessionDecl': return this.visitSessionTopLevel(node);
+      case 'ViewDecl': return this.visitViewTopLevel(node);
+      case 'SseDecl': return this.visitSseTopLevel(node);
+      case 'CacheDecl': return this.visitCacheTopLevel(node);
+      case 'MiddlewareRef': return this.visitMiddlewareRefTopLevel(node);
+      case 'ReturnRender': return this.visitReturnRender(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -324,6 +331,18 @@ export class Generator {
         errorHandlers.push(child);
       } else if (child.type === 'CookieDecl') {
         this.visitCookie(node.name, child);
+      } else if (child.type === 'UploadDecl') {
+        this.visitUpload(node.name, child);
+      } else if (child.type === 'SessionDecl') {
+        this.visitSession(node.name, child);
+      } else if (child.type === 'ViewDecl') {
+        this.visitView(node.name, child);
+      } else if (child.type === 'SseDecl') {
+        this.visitSse(node.name, child);
+      } else if (child.type === 'CacheDecl') {
+        this.visitCache(node.name, child);
+      } else if (child.type === 'MiddlewareRef') {
+        this.visitMiddlewareRef(node.name, child);
       } else {
         this.visitStatement(child);
       }
@@ -757,6 +776,96 @@ export class Generator {
 
   visitCookieTopLevel(node) {
     this.visitCookie('app', node);
+  }
+
+  visitUpload(appName, node) {
+    this.runtimeImports.add('uploadMiddleware');
+    const path = this.stringValue(node.path);
+    const field = this.stringValue(node.fieldName);
+    const params = node.params.length > 0 ? node.params.join(', ') : 'req, res';
+    const needsAsync = this.bodyUsesAwait(node.body);
+    const asyncPrefix = needsAsync ? 'async ' : '';
+    this.emit(`${appName}.post(${path}, uploadMiddleware(${field}), ${asyncPrefix}(${params}) => {`);
+    this.indent++;
+    for (const stmt of node.body) {
+      if (stmt.type === 'Return' && stmt.value !== null) {
+        this.emit(`res.json(${this.expr(stmt.value)});`);
+      } else {
+        this.visitStatement(stmt);
+      }
+    }
+    this.indent--;
+    this.emit('});');
+    this.emitRaw('');
+  }
+
+  visitUploadTopLevel(node) {
+    this.visitUpload('app', node);
+  }
+
+  visitSession(appName, node) {
+    this.runtimeImports.add('sessionMiddleware');
+    const secret = this.expr(node.secret);
+    this.emit(`${appName}.use(sessionMiddleware(${secret}));`);
+    this.emitRaw('');
+  }
+
+  visitSessionTopLevel(node) {
+    this.visitSession('app', node);
+  }
+
+  visitView(appName, node) {
+    this.runtimeImports.add('createRenderer');
+    const dir = this.stringValue(node.dir);
+    this.emit(`const __render = createRenderer(${dir});`);
+    this.emitRaw('');
+  }
+
+  visitViewTopLevel(node) {
+    this.visitView('app', node);
+  }
+
+  visitSse(appName, node) {
+    this.runtimeImports.add('createSseManager');
+    const path = this.stringValue(node.path);
+    this.emit(`const sse = createSseManager();`);
+    this.emit(`${appName}.get(${path}, sse.handler());`);
+    this.emitRaw('');
+  }
+
+  visitSseTopLevel(node) {
+    this.visitSse('app', node);
+  }
+
+  visitCache(appName, node) {
+    this.runtimeImports.add('cacheMiddleware');
+    const path = this.stringValue(node.path);
+    const duration = this.expr(node.duration);
+    this.emit(`${appName}.use(${path}, cacheMiddleware(${duration}));`);
+    this.emitRaw('');
+  }
+
+  visitCacheTopLevel(node) {
+    this.visitCache('app', node);
+  }
+
+  visitMiddlewareRef(appName, node) {
+    if (node.path) {
+      this.emit(`${appName}.use(${this.stringValue(node.path)}, ${node.name});`);
+    } else {
+      this.emit(`${appName}.use(${node.name});`);
+    }
+    this.emitRaw('');
+  }
+
+  visitMiddlewareRefTopLevel(node) {
+    this.visitMiddlewareRef('app', node);
+  }
+
+  visitReturnRender(node) {
+    const template = this.expr(node.template);
+    const data = node.data ? this.expr(node.data) : '{}';
+    this.emit(`return res.type('html').send(__render(${template}, ${data}));`);
   }
 
   visitEnv(node) {

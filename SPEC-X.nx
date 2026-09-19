@@ -6,7 +6,7 @@
 -- Rule: first char of line = intent
 --   > return    ? if       | elif     : else
 --   @ loop      * while    ! try      !! catch
---   $ server    ^ model    < import   % match
+--   $ server    ^ model    < import   % match   X patch
 --   f func      ~f async   + export
 --   s:i:n:b:l:m:a: typed vars
 --   ~ await     ~~ await.all
@@ -138,6 +138,12 @@ $app:PORT
   static "/public"
   crud "/api/users" User
   cookie
+  session JWT_SECRET
+  cache "/api/*" "5m"
+  view "./views"
+  sse "/events"
+  upload "/api/upload" "avatar" (req,res):
+    >{file:req.file.filename}
   group "/api/v1":
     G"/status"
       >{version:"1.0"}

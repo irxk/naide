@@ -408,6 +408,178 @@ export function cookieParser() {
   };
 }
 
+// ===== Session Middleware (zero-dep, cookie-based) =====
+export function sessionMiddleware(secret) {
+  const store = new Map();
+  const maxAge = 86400000;
+  return (req, res, next) => {
+    const cookies = req.headers.cookie || '';
+    const sidMatch = cookies.match(/(?:^|;\s*)naide_sid=([^;]+)/);
+    let sid = sidMatch ? sidMatch[1] : null;
+    if (!sid || !store.has(sid)) {
+      sid = randomUUID();
+      store.set(sid, {});
+    }
+    req.session = store.get(sid);
+    req.sessionId = sid;
+    req.session.destroy = () => { store.delete(sid); };
+    const origWriteHead = res.writeHead;
+    res.writeHead = function(...args) {
+      res.setHeader('Set-Cookie', `naide_sid=${sid}; HttpOnly; Path=/; Max-Age=${maxAge / 1000}; SameSite=Lax`);
+      origWriteHead.apply(res, args);
+    };
+    for (const [id, data] of store) {
+      if (data.__ts && Date.now() - data.__ts > maxAge) store.delete(id);
+    }
+    req.session.__ts = Date.now();
+    next();
+  };
+}
+
+// ===== Template Renderer (zero-dep) =====
+export function createRenderer(viewsDir) {
+  return (name, data = {}) => {
+    const filePath = viewsDir.replace(/\/$/, '') + '/' + name + (name.includes('.') ? '' : '.html');
+    let template = readFileSync(filePath, 'utf-8');
+    template = template.replace(/\{\{\s*each\s+(\w+)\s+in\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/each\s*\}\}/g, (_, item, list, block) => {
+      const arr = data[list] || [];
+      return arr.map(val => block.replace(new RegExp(`\\{\\{\\s*${item}\\b[^}]*\\}\\}`, 'g'), m => {
+        const prop = m.match(/\{\{\s*\w+\.(\w+)\s*\}\}/);
+        return prop ? String(val[prop[1]] ?? '') : String(val ?? '');
+      })).join('');
+    });
+    template = template.replace(/\{\{\s*if\s+(\w+)\s*\}\}([\s\S]*?)\{\{\s*\/if\s*\}\}/g, (_, key, block) => data[key] ? block : '');
+    for (const [key, value] of Object.entries(data)) {
+      template = template.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g'), String(value ?? ''));
+    }
+    return template;
+  };
+}
+
+// ===== Cache Middleware (zero-dep) =====
+export function cacheMiddleware(duration) {
+  const maxAge = parseMs(duration);
+  const cache = new Map();
+  return (req, res, next) => {
+    if (req.method !== 'GET') return next();
+    const key = req.originalUrl || req.url;
+    const cached = cache.get(key);
+    if (cached && Date.now() - cached.time < maxAge) {
+      res.setHeader('X-Cache', 'HIT');
+      const ct = cached.contentType || 'application/json';
+      res.setHeader('Content-Type', ct);
+      return res.end(cached.body);
+    }
+    const origEnd = res.end;
+    const origJson = res.json ? res.json.bind(res) : null;
+    if (origJson) {
+      res.json = (data) => {
+        cache.set(key, { body: JSON.stringify(data), contentType: 'application/json', time: Date.now() });
+        res.setHeader('X-Cache', 'MISS');
+        origJson(data);
+      };
+    }
+    const origSend = res.send ? res.send.bind(res) : null;
+    if (origSend) {
+      res.send = (body) => {
+        cache.set(key, { body: String(body), contentType: res.getHeader('content-type'), time: Date.now() });
+        res.setHeader('X-Cache', 'MISS');
+        origSend(body);
+      };
+    }
+    next();
+  };
+}
+
+// ===== Upload Middleware (zero-dep multipart parser) =====
+export function uploadMiddleware(fieldName, opts = {}) {
+  const maxSize = opts.maxSize || 10 * 1024 * 1024;
+  return (req, res, next) => {
+    const contentType = req.headers['content-type'] || '';
+    if (!contentType.startsWith('multipart/form-data')) return next();
+    const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^\s;]+))/);
+    if (!boundaryMatch) return next();
+    const boundary = boundaryMatch[1] || boundaryMatch[2];
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxSize) { req.destroy(); return res.status(413).json({ error: 'File too large' }); }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        const { files, fields } = _parseMultipart(buffer, boundary);
+        req.files = files;
+        req.file = files[fieldName] || files[Object.keys(files)[0]] || null;
+        if (!req.body) req.body = {};
+        Object.assign(req.body, fields);
+        next();
+      } catch { res.status(400).json({ error: 'Invalid multipart data' }); }
+    });
+    req.on('error', () => res.status(400).json({ error: 'Upload failed' }));
+  };
+}
+
+function _parseMultipart(buffer, boundary) {
+  const files = {}, fields = {};
+  const delim = Buffer.from(`--${boundary}`);
+  let start = buffer.indexOf(delim);
+  if (start === -1) return { files, fields };
+  start += delim.length + 2;
+  const endDelim = Buffer.from(`--${boundary}--`);
+  while (start < buffer.length) {
+    let end = buffer.indexOf(delim, start);
+    if (end === -1) break;
+    const part = buffer.slice(start, end - 2);
+    const headerEnd = part.indexOf('\r\n\r\n');
+    if (headerEnd !== -1) {
+      const header = part.slice(0, headerEnd).toString('utf-8');
+      const body = part.slice(headerEnd + 4);
+      const nameMatch = header.match(/name="([^"]+)"/);
+      if (nameMatch) {
+        const filenameMatch = header.match(/filename="([^"]+)"/);
+        if (filenameMatch) {
+          const ctMatch = header.match(/Content-Type:\s*(.+)/i);
+          files[nameMatch[1]] = { filename: filenameMatch[1], contentType: ctMatch ? ctMatch[1].trim() : 'application/octet-stream', data: body, size: body.length };
+        } else {
+          fields[nameMatch[1]] = body.toString('utf-8');
+        }
+      }
+    }
+    start = end + delim.length;
+    if (buffer.slice(end, end + endDelim.length).equals(endDelim)) break;
+    start += 2;
+  }
+  return { files, fields };
+}
+
+// ===== SSE Manager (zero-dep) =====
+export function createSseManager() {
+  const clients = new Set();
+  return {
+    handler() {
+      return (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'Access-Control-Allow-Origin': '*' });
+        res.write(':\n\n');
+        const client = { res, id: randomUUID() };
+        clients.add(client);
+        req.on('close', () => clients.delete(client));
+      };
+    },
+    send(data, event) {
+      const payload = typeof data === 'string' ? data : JSON.stringify(data);
+      for (const client of clients) {
+        if (event) client.res.write(`event: ${event}\n`);
+        client.res.write(`data: ${payload}\n\n`);
+      }
+    },
+    broadcast(data, event) { this.send(data, event); },
+    get count() { return clients.size; }
+  };
+}
+
 // ===== Helpers =====
 function parseMs(str) {
   if (typeof str === 'number') return str;

@@ -15,6 +15,10 @@ npm install -g naidejs
 ## Usage
 
 ```bash
+# Create a new project
+naide init
+naide init my-app
+
 # Run a file
 naide app.naide
 naide app.nx
@@ -184,6 +188,83 @@ server app port 3000:
 
 Express error middleware. Catches unhandled errors in routes.
 
+### patch — HTTP PATCH method
+
+```python
+server app port 3000:
+  patch "/api/users/:id" (req, res):
+    user = UserStore.update(req.params.id, req.body)
+    ret user
+```
+
+### session — Session management
+
+```python
+server app port 3000:
+  session "my-secret"
+  get "/" (req, res):
+    req.session.views = (req.session.views ?? 0) + 1
+    ret {views: req.session.views}
+```
+
+Cookie-based sessions with `req.session` object. Zero-dependency. Sessions support `req.session.destroy()`.
+
+### upload — File upload
+
+```python
+server app port 3000:
+  upload "/api/upload" "avatar" (req, res):
+    ret {filename: req.file.filename, size: req.file.size}
+```
+
+Zero-dependency multipart parser. `req.file` contains `{filename, contentType, data, size}`. `req.files` has all files by field name.
+
+### view — Template rendering
+
+```python
+server app port 3000:
+  view "./views"
+  get "/":
+    ret.render "home" {title: "Welcome", items: ["a", "b"]}
+```
+
+Simple template engine reading `.html` files. Supports `{{variable}}`, `{{if condition}}...{{/if}}`, `{{each item in list}}...{{/each}}`.
+
+### sse — Server-Sent Events
+
+```python
+server app port 3000:
+  sse "/events"
+  post "/api/notify" (req, res):
+    sse.broadcast req.body
+    ret {ok: true}
+```
+
+Creates an SSE endpoint. `sse.send(data)` and `sse.broadcast(data)` push to all connected clients. `sse.count` returns active connections.
+
+### cache — Response caching
+
+```python
+server app port 3000:
+  cache "/api/*" "5m"
+```
+
+Caches GET responses in memory. Auto-invalidates after TTL. Sets `X-Cache: HIT/MISS` header.
+
+### mid — Named middleware
+
+```python
+fn logger(req, res, next):
+  log req.method, req.url
+  next()
+
+server app port 3000:
+  mid logger           # apply globally
+  mid logger "/api"    # apply to path only
+```
+
+Define middleware as a function, apply with `mid name` inside server blocks.
+
 ### api — HTTP client
 
 ```python
@@ -237,6 +318,7 @@ ret.redirect "/login"           # HTTP redirect
 ret.html "<h1>Hello</h1>"      # HTML response
 ret.text "pong"                 # plain text response
 ret.file "/path/to/file"       # send file
+ret.render "template" {data}   # render template (requires view)
 ```
 
 ### Built-in functions
@@ -445,12 +527,13 @@ $app:3000
 | `+` | export | `~` | await |
 | `G` | GET | `P` | POST |
 | `U` | PUT | `D` | DELETE |
-| `>.s` | ret.status | `>.r` | ret.redirect |
-| `>.h` | ret.html | `>.t` | ret.text |
+| `X` | PATCH | `>.s` | ret.status |
+| `>.r` | ret.redirect | `>.h` | ret.html |
+| `>.t` | ret.text | `>.v` | ret.render |
 
 Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 
-High-level: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error` — same syntax in both modes. `api` is auto-imported.
+High-level: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch` — same syntax in both modes. `api` is auto-imported.
 
 ## Why?
 

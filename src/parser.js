@@ -102,7 +102,9 @@ export class Parser {
       type === T.WS || type === T.GROUP || type === T.COOKIE ||
       type === T.NOT || type === T.AND || type === T.OR ||
       type === T.IN || type === T.BREAK || type === T.CONTINUE ||
-      type === T.THROW || type === T.MUT || type === T.PUB;
+      type === T.THROW || type === T.MUT || type === T.PUB ||
+      type === T.UPLOAD || type === T.SESSION || type === T.VIEW ||
+      type === T.SSE || type === T.CACHE || type === T.PATCH || type === T.MID;
   }
 
   expectPropertyName() {
@@ -252,7 +254,11 @@ export class Parser {
 
   parseFunction(isAsync, isPublic) {
     this.advance(); // fn or fn.async
-    const name = this.expect(T.IDENT).value;
+    const tok = this.advance();
+    if (!this.isIdentLike(tok.type)) {
+      throw this.error(`Expected function name but got ${tok.type} ('${tok.value}')`, tok);
+    }
+    const name = tok.value;
     this.expect(T.LPAREN);
     const params = this.parseFnParams();
     this.expect(T.RPAREN);
@@ -342,6 +348,14 @@ export class Parser {
         const statusCode = this.parseExpression();
         const body = this.parseExpression();
         return new ASTNode('ReturnStatus', { method, statusCode, body });
+      }
+      if (method === 'render') {
+        const template = this.parseExpression();
+        let data = null;
+        if (!this.at(T.NEWLINE) && !this.at(T.EOF) && !this.at(T.DEDENT)) {
+          data = this.parseExpression();
+        }
+        return new ASTNode('ReturnRender', { template, data });
       }
       const value = this.parseExpression();
       return new ASTNode('ReturnMethod', { method, value });
@@ -514,10 +528,15 @@ export class Parser {
     this.skipNewlines();
 
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
-      if (this.atAny(T.GET, T.POST, T.PUT, T.DEL)) {
+      if (this.atAny(T.GET, T.POST, T.PUT, T.DEL, T.PATCH)) {
         routes.push(this.parseRoute());
       } else if (this.at(T.MID)) {
-        middleware.push(this.parseMiddleware());
+        const mid = this.parseMiddleware();
+        if (mid.type === 'MiddlewareRef') {
+          routes.push(mid);
+        } else {
+          middleware.push(mid);
+        }
       } else if (this.at(T.CRUD)) {
         routes.push(this.parseCrud());
       } else if (this.at(T.AUTH)) {
@@ -535,6 +554,16 @@ export class Parser {
       } else if (this.at(T.COOKIE)) {
         this.advance();
         routes.push(new ASTNode('CookieDecl'));
+      } else if (this.at(T.UPLOAD)) {
+        routes.push(this.parseUpload());
+      } else if (this.at(T.SESSION)) {
+        routes.push(this.parseSession());
+      } else if (this.at(T.VIEW)) {
+        routes.push(this.parseView());
+      } else if (this.at(T.SSE)) {
+        routes.push(this.parseSse());
+      } else if (this.at(T.CACHE)) {
+        routes.push(this.parseCache());
       } else if (this.at(T.IDENT) && this.peek().value === 'error') {
         routes.push(this.parseErrorHandler());
       } else {
@@ -574,16 +603,23 @@ export class Parser {
   parseMiddleware() {
     this.advance(); // mid
     const name = this.expect(T.IDENT).value;
-    this.expect(T.LPAREN);
-    const params = [];
-    while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
-      params.push(this.expect(T.IDENT).value);
-      this.match(T.COMMA);
+    if (this.at(T.LPAREN)) {
+      this.advance();
+      const params = [];
+      while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+        params.push(this.expect(T.IDENT).value);
+        this.match(T.COMMA);
+      }
+      this.expect(T.RPAREN);
+      this.expect(T.COLON);
+      const body = this.parseBlock();
+      return new ASTNode('Middleware', { name, params, body });
     }
-    this.expect(T.RPAREN);
-    this.expect(T.COLON);
-    const body = this.parseBlock();
-    return new ASTNode('Middleware', { name, params, body });
+    let path = null;
+    if (this.at(T.STRING)) {
+      path = this.parseString();
+    }
+    return new ASTNode('MiddlewareRef', { name, path });
   }
 
   parseModel(isPublic = false) {
@@ -933,6 +969,8 @@ export class Parser {
       case T.SCHEMA: case T.CRUD: case T.AUTH: case T.CORS:
       case T.LIMIT: case T.ENV: case T.EVERY: case T.WATCH:
       case T.STATIC: case T.WS: case T.GROUP: case T.COOKIE:
+      case T.UPLOAD: case T.SESSION: case T.VIEW: case T.SSE:
+      case T.CACHE: case T.PATCH: case T.MID:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1372,7 +1410,7 @@ export class Parser {
     this.skipNewlines();
 
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
-      if (this.atAny(T.GET, T.POST, T.PUT, T.DEL)) {
+      if (this.atAny(T.GET, T.POST, T.PUT, T.DEL, T.PATCH)) {
         routes.push(this.parseRoute());
       } else if (this.at(T.MID)) {
         routes.push(this.parseMiddleware());
@@ -1406,5 +1444,47 @@ export class Parser {
     this.expect(T.COLON);
     const body = this.parseBlock();
     return new ASTNode('ErrorHandler', { params, body });
+  }
+
+  parseUpload() {
+    this.advance(); // upload
+    const path = this.parseString();
+    const fieldName = this.parseString();
+    let params = [];
+    if (this.match(T.LPAREN)) {
+      while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+        params.push(this.expect(T.IDENT).value);
+        this.match(T.COMMA);
+      }
+      this.expect(T.RPAREN);
+    }
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('UploadDecl', { path, fieldName, params, body });
+  }
+
+  parseSession() {
+    this.advance(); // session
+    const secret = this.parseExpression();
+    return new ASTNode('SessionDecl', { secret });
+  }
+
+  parseView() {
+    this.advance(); // view
+    const dir = this.parseString();
+    return new ASTNode('ViewDecl', { dir });
+  }
+
+  parseSse() {
+    this.advance(); // sse
+    const path = this.parseString();
+    return new ASTNode('SseDecl', { path });
+  }
+
+  parseCache() {
+    this.advance(); // cache
+    const path = this.parseString();
+    const duration = this.parseExpression();
+    return new ASTNode('CacheDecl', { path, duration });
   }
 }

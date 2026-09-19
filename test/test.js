@@ -401,6 +401,72 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes("import {"));
   });
 
+  it('compiles patch route in server', () => {
+    const src = 'server app port 3000:\n  patch "/api/users/:id" (req, res):\n    ret {updated: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('app.patch'));
+    assert.ok(js.includes('"/api/users/:id"'));
+  });
+
+  it('compiles upload in server', () => {
+    const src = 'server app port 3000:\n  upload "/api/upload" "avatar" (req, res):\n    ret {file: req.file}';
+    const js = transpile(src);
+    assert.ok(js.includes('uploadMiddleware'));
+    assert.ok(js.includes('app.post'));
+    assert.ok(js.includes('"avatar"'));
+  });
+
+  it('compiles session in server', () => {
+    const src = 'server app port 3000:\n  session "my-secret"\n  get "/":\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('sessionMiddleware'));
+    assert.ok(js.includes('"my-secret"'));
+  });
+
+  it('compiles view in server', () => {
+    const src = 'server app port 3000:\n  view "./views"\n  get "/":\n    ret.render "home" {title: "Hi"}';
+    const js = transpile(src);
+    assert.ok(js.includes('createRenderer'));
+    assert.ok(js.includes('"./views"'));
+    assert.ok(js.includes('__render'));
+    assert.ok(js.includes('"home"'));
+  });
+
+  it('compiles sse in server', () => {
+    const src = 'server app port 3000:\n  sse "/events"\n  post "/api/notify" (req, res):\n    sse.broadcast req.body\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('createSseManager'));
+    assert.ok(js.includes('sse.handler()'));
+    assert.ok(js.includes('sse.broadcast'));
+  });
+
+  it('compiles cache in server', () => {
+    const src = 'server app port 3000:\n  cache "/api/*" "5m"\n  get "/api/data":\n    ret {data: 1}';
+    const js = transpile(src);
+    assert.ok(js.includes('cacheMiddleware'));
+    assert.ok(js.includes('"/api/*"'));
+    assert.ok(js.includes('"5m"'));
+  });
+
+  it('compiles middleware reference in server', () => {
+    const src = 'fn logger(req, res, next):\n  log req.method\n  next()\n\nserver app port 3000:\n  mid logger\n  get "/":\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('function logger'));
+    assert.ok(js.includes('app.use(logger)'));
+  });
+
+  it('compiles middleware reference with path', () => {
+    const src = 'fn checkAuth(req, res, next):\n  next()\n\nserver app port 3000:\n  mid checkAuth "/api"\n  get "/":\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('app.use("/api", checkAuth)'));
+  });
+
+  it('allows keywords as function names', () => {
+    const src = 'fn cache():\n  ret 1';
+    const js = transpile(src);
+    assert.ok(js.includes('function cache()'));
+  });
+
   it('compiles full app with all features', () => {
     const src = [
       'db "data/"',
@@ -478,6 +544,19 @@ describe('NAIDE-X full pipeline', () => {
     const source = '$app:3000\n  G"/old"\n    >.r "/new"';
     const js = transpile(source, { mode: 'x' });
     assert.ok(js.includes('res.redirect'));
+  });
+
+  it('compiles .nx PATCH route', () => {
+    const source = '$app:3000\n  X"/api/users/:id"(req,res)\n    >{updated:true}';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('app.patch'));
+  });
+
+  it('compiles .nx ret.render shorthand', () => {
+    const source = '$app:3000\n  G"/"\n    >.v "home" {title: "Hi"}';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('__render'));
+    assert.ok(js.includes('"home"'));
   });
 });
 
@@ -629,6 +708,46 @@ describe('Runtime unit tests', () => {
     assert.strictEqual(req.cookies.session, 'abc123');
     assert.strictEqual(req.cookies.theme, 'dark');
     assert.strictEqual(req.cookies.name, 'hello world');
+  });
+
+  it('sessionMiddleware provides req.session', async () => {
+    const { sessionMiddleware } = await import('../src/runtime.js');
+    const mid = sessionMiddleware('secret');
+    const req = { headers: {} };
+    const res = { writeHead: () => {}, setHeader: () => {} };
+    let called = false;
+    mid(req, res, () => { called = true; });
+    assert.ok(called);
+    assert.ok(req.session);
+    assert.ok(req.sessionId);
+    assert.ok(typeof req.session.destroy === 'function');
+  });
+
+  it('cacheMiddleware caches GET responses', async () => {
+    const { cacheMiddleware } = await import('../src/runtime.js');
+    const mid = cacheMiddleware('1m');
+    assert.ok(typeof mid === 'function');
+  });
+
+  it('createSseManager has send/broadcast/handler', async () => {
+    const { createSseManager } = await import('../src/runtime.js');
+    const sse = createSseManager();
+    assert.ok(typeof sse.handler === 'function');
+    assert.ok(typeof sse.send === 'function');
+    assert.ok(typeof sse.broadcast === 'function');
+    assert.strictEqual(sse.count, 0);
+  });
+
+  it('uploadMiddleware returns middleware function', async () => {
+    const { uploadMiddleware } = await import('../src/runtime.js');
+    const mid = uploadMiddleware('file');
+    assert.ok(typeof mid === 'function');
+  });
+
+  it('createRenderer returns a function', async () => {
+    const { createRenderer } = await import('../src/runtime.js');
+    const render = createRenderer('./test');
+    assert.ok(typeof render === 'function');
   });
 
   it('createStore CRUD operations', async () => {

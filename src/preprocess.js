@@ -115,6 +115,8 @@ export function preprocess(source) {
         out = 'ret.text ' + transformContent(rest.slice(3));
       } else if (rest.startsWith('.f ')) {
         out = 'ret.file ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.v ')) {
+        out = 'ret.render ' + transformContent(rest.slice(3));
       } else {
         out = rest ? 'ret ' + transformContent(rest) : 'ret';
       }
@@ -179,6 +181,7 @@ export function preprocess(source) {
     else if (first === 'P' && second === '"') { out = transformRoute('post', line.slice(1)); }
     else if (first === 'U' && second === '"') { out = transformRoute('put', line.slice(1)); }
     else if (first === 'D' && second === '"') { out = transformRoute('del', line.slice(1)); }
+    else if (first === 'X' && second === '"') { out = transformRoute('patch', line.slice(1)); }
     // ^ model
     else if (first === '^') {
       const rest = line.slice(1).trim();

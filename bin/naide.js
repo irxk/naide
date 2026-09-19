@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync } from 'fs';
 import { resolve, basename, extname } from 'path';
 import { compile } from '../src/index.js';
 import { spawn } from 'child_process';
@@ -36,6 +36,54 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+if (files[0] === 'init') {
+  const dir = files[1] ? resolve(files[1]) : process.cwd();
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const name = basename(dir === process.cwd() ? dir : dir);
+
+  if (!existsSync(resolve(dir, 'package.json'))) {
+    writeFileSync(resolve(dir, 'package.json'), JSON.stringify({
+      name, version: '1.0.0', type: 'module',
+      scripts: { start: 'naide app.naide', dev: 'naide -w app.naide', build: 'naide --emit app.naide -o dist/app.mjs' },
+      dependencies: { naidejs: '^1.3.0' }
+    }, null, 2) + '\n');
+  }
+
+  if (!existsSync(resolve(dir, 'app.naide'))) {
+    writeFileSync(resolve(dir, 'app.naide'), `db "data/"
+
+env:
+  PORT int default(3000)
+
+schema Item:
+  id auto
+  name str required min(1) max(100)
+  done bool default(false)
+
+server app port PORT:
+  cors "*"
+  cookie
+  static "/public"
+  crud "/api/items" Item
+
+  get "/":
+    ret.text "NAIDE server running"
+
+  get "/api/health":
+    ret {status: "ok", items: ItemStore.count()}
+`);
+  }
+
+  if (!existsSync(resolve(dir, 'public'))) mkdirSync(resolve(dir, 'public'), { recursive: true });
+
+  console.log(`\n  NAIDE project initialized!
+
+  ${dir === process.cwd() ? '' : `  cd ${basename(dir)}\n`}  npm install
+  npm run dev
+`);
+  process.exit(0);
+}
+
 if (flags.help || files.length === 0) {
   console.log(`
   NAIDE - Node AI Development Environment
@@ -44,6 +92,7 @@ if (flags.help || files.length === 0) {
   Usage:
     naide <file.naide>           Run a NAIDE file
     naide <file.nx>              Run a NAIDE-X file (auto-detected)
+    naide init [dir]             Create a new NAIDE project
     naide --emit <file.nx>       Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
     naide -x <file.naide>        Force NAIDE-X mode
