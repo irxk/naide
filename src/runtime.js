@@ -580,6 +580,92 @@ export function createSseManager() {
   };
 }
 
+// ===== Validate Middleware =====
+export function validateMiddleware(schema) {
+  return (req, res, next) => {
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      const result = schema.validate(req.body || {});
+      if (!result.valid) {
+        return res.status(400).json({ errors: result.errors });
+      }
+      req.body = result.data;
+    }
+    next();
+  };
+}
+
+// ===== Job Queue (in-memory async) =====
+export function createQueue() {
+  const handlers = new Map();
+  const pending = [];
+  let running = false;
+
+  async function process() {
+    if (running) return;
+    running = true;
+    while (pending.length > 0) {
+      const { name, data, resolve, reject } = pending.shift();
+      const handler = handlers.get(name);
+      if (handler) {
+        try { await handler(data); resolve(); } catch (e) { console.error('[NAIDE Queue]', e.message); reject(e); }
+      } else {
+        reject(new Error(`No handler for job: ${name}`));
+      }
+    }
+    running = false;
+  }
+
+  return {
+    register(name, fn) { handlers.set(name, fn); },
+    add(name, data) {
+      return new Promise((resolve, reject) => {
+        pending.push({ name, data, resolve, reject });
+        process();
+      });
+    },
+    get size() { return pending.length; }
+  };
+}
+
+// ===== OpenAPI Spec Builder =====
+export function buildOpenApiSpec(schemas) {
+  const spec = {
+    openapi: '3.1.0',
+    info: { title: 'API', version: '1.0.0' },
+    paths: {},
+    components: { schemas: {} }
+  };
+  for (const schema of schemas) {
+    const properties = {};
+    const required = [];
+    for (const [fieldName, fieldDef] of Object.entries(schema.fields)) {
+      const prop = {};
+      switch (fieldDef.type) {
+        case 'id': prop.type = 'string'; prop.format = 'uuid'; break;
+        case 'string': prop.type = 'string'; break;
+        case 'integer': prop.type = 'integer'; break;
+        case 'number': prop.type = 'number'; break;
+        case 'boolean': prop.type = 'boolean'; break;
+        case 'timestamp': prop.type = 'string'; prop.format = 'date-time'; break;
+        case 'enum':
+          prop.type = 'string';
+          if (fieldDef.values) prop.enum = fieldDef.values;
+          break;
+        default: prop.type = 'string';
+      }
+      if (fieldDef.min !== undefined) prop.minimum = fieldDef.min;
+      if (fieldDef.max !== undefined) prop.maximum = fieldDef.max;
+      if (fieldDef.email) prop.format = 'email';
+      if (fieldDef.url) prop.format = 'uri';
+      properties[fieldName] = prop;
+      if (fieldDef.required) required.push(fieldName);
+    }
+    spec.components.schemas[schema.name] = { type: 'object', properties };
+    if (required.length > 0) spec.components.schemas[schema.name].required = required;
+  }
+  return spec;
+}
+
 // ===== Helpers =====
 function parseMs(str) {
   if (typeof str === 'number') return str;

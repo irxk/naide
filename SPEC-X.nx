@@ -191,6 +191,22 @@ $app:PORT
 -- sign({id:1})          → JWT (uses auth secret)
 -- sign({id:1},"secret") → JWT (explicit)
 
+-- Validate: auto-validate POST/PUT/PATCH bodies
+--   validate "/api/users" User
+
+-- Test (node:test)
+test "math":
+  assert 1+1==2
+  assert 2*3==6
+
+-- Queue (async job queue)
+queue jobs:
+  job "notify" (data):
+    log data.msg
+
+-- OpenAPI: auto-generate spec from schemas
+--   openapi "/docs"
+
 -- Scheduled tasks
 every "5m":
   log"cleanup"

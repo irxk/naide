@@ -513,6 +513,64 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes("'data/User.json'"));
     assert.ok(js.includes('urlencoded'));
   });
+
+  it('compiles validate in server', () => {
+    const src = [
+      'schema User:', '  id auto', '  name str required',
+      '', 'server app port 3000:',
+      '  validate "/api/users" User',
+      '  post "/api/users" (req, res):', '    ret req.body',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('validateMiddleware'));
+    assert.ok(js.includes('UserSchema'));
+    assert.ok(js.includes('app.use("/api/users"'));
+  });
+
+  it('compiles test and assert', () => {
+    const src = [
+      'test "math":', '  assert 1 + 1 == 2', '  assert 2 * 3 == 6',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes("import { test } from 'node:test'"));
+    assert.ok(js.includes("import assert from 'node:assert/strict'"));
+    assert.ok(js.includes("test(\"math\""));
+    assert.ok(js.includes('assert.strictEqual'));
+  });
+
+  it('compiles assert with different operators', () => {
+    const src = [
+      'test "ops":', '  assert x != y', '  assert x > 0',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('assert.notStrictEqual'));
+    assert.ok(js.includes('assert.ok'));
+  });
+
+  it('compiles queue with jobs', () => {
+    const src = [
+      'queue jobs:', '  job "sendEmail" (data):', '    log data.to',
+      '  job "resize" (data):', '    log data.path',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('createQueue'));
+    assert.ok(js.includes('const jobs = createQueue()'));
+    assert.ok(js.includes('jobs.register("sendEmail"'));
+    assert.ok(js.includes('jobs.register("resize"'));
+  });
+
+  it('compiles openapi in server', () => {
+    const src = [
+      'schema User:', '  id auto', '  name str required',
+      '', 'server app port 3000:',
+      '  openapi "/docs"',
+      '  get "/":', '    ret {ok: true}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('buildOpenApiSpec'));
+    assert.ok(js.includes('app.get("/docs"'));
+    assert.ok(js.includes('UserSchema'));
+  });
 });
 
 describe('NAIDE-X full pipeline', () => {
@@ -766,5 +824,59 @@ describe('Runtime unit tests', () => {
     assert.strictEqual(store.getById(item.id).name, 'updated');
     store.delete(item.id);
     assert.strictEqual(store.getAll().length, 0);
+  });
+
+  it('validateMiddleware validates POST bodies', async () => {
+    const { createSchema, validateMiddleware } = await import('../src/runtime.js');
+    const schema = createSchema('User', {
+      name: { type: 'string', required: true, min: 2 },
+    });
+    const mid = validateMiddleware(schema);
+    const req = { method: 'POST', body: { name: 'A' } };
+    const res = { status(code) { res._status = code; return res; }, json(data) { res._json = data; } };
+    let called = false;
+    mid(req, res, () => { called = true; });
+    assert.ok(!called);
+    assert.strictEqual(res._status, 400);
+
+    const req2 = { method: 'POST', body: { name: 'Alice' } };
+    let called2 = false;
+    mid(req2, { status() { return { json() {} }; } }, () => { called2 = true; });
+    assert.ok(called2);
+  });
+
+  it('validateMiddleware passes GET requests', async () => {
+    const { createSchema, validateMiddleware } = await import('../src/runtime.js');
+    const schema = createSchema('User', { name: { type: 'string', required: true } });
+    const mid = validateMiddleware(schema);
+    const req = { method: 'GET' };
+    let called = false;
+    mid(req, {}, () => { called = true; });
+    assert.ok(called);
+  });
+
+  it('createQueue registers and processes jobs', async () => {
+    const { createQueue } = await import('../src/runtime.js');
+    const q = createQueue();
+    const results = [];
+    q.register('test', async (data) => { results.push(data.value); });
+    await q.add('test', { value: 1 });
+    await q.add('test', { value: 2 });
+    assert.deepStrictEqual(results, [1, 2]);
+  });
+
+  it('buildOpenApiSpec generates valid spec', async () => {
+    const { createSchema, buildOpenApiSpec } = await import('../src/runtime.js');
+    const schema = createSchema('User', {
+      id: { type: 'id', auto: true },
+      name: { type: 'string', required: true },
+      age: { type: 'integer', min: 0 },
+    });
+    const spec = buildOpenApiSpec([schema]);
+    assert.strictEqual(spec.openapi, '3.1.0');
+    assert.ok(spec.components.schemas.User);
+    assert.strictEqual(spec.components.schemas.User.properties.name.type, 'string');
+    assert.strictEqual(spec.components.schemas.User.properties.age.type, 'integer');
+    assert.ok(spec.components.schemas.User.required.includes('name'));
   });
 });

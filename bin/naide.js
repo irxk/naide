@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync } from 'fs';
-import { resolve, basename, extname } from 'path';
+import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { resolve, basename, extname, join, relative } from 'path';
 import { compile } from '../src/index.js';
 import { spawn } from 'child_process';
 
@@ -84,6 +84,53 @@ server app port PORT:
   process.exit(0);
 }
 
+if (files[0] === 'build') {
+  const dir = resolve(files[1] || '.');
+  const outDir = files[2] ? resolve(files[2]) : null;
+
+  function walkDir(d) {
+    const found = [];
+    for (const entry of readdirSync(d)) {
+      const full = join(d, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
+        found.push(...walkDir(full));
+      } else if (entry.endsWith('.naide') || entry.endsWith('.nx')) {
+        found.push(full);
+      }
+    }
+    return found;
+  }
+
+  const sourceFiles = walkDir(dir);
+  if (sourceFiles.length === 0) {
+    console.log('  No .naide or .nx files found.');
+    process.exit(0);
+  }
+
+  console.log(`\n  NAIDE build — ${sourceFiles.length} file(s)\n`);
+  let errors = 0;
+  for (const srcFile of sourceFiles) {
+    const rel = relative(dir, srcFile);
+    const mode = srcFile.endsWith('.nx') ? 'x' : 'naide';
+    try {
+      const source = readFileSync(srcFile, 'utf-8');
+      const { js } = compile(source, { mode });
+      const outName = rel.replace(/\.(naide|nx)$/, '.mjs');
+      const outPath = outDir ? join(outDir, outName) : join(dir, outName);
+      const outDirPath = resolve(outPath, '..');
+      if (!existsSync(outDirPath)) mkdirSync(outDirPath, { recursive: true });
+      writeFileSync(outPath, js);
+      console.log(`  ${rel} → ${outDir ? join(relative('.', outDir), outName) : outName}`);
+    } catch (e) {
+      console.error(`  FAIL ${rel}: ${e.message.split('\n')[0]}`);
+      errors++;
+    }
+  }
+  console.log(`\n  Done. ${sourceFiles.length - errors} compiled, ${errors} failed.`);
+  process.exit(errors > 0 ? 1 : 0);
+}
+
 if (flags.help || files.length === 0) {
   console.log(`
   NAIDE - Node AI Development Environment
@@ -93,6 +140,7 @@ if (flags.help || files.length === 0) {
     naide <file.naide>           Run a NAIDE file
     naide <file.nx>              Run a NAIDE-X file (auto-detected)
     naide init [dir]             Create a new NAIDE project
+    naide build [dir] [outdir]   Transpile all files to JavaScript
     naide --emit <file.nx>       Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
     naide -x <file.naide>        Force NAIDE-X mode

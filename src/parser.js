@@ -104,7 +104,9 @@ export class Parser {
       type === T.IN || type === T.BREAK || type === T.CONTINUE ||
       type === T.THROW || type === T.MUT || type === T.PUB ||
       type === T.UPLOAD || type === T.SESSION || type === T.VIEW ||
-      type === T.SSE || type === T.CACHE || type === T.PATCH || type === T.MID;
+      type === T.SSE || type === T.CACHE || type === T.PATCH || type === T.MID ||
+      type === T.VALIDATE || type === T.TEST || type === T.ASSERT ||
+      type === T.QUEUE || type === T.JOB || type === T.OPENAPI;
   }
 
   expectPropertyName() {
@@ -203,6 +205,18 @@ export class Parser {
         if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
         this.advance();
         return new ASTNode('CookieDecl');
+      case T.VALIDATE:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseValidate();
+      case T.TEST:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseTest();
+      case T.ASSERT:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseAssert();
+      case T.QUEUE:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseQueue();
       default:
         if (TYPE_TOKENS.has(tok.type)) {
           return this.parseTypedVariable();
@@ -564,6 +578,12 @@ export class Parser {
         routes.push(this.parseSse());
       } else if (this.at(T.CACHE)) {
         routes.push(this.parseCache());
+      } else if (this.at(T.VALIDATE)) {
+        routes.push(this.parseValidate());
+      } else if (this.at(T.OPENAPI)) {
+        routes.push(this.parseOpenapi());
+      } else if (this.at(T.QUEUE)) {
+        routes.push(this.parseQueue());
       } else if (this.at(T.IDENT) && this.peek().value === 'error') {
         routes.push(this.parseErrorHandler());
       } else {
@@ -971,6 +991,8 @@ export class Parser {
       case T.STATIC: case T.WS: case T.GROUP: case T.COOKIE:
       case T.UPLOAD: case T.SESSION: case T.VIEW: case T.SSE:
       case T.CACHE: case T.PATCH: case T.MID:
+      case T.VALIDATE: case T.TEST: case T.ASSERT:
+      case T.QUEUE: case T.JOB: case T.OPENAPI:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1486,5 +1508,67 @@ export class Parser {
     const path = this.parseString();
     const duration = this.parseExpression();
     return new ASTNode('CacheDecl', { path, duration });
+  }
+
+  parseValidate() {
+    this.advance(); // validate
+    const path = this.parseString();
+    const schemaName = this.expect(T.IDENT).value;
+    return new ASTNode('ValidateDecl', { path, schemaName });
+  }
+
+  parseTest() {
+    this.advance(); // test
+    const name = this.parseExpression();
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('TestDecl', { name, body });
+  }
+
+  parseAssert() {
+    this.advance(); // assert
+    const expr = this.parseExpression();
+    return new ASTNode('AssertStmt', { expr });
+  }
+
+  parseQueue() {
+    this.advance(); // queue
+    const name = this.expect(T.IDENT).value;
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+
+    const jobs = [];
+    this.skipNewlines();
+
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.JOB)) {
+        this.advance();
+        const jobName = this.parseString();
+        let params = [];
+        if (this.match(T.LPAREN)) {
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.expect(T.IDENT).value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        jobs.push({ name: jobName, params, body });
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+
+    return new ASTNode('QueueDecl', { name, jobs });
+  }
+
+  parseOpenapi() {
+    this.advance(); // openapi
+    const path = this.parseString();
+    return new ASTNode('OpenapiDecl', { path });
   }
 }

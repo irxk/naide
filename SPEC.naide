@@ -256,6 +256,35 @@ server app port PORT:
 #   ret {updated: true}
 
 
+# ---- リクエストバリデーション ----
+# validate パス スキーマ名 → POST/PUT/PATCHのボディをスキーマで自動検証
+# server app port 3000:
+#   validate "/api/users" User
+
+
+# ---- テスト (node:test ベース) ----
+test "math operations":
+  assert 1 + 1 == 2
+  assert 10 - 3 == 7
+
+test "string operations":
+  str name = "NAIDE"
+  assert name == "NAIDE"
+
+
+# ---- ジョブキュー (インメモリ非同期) ----
+queue jobs:
+  job "sendEmail" (data):
+    log "sending to {data.to}"
+  job "resize" (data):
+    log "resizing {data.path}"
+
+
+# ---- OpenAPI 自動生成 ----
+# server app port 3000:
+#   openapi "/docs"    # スキーマからOpenAPI仕様を自動生成して配信
+
+
 # ---- レスポンスヘルパー ----
 # ret {data}                → JSON応答
 # ret.status 404 {error}    → ステータスコード付き

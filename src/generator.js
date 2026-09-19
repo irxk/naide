@@ -12,6 +12,8 @@ export class Generator {
     this.authSecret = null;
     this.hasWs = false;
     this.wsNodes = [];
+    this.hasTests = false;
+    this.hasAsserts = false;
   }
 
   generate(ast) {
@@ -27,6 +29,14 @@ export class Generator {
       const imports = [...this.runtimeImports].join(', ');
       preamble.push(`import { ${imports} } from '${this.runtimePath}';`);
       preamble.push('');
+    }
+
+    if (this.hasTests) {
+      preamble.push("import { test } from 'node:test';");
+    }
+    if (this.hasTests || this.hasAsserts) {
+      preamble.push("import assert from 'node:assert/strict';");
+      if (this.hasTests) preamble.push('');
     }
 
     if (this.needsEventBus) {
@@ -103,6 +113,11 @@ export class Generator {
       case 'CacheDecl': return this.visitCacheTopLevel(node);
       case 'MiddlewareRef': return this.visitMiddlewareRefTopLevel(node);
       case 'ReturnRender': return this.visitReturnRender(node);
+      case 'ValidateDecl': return this.visitValidateTopLevel(node);
+      case 'TestDecl': return this.visitTest(node);
+      case 'AssertStmt': return this.visitAssert(node);
+      case 'QueueDecl': return this.visitQueue(node);
+      case 'OpenapiDecl': return this.visitOpenapiTopLevel(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -343,6 +358,12 @@ export class Generator {
         this.visitCache(node.name, child);
       } else if (child.type === 'MiddlewareRef') {
         this.visitMiddlewareRef(node.name, child);
+      } else if (child.type === 'ValidateDecl') {
+        this.visitValidate(node.name, child);
+      } else if (child.type === 'OpenapiDecl') {
+        this.visitOpenapi(node.name, child);
+      } else if (child.type === 'QueueDecl') {
+        this.visitQueue(child);
       } else {
         this.visitStatement(child);
       }
@@ -866,6 +887,75 @@ export class Generator {
     const template = this.expr(node.template);
     const data = node.data ? this.expr(node.data) : '{}';
     this.emit(`return res.type('html').send(__render(${template}, ${data}));`);
+  }
+
+  visitValidate(appName, node) {
+    this.runtimeImports.add('validateMiddleware');
+    const path = this.stringValue(node.path);
+    this.emit(`${appName}.use(${path}, validateMiddleware(${node.schemaName}Schema));`);
+    this.emitRaw('');
+  }
+
+  visitValidateTopLevel(node) {
+    this.visitValidate('app', node);
+  }
+
+  visitTest(node) {
+    this.hasTests = true;
+    const name = this.expr(node.name);
+    const needsAsync = this.bodyUsesAwait(node.body);
+    const asyncPrefix = needsAsync ? 'async ' : '';
+    this.emit(`test(${name}, ${asyncPrefix}() => {`);
+    this.indent++;
+    for (const stmt of node.body) this.visitStatement(stmt);
+    this.indent--;
+    this.emit('});');
+    this.emitRaw('');
+  }
+
+  visitAssert(node) {
+    this.hasAsserts = true;
+    const exprNode = node.expr;
+    if (exprNode.type === 'Binary' && exprNode.op === '===') {
+      this.emit(`assert.strictEqual(${this.expr(exprNode.left)}, ${this.expr(exprNode.right)});`);
+    } else if (exprNode.type === 'Binary' && exprNode.op === '!==') {
+      this.emit(`assert.notStrictEqual(${this.expr(exprNode.left)}, ${this.expr(exprNode.right)});`);
+    } else {
+      this.emit(`assert.ok(${this.expr(exprNode)});`);
+    }
+  }
+
+  visitQueue(node) {
+    this.runtimeImports.add('createQueue');
+    this.emit(`const ${node.name} = createQueue();`);
+    for (const job of node.jobs) {
+      const params = job.params.length > 0 ? job.params.join(', ') : 'data';
+      const needsAsync = this.bodyUsesAwait(job.body);
+      const asyncPrefix = needsAsync ? 'async ' : '';
+      this.emit(`${node.name}.register(${this.generateString(job.name)}, ${asyncPrefix}(${params}) => {`);
+      this.indent++;
+      for (const stmt of job.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('});');
+    }
+    this.emitRaw('');
+  }
+
+  visitOpenapi(appName, node) {
+    this.runtimeImports.add('buildOpenApiSpec');
+    const path = this.stringValue(node.path);
+    const schemaNames = [...this.schemas.keys()];
+    const schemaArgs = schemaNames.map(n => `${n}Schema`).join(', ');
+    this.emit(`${appName}.get(${path}, (req, res) => {`);
+    this.indent++;
+    this.emit(`res.json(buildOpenApiSpec([${schemaArgs}]));`);
+    this.indent--;
+    this.emit('});');
+    this.emitRaw('');
+  }
+
+  visitOpenapiTopLevel(node) {
+    this.visitOpenapi('app', node);
   }
 
   visitEnv(node) {
