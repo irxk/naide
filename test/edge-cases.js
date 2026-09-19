@@ -301,6 +301,65 @@ const tests = [
     'watch User.create (event):',
     '  log "new user"',
   ].join('\n')],
+
+  // v1.5 edge cases
+  ['typeof standalone', 'str t = typeof myVar'],
+  ['typeof in condition', 'if typeof x == "string":\n  log "str"'],
+  ['instanceof check', 'if err instanceof TypeError:\n  log "type error"'],
+  ['instanceof with not', 'if not err instanceof Error:\n  log "not error"'],
+  ['try ensure without fail', 'try:\n  log "risky"\nensure:\n  log "always"'],
+  ['try fail ensure', 'try:\n  log "start"\nfail e:\n  log e\nensure:\n  log "done"'],
+  ['route middleware single', [
+    'server app port 3000:',
+    '  get "/admin" [auth] (req, res):',
+    '    ret {ok: true}',
+  ].join('\n')],
+  ['route middleware multiple', [
+    'server app port 3000:',
+    '  post "/api" [auth, logger, validator] (req, res):',
+    '    ret req.body',
+  ].join('\n')],
+  ['ret.redirect with status', [
+    'server app port 3000:',
+    '  get "/old":',
+    '    ret.redirect 301 "/new"',
+  ].join('\n')],
+  ['ret.redirect without status', [
+    'server app port 3000:',
+    '  get "/old":',
+    '    ret.redirect "/new"',
+  ].join('\n')],
+  ['ret.download simple', [
+    'server app port 3000:',
+    '  get "/dl":',
+    '    ret.download "/file.zip"',
+  ].join('\n')],
+  ['ret.download with filename', [
+    'server app port 3000:',
+    '  get "/dl":',
+    '    ret.download "/file.zip" "custom.zip"',
+  ].join('\n')],
+  ['ensure as identifier', 'any ensure = "cleanup"'],
+  ['typeof as property name', 'any t = obj.typeof'],
+  ['instanceof as property', 'any x = cls.instanceof'],
+  ['all v1.5 features combined', [
+    'server app port 3000:',
+    '  get "/admin" [authCheck] (req, res):',
+    '    try:',
+    '      if typeof req.user == "undefined":',
+    '        ret.status 401 {error: "not authed"}',
+    '      if not req.user instanceof Object:',
+    '        ret.status 400 {error: "bad user"}',
+    '      ret {admin: true}',
+    '    fail e:',
+    '      ret.status 500 {error: e.message}',
+    '    ensure:',
+    '      log "request handled"',
+    '  get "/old":',
+    '    ret.redirect 301 "/new"',
+    '  get "/dl":',
+    '    ret.download "/file.zip" "download.zip"',
+  ].join('\n')],
 ];
 
 // Tests that MUST fail but with clear error messages

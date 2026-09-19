@@ -118,6 +118,8 @@ export class Generator {
       case 'AssertStmt': return this.visitAssert(node);
       case 'QueueDecl': return this.visitQueue(node);
       case 'OpenapiDecl': return this.visitOpenapiTopLevel(node);
+      case 'ReturnRedirect': return this.visitReturnRedirect(node);
+      case 'ReturnDownload': return this.visitReturnDownload(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -301,6 +303,12 @@ export class Generator {
       for (const stmt of node.catchBody) this.visitStatement(stmt);
       this.indent--;
     }
+    if (node.ensureBody) {
+      this.emit('} finally {');
+      this.indent++;
+      for (const stmt of node.ensureBody) this.visitStatement(stmt);
+      this.indent--;
+    }
     this.emit('}');
   }
 
@@ -399,7 +407,11 @@ export class Generator {
     const needsAsync = this.bodyUsesAwait(route.body);
     const asyncPrefix = needsAsync ? 'async ' : '';
 
-    this.emit(`${appName}.${method}(${path}, ${asyncPrefix}(${params}) => {`);
+    const midArgs = route.middleware && route.middleware.length > 0
+      ? route.middleware.map(m => this.expr(m)).join(', ') + ', '
+      : '';
+
+    this.emit(`${appName}.${method}(${path}, ${midArgs}${asyncPrefix}(${params}) => {`);
     this.indent++;
 
     const hasRes = params.includes('res');
@@ -889,6 +901,14 @@ export class Generator {
     this.emit(`return res.type('html').send(__render(${template}, ${data}));`);
   }
 
+  visitReturnRedirect(node) {
+    this.emit(`return res.redirect(${this.expr(node.statusCode)}, ${this.expr(node.url)});`);
+  }
+
+  visitReturnDownload(node) {
+    this.emit(`return res.download(${this.expr(node.filePath)}, ${this.expr(node.filename)});`);
+  }
+
   visitValidate(appName, node) {
     this.runtimeImports.add('validateMiddleware');
     const path = this.stringValue(node.path);
@@ -1051,6 +1071,9 @@ export class Generator {
 
       case 'New':
         return `new ${this.expr(node.expr)}`;
+
+      case 'TypeOf':
+        return `typeof ${this.expr(node.expr)}`;
 
       case 'MemberAccess':
         return `${this.expr(node.object)}.${node.property}`;

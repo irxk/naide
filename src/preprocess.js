@@ -45,17 +45,18 @@ function transformFunc(rest, isAsync, isPublic) {
 }
 
 function transformRoute(method, rest) {
-  const m = rest.match(/^("[^"]*")\s*(\([^)]*\))?\s*(.*)$/);
+  const m = rest.match(/^("[^"]*")\s*(\[[^\]]*\])?\s*(\([^)]*\))?\s*(.*)$/);
   if (!m) return `${method} ${rest}:`;
   const path = m[1];
-  const routeParams = m[2] ? ` ${m[2]}` : '';
-  const inline = m[3] ? m[3].trim() : '';
+  const middleware = m[2] ? ` ${m[2]}` : '';
+  const routeParams = m[3] ? ` ${m[3]}` : '';
+  const inline = m[4] ? m[4].trim() : '';
 
   if (inline) {
     const body = transformContent(inline);
-    return `${method} ${path}${routeParams}:\n  ${body}`;
+    return `${method} ${path}${middleware}${routeParams}:\n  ${body}`;
   }
-  return `${method} ${path}${routeParams}:`;
+  return `${method} ${path}${middleware}${routeParams}:`;
 }
 
 function transformAwait(text) {
@@ -71,10 +72,14 @@ function transformContent(line) {
   // Log shorthands
   line = line.replace(/\blog\.e\b/g, 'log.error');
   line = line.replace(/\blog\.w\b/g, 'log.warn');
+  line = line.replace(/\blog\.i\b/g, 'log.info');
+  line = line.replace(/\blog\.d\b/g, 'log.debug');
   // log"msg" → log "msg"
   line = line.replace(/\blog"/g, 'log "');
   line = line.replace(/\blog\.error"/g, 'log.error "');
   line = line.replace(/\blog\.warn"/g, 'log.warn "');
+  line = line.replace(/\blog\.info"/g, 'log.info "');
+  line = line.replace(/\blog\.debug"/g, 'log.debug "');
   // Await transforms
   line = transformAwait(line);
   return line;
@@ -117,6 +122,8 @@ export function preprocess(source) {
         out = 'ret.file ' + transformContent(rest.slice(3));
       } else if (rest.startsWith('.v ')) {
         out = 'ret.render ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.d ')) {
+        out = 'ret.download ' + transformContent(rest.slice(3));
       } else {
         out = rest ? 'ret ' + transformContent(rest) : 'ret';
       }
@@ -156,6 +163,10 @@ export function preprocess(source) {
     // * while
     else if (first === '*') {
       out = 'while ' + transformContent(line.slice(1).trim()) + ':';
+    }
+    // !!! ensure/finally (before !! and ! checks)
+    else if (first === '!' && second === '!' && (line[2] || '') === '!') {
+      out = 'ensure:';
     }
     // !! catch (before ! try check)
     else if (first === '!' && second === '!') {

@@ -145,7 +145,31 @@ try:
   data = await fetchData(url)
 fail e:
   log.error e.message
+ensure:
+  log "request completed"
 ```
+
+`ensure:` is NAIDE's `finally` — the block always runs, whether the `try` succeeds or fails. `fail` is optional:
+
+```python
+try:
+  conn = await openConnection()
+  ret await conn.query("SELECT 1")
+ensure:
+  conn.close()
+```
+
+### Type Checking
+
+```python
+if typeof data == "string":
+  log "is string"
+
+if err instanceof TypeError:
+  log "type error"
+```
+
+`typeof` returns the type as a string. `instanceof` checks if a value is an instance of a class/constructor.
 
 ### Classes
 
@@ -358,6 +382,21 @@ server app port 3000:
   mid logger "/api"        # apply to path only
 ```
 
+### Route-Level Middleware
+
+Apply middleware to specific routes with bracket syntax:
+
+```python
+server app port 3000:
+  get "/admin" [authCheck] (req, res):
+    ret {admin: true}
+
+  post "/api/data" [auth, logger, validator] (req, res):
+    ret req.body
+```
+
+Compiles to `app.get("/admin", authCheck, (req, res) => { ... })`.
+
 ### static — Serve Files
 
 ```python
@@ -386,13 +425,16 @@ Generates an OpenAPI 3.1 JSON spec from your schemas, served at the specified pa
 ### Response Helpers
 
 ```python
-ret {data: items}                 # JSON (default)
-ret.status 404 {error: "nope"}   # status code
-ret.redirect "/login"             # redirect
-ret.html "<h1>Hello</h1>"        # HTML
-ret.text "pong"                   # plain text
-ret.file "/path/to/file"         # send file
-ret.render "template" {data}     # render template (requires view)
+ret {data: items}                        # JSON (default)
+ret.status 404 {error: "nope"}          # status code
+ret.redirect "/login"                    # redirect
+ret.redirect 301 "/new-url"             # redirect with status
+ret.html "<h1>Hello</h1>"               # HTML
+ret.text "pong"                          # plain text
+ret.file "/path/to/file"                # send file
+ret.download "/path/to/file.zip"        # file download
+ret.download "/file.zip" "custom.zip"   # download with filename
+ret.render "template" {data}            # render template (requires view)
 ```
 
 ## Testing
@@ -513,11 +555,16 @@ server app port PORT:
   openapi "/docs"
 
   post "/api/auth/register" (req, res):
-    str hashed = hash(req.body.password)
-    user = UserStore.create({...req.body, password: hashed})
-    token = auth.sign({id: user.id})
-    jobs.add("welcome", {email: user.email})
-    ret {token, user}
+    try:
+      str hashed = hash(req.body.password)
+      user = UserStore.create({...req.body, password: hashed})
+      token = auth.sign({id: user.id})
+      jobs.add("welcome", {email: user.email})
+      ret {token, user}
+    fail e:
+      ret.status 500 {error: e.message}
+    ensure:
+      log.info "register attempt handled"
 
   post "/api/auth/login" (req, res):
     user = UserStore.where({email: req.body.email})[0]
@@ -527,6 +574,17 @@ server app port PORT:
       ret.status 401 {error: "Invalid credentials"}
     token = auth.sign({id: user.id})
     ret {token}
+
+  get "/admin" [authCheck] (req, res):
+    if typeof req.user == "undefined":
+      ret.status 401 {error: "not authenticated"}
+    ret {admin: true}
+
+  get "/old-page":
+    ret.redirect 301 "/new-page"
+
+  get "/download":
+    ret.download "/files/report.pdf" "report.pdf"
 
   ws "/chat":
     on "message" (data):
@@ -548,7 +606,7 @@ every "30m":
   log "cleanup"
 ```
 
-This generates a complete production API — auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, and event-driven hooks — from ~55 lines.
+This generates a complete production API — auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, route middleware, file downloads, redirects with status codes, type checking, error handling with ensure/finally, and event-driven hooks — from ~70 lines.
 
 ## NAIDE-X Syntax (.nx)
 
@@ -591,6 +649,7 @@ $app:3000                   -- server app port 3000:
 | `\|` | elif | `:` | else |
 | `@` | loop | `*` | while |
 | `!` | try | `!!` | catch |
+| `!!!` | ensure/finally | `>.d` | ret.download |
 | `$` | server | `^` | model |
 | `<` | import | `%` | match |
 | `f` | function | `~f` | async function |
@@ -603,7 +662,9 @@ $app:3000                   -- server app port 3000:
 
 Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 
-High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`.
+High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`.
+
+NAIDE-X log shorthands: `log.e` = error, `log.w` = warn, `log.i` = info, `log.d` = debug.
 
 ## Why NAIDE?
 

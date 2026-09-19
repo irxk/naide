@@ -108,6 +108,28 @@ fn.async safeFetch(str url) -> map:
   fail e:
     log.error e.message
     ret {ok: false, error: e.message}
+  ensure:
+    log "request completed"
+
+# try/ensure (finally) — fail ブロックなしでも使える
+fn.async withCleanup():
+  any conn = null
+  try:
+    conn = await openConnection()
+    ret await conn.query("SELECT 1")
+  ensure:
+    if conn:
+      conn.close()
+
+
+# ---- 型チェック ----
+# typeof: 型を文字列で返す
+if typeof data == "string":
+  log "data is a string"
+
+# instanceof: インスタンス判定
+if err instanceof TypeError:
+  log "type error occurred"
 
 
 # ---- パイプ演算子 ----
@@ -203,6 +225,13 @@ server app port PORT:
   # mid myMiddleware
   # mid myMiddleware "/api"
 
+  # ルートミドルウェア (ルートごとにミドルウェア適用)
+  get "/admin" [authCheck] (req, res):
+    ret {admin: true}
+
+  post "/api/secure" [auth, logger] (req, res):
+    ret req.body
+
   # ルートグループ
   group "/api/v1":
     get "/status":
@@ -286,13 +315,16 @@ queue jobs:
 
 
 # ---- レスポンスヘルパー ----
-# ret {data}                → JSON応答
-# ret.status 404 {error}    → ステータスコード付き
-# ret.redirect "/login"     → リダイレクト
-# ret.html "<h1>Hi</h1>"   → HTML応答
-# ret.text "pong"           → テキスト応答
-# ret.file "/path/to/file" → ファイル送信
-# ret.render "template" {data} → テンプレート描画
+# ret {data}                    → JSON応答
+# ret.status 404 {error}        → ステータスコード付き
+# ret.redirect "/login"         → リダイレクト
+# ret.redirect 301 "/new"       → ステータス付きリダイレクト
+# ret.html "<h1>Hi</h1>"       → HTML応答
+# ret.text "pong"               → テキスト応答
+# ret.file "/path/to/file"     → ファイル送信
+# ret.download "/file.zip"      → ファイルダウンロード
+# ret.download "/file" "name"   → 名前付きダウンロード
+# ret.render "template" {data}  → テンプレート描画
 
 
 # ---- 組み込み関数 (自動インポート) ----
@@ -324,6 +356,8 @@ watch User.create (event):
 log "info message"
 log.error "error message"
 log.warn "warning"
+log.info "info level"
+log.debug "debug level"
 
 
 # ---- 公開 (export) ----

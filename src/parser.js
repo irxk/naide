@@ -106,7 +106,8 @@ export class Parser {
       type === T.UPLOAD || type === T.SESSION || type === T.VIEW ||
       type === T.SSE || type === T.CACHE || type === T.PATCH || type === T.MID ||
       type === T.VALIDATE || type === T.TEST || type === T.ASSERT ||
-      type === T.QUEUE || type === T.JOB || type === T.OPENAPI;
+      type === T.QUEUE || type === T.JOB || type === T.OPENAPI ||
+      type === T.TYPEOF || type === T.INSTANCEOF || type === T.ENSURE;
   }
 
   expectPropertyName() {
@@ -371,6 +372,22 @@ export class Parser {
         }
         return new ASTNode('ReturnRender', { template, data });
       }
+      if (method === 'redirect') {
+        const first = this.parseExpression();
+        if (!this.at(T.NEWLINE) && !this.at(T.EOF) && !this.at(T.DEDENT)) {
+          const url = this.parseExpression();
+          return new ASTNode('ReturnRedirect', { statusCode: first, url });
+        }
+        return new ASTNode('ReturnMethod', { method: 'redirect', value: first });
+      }
+      if (method === 'download') {
+        const filePath = this.parseExpression();
+        if (!this.at(T.NEWLINE) && !this.at(T.EOF) && !this.at(T.DEDENT)) {
+          const filename = this.parseExpression();
+          return new ASTNode('ReturnDownload', { filePath, filename });
+        }
+        return new ASTNode('ReturnMethod', { method: 'download', value: filePath });
+      }
       const value = this.parseExpression();
       return new ASTNode('ReturnMethod', { method, value });
     }
@@ -378,9 +395,15 @@ export class Parser {
     return new ASTNode('Return', { value });
   }
 
+  expectIdentLike() {
+    const tok = this.advance();
+    if (this.isIdentLike(tok.type)) return tok.value;
+    throw this.error(`Expected identifier but got ${tok.type} ('${tok.value}')`, tok);
+  }
+
   parseTypedVariable() {
     const varType = this.advance().value;
-    const name = this.expect(T.IDENT).value;
+    const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
     return new ASTNode('TypedVar', { varType, name, value, isMut: false, isPublic: false });
@@ -393,7 +416,7 @@ export class Parser {
       node.isMut = true;
       return node;
     }
-    const name = this.expect(T.IDENT).value;
+    const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
     return new ASTNode('TypedVar', { varType: null, name, value, isMut: true });
@@ -520,7 +543,15 @@ export class Parser {
       catchBody = this.parseBlock();
     }
 
-    return new ASTNode('Try', { body, catchVar, catchBody });
+    this.skipNewlines();
+    let ensureBody = null;
+    if (this.at(T.ENSURE)) {
+      this.advance();
+      this.expect(T.COLON);
+      ensureBody = this.parseBlock();
+    }
+
+    return new ASTNode('Try', { body, catchVar, catchBody, ensureBody });
   }
 
   parseServer() {
@@ -600,6 +631,16 @@ export class Parser {
     const method = this.advance().value; // get/post/put/del
     const path = this.parseString();
 
+    let middleware = [];
+    if (this.at(T.LBRACKET)) {
+      this.advance();
+      while (!this.at(T.RBRACKET) && !this.at(T.EOF)) {
+        middleware.push(this.parseExpression());
+        this.match(T.COMMA);
+      }
+      this.expect(T.RBRACKET);
+    }
+
     let params = [];
     if (this.match(T.LPAREN)) {
       while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
@@ -617,7 +658,7 @@ export class Parser {
     this.expect(T.COLON);
     const body = this.parseBlock();
 
-    return new ASTNode('Route', { method, path, params, returnType, body });
+    return new ASTNode('Route', { method, path, middleware, params, returnType, body });
   }
 
   parseMiddleware() {
@@ -854,10 +895,14 @@ export class Parser {
 
   parseComparison() {
     let left = this.parseAddition();
-    while (this.atAny(T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE)) {
-      const op = this.advance().value;
+    while (this.atAny(T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE, T.INSTANCEOF)) {
+      const tok = this.advance();
       const right = this.parseAddition();
-      left = new ASTNode('Binary', { op: op === '==' ? '===' : op === '!=' ? '!==' : op, left, right });
+      if (tok.type === T.INSTANCEOF) {
+        left = new ASTNode('Binary', { op: 'instanceof', left, right });
+      } else {
+        left = new ASTNode('Binary', { op: tok.value === '==' ? '===' : tok.value === '!=' ? '!==' : tok.value, left, right });
+      }
     }
     return left;
   }
@@ -908,6 +953,10 @@ export class Parser {
     if (this.match(T.NEW)) {
       const expr = this.parsePostfix();
       return new ASTNode('New', { expr });
+    }
+    if (this.match(T.TYPEOF)) {
+      const expr = this.parseUnary();
+      return new ASTNode('TypeOf', { expr });
     }
     return this.parsePostfix();
   }
@@ -993,6 +1042,7 @@ export class Parser {
       case T.CACHE: case T.PATCH: case T.MID:
       case T.VALIDATE: case T.TEST: case T.ASSERT:
       case T.QUEUE: case T.JOB: case T.OPENAPI:
+      case T.TYPEOF: case T.INSTANCEOF: case T.ENSURE:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });

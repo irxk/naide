@@ -81,6 +81,9 @@ export const T = {
   QUEUE: 'QUEUE',
   JOB: 'JOB',
   OPENAPI: 'OPENAPI',
+  TYPEOF: 'TYPEOF',
+  INSTANCEOF: 'INSTANCEOF',
+  ENSURE: 'ENSURE',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -190,6 +193,9 @@ export const KEYWORDS = {
   'queue': T.QUEUE,
   'job': T.JOB,
   'openapi': T.OPENAPI,
+  'typeof': T.TYPEOF,
+  'instanceof': T.INSTANCEOF,
+  'ensure': T.ENSURE,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

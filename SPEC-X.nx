@@ -5,7 +5,7 @@
 -- ============================================
 -- Rule: first char of line = intent
 --   > return    ? if       | elif     : else
---   @ loop      * while    ! try      !! catch
+--   @ loop      * while    ! try      !! catch   !!! ensure
 --   $ server    ^ model    < import   % match   X patch
 --   f func      ~f async   + export
 --   s:i:n:b:l:m:a: typed vars
@@ -82,7 +82,7 @@ s:status="ok"
   "error": log "failed"
   _: log "unknown"
 
--- Try/catch: ! / !!var
+-- Try/catch/ensure: ! / !!var / !!!
 ~f safe(s:url)m
   !
     a:data=~fetch(url)
@@ -90,6 +90,14 @@ s:status="ok"
   !!e
     log.e"fail: {e.message}"
     >{ok:false,error:e.message}
+  !!!
+    log"request done"
+
+-- typeof / instanceof
+?typeof x=="string"
+  log"is string"
+?err instanceof TypeError
+  log"type error"
 
 -- Pipe: |> (same)
 l:result=[1,2,3,4,5]
@@ -144,6 +152,11 @@ $app:PORT
   sse "/events"
   upload "/api/upload" "avatar" (req,res):
     >{file:req.file.filename}
+  -- Route middleware: [mid1, mid2]
+  G"/admin"[authCheck](req,res)
+    >{admin:true}
+  P"/api/secure"[auth,logger](req,res)
+    >req.body
   group "/api/v1":
     G"/status"
       >{version:"1.0"}
@@ -183,6 +196,8 @@ $app:PORT
 -- >.h "<html>"  → HTML
 -- >.t "text"    → plain text
 -- >.f "/file"   → send file
+-- >.d "/file"   → download
+-- >.v "tmpl" {} → render template
 
 -- Built-in functions (auto-imported)
 -- uuid()                → UUID
@@ -224,10 +239,12 @@ watch User.create (event):
   >"exported"
 +s:VER="1.0.0"
 
--- Log: log, log.e, log.w
+-- Log: log, log.e, log.w, log.i, log.d
 log"info"
 log.e"error"
 log.w"warning"
+log.i"info level"
+log.d"debug level"
 
 -- Null safe: ?. and ?? (same)
 a:val=data?.nested?.value??"default"

@@ -571,6 +571,97 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes('app.get("/docs"'));
     assert.ok(js.includes('UserSchema'));
   });
+
+  it('compiles typeof operator', () => {
+    const js = transpile('if typeof x == "string":\n  log "is string"');
+    assert.ok(js.includes('typeof x'));
+    assert.ok(js.includes('=== "string"'));
+  });
+
+  it('compiles typeof in expression', () => {
+    const js = transpile('str t = typeof data');
+    assert.ok(js.includes('typeof data'));
+  });
+
+  it('compiles instanceof operator', () => {
+    const js = transpile('if err instanceof TypeError:\n  log "type error"');
+    assert.ok(js.includes('instanceof TypeError'));
+  });
+
+  it('compiles try/fail/ensure', () => {
+    const src = [
+      'try:', '  log "start"',
+      'fail e:', '  log e.message',
+      'ensure:', '  log "cleanup"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('try {'));
+    assert.ok(js.includes('catch (e)'));
+    assert.ok(js.includes('finally {'));
+    assert.ok(js.includes('console.log("cleanup")'));
+  });
+
+  it('compiles try/ensure without fail', () => {
+    const src = [
+      'try:', '  log "risky"',
+      'ensure:', '  log "always"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('try {'));
+    assert.ok(js.includes('finally {'));
+    assert.ok(!js.includes('catch'));
+  });
+
+  it('compiles route middleware', () => {
+    const src = [
+      'server app port 3000:',
+      '  get "/admin" [authCheck] (req, res):',
+      '    ret {admin: true}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('app.get("/admin", authCheck,'));
+  });
+
+  it('compiles route with multiple middleware', () => {
+    const src = [
+      'server app port 3000:',
+      '  post "/api/data" [auth, logger] (req, res):',
+      '    ret req.body',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('auth, logger,'));
+  });
+
+  it('compiles ret.redirect with status code', () => {
+    const src = [
+      'server app port 3000:',
+      '  get "/old":',
+      '    ret.redirect 301 "/new"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('res.redirect(301, "/new")'));
+  });
+
+  it('compiles ret.download', () => {
+    const src = [
+      'server app port 3000:',
+      '  get "/file":',
+      '    ret.download "/path/to/file.zip"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('res.download("/path/to/file.zip")'));
+  });
+
+  it('compiles ret.download with filename', () => {
+    const src = [
+      'server app port 3000:',
+      '  get "/file":',
+      '    ret.download "/path/to/file.zip" "custom.zip"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('res.download'));
+    assert.ok(js.includes('"custom.zip"'));
+  });
 });
 
 describe('NAIDE-X full pipeline', () => {
@@ -615,6 +706,27 @@ describe('NAIDE-X full pipeline', () => {
     const js = transpile(source, { mode: 'x' });
     assert.ok(js.includes('__render'));
     assert.ok(js.includes('"home"'));
+  });
+
+  it('compiles .nx log.i and log.d shorthands', () => {
+    const source = 'log.i"info msg"\nlog.d"debug msg"';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('console.info("info msg")'));
+    assert.ok(js.includes('console.debug("debug msg")'));
+  });
+
+  it('compiles .nx !!! ensure shorthand', () => {
+    const source = '!\n  log"start"\n!!e\n  log.e e.message\n!!!\n  log"cleanup"';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('try {'));
+    assert.ok(js.includes('catch (e)'));
+    assert.ok(js.includes('finally {'));
+  });
+
+  it('compiles .nx ret.download shorthand', () => {
+    const source = '$app:3000\n  G"/dl"\n    >.d "/file.zip"';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('res.download'));
   });
 });
 

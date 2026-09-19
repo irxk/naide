@@ -1,6 +1,6 @@
 {
   "name": "naidejs",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, WebSocket, and more — transpiles to Node.js. Standard mode (~40% fewer tokens) and X mode (~80% fewer tokens).",
   "main": "src/index.js",
   "exports": {
