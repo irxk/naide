@@ -36,6 +36,141 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// ── REPL ──
+if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
+  const { createInterface } = await import('readline');
+  const { transpile } = await import('../src/index.js');
+
+  console.log(`\n  NAIDE REPL v1.5.0 — type NAIDE code, see JavaScript output`);
+  console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: '>>> ',
+  });
+
+  let buffer = '';
+  let inBlock = false;
+  let evalMode = false;
+  const evalContext = {};
+
+  function processInput(code) {
+    try {
+      const js = transpile(code)
+        .split('\n')
+        .filter(l => !l.startsWith('import '))
+        .join('\n')
+        .trim();
+
+      if (!js) return;
+
+      if (evalMode) {
+        const evalCode = js.replace(/\bconst\b/g, 'let');
+        try {
+          const result = (new Function('ctx', `with(ctx){${evalCode}; return typeof __last !== 'undefined' ? __last : undefined}`))(evalContext);
+          if (result !== undefined) console.log(result);
+        } catch (e) {
+          try { (new Function('ctx', `with(ctx){${evalCode}}`))(evalContext); } catch (e2) { console.error(`  Error: ${e2.message}`); }
+        }
+      } else {
+        console.log(js);
+      }
+    } catch (e) {
+      console.error(`  ${e.message.split('\n')[0]}`);
+    }
+  }
+
+  rl.prompt();
+  rl.on('line', (line) => {
+    if (line.trim() === '.exit') { rl.close(); process.exit(0); }
+    if (line.trim() === '.eval') {
+      evalMode = !evalMode;
+      console.log(`  Eval mode: ${evalMode ? 'ON' : 'OFF'}`);
+      rl.prompt();
+      return;
+    }
+
+    if (inBlock) {
+      if (line.trim() === '' && buffer.trim()) {
+        processInput(buffer);
+        buffer = '';
+        inBlock = false;
+        rl.setPrompt('>>> ');
+      } else {
+        buffer += '\n' + line;
+        rl.prompt();
+        return;
+      }
+    } else if (line.trim().endsWith(':') && !line.trim().startsWith('#')) {
+      buffer = line;
+      inBlock = true;
+      rl.setPrompt('... ');
+    } else if (line.trim()) {
+      processInput(line);
+    }
+    rl.prompt();
+  });
+
+  rl.on('close', () => process.exit(0));
+
+  // Keep the process running
+  await new Promise(() => {});
+}
+
+// ── Format ──
+if (files[0] === 'fmt') {
+  const targets = files.slice(1);
+  if (targets.length === 0) {
+    console.log('  Usage: naide fmt <file.naide> [file2.naide ...]');
+    process.exit(0);
+  }
+
+  for (const file of targets) {
+    const filePath = resolve(file);
+    try {
+      const source = readFileSync(filePath, 'utf-8');
+      const lines = source.split('\n');
+      const result = [];
+      let prevEmpty = false;
+
+      for (const line of lines) {
+        const trimmed = line.trimEnd();
+        if (trimmed === '') {
+          if (!prevEmpty) result.push('');
+          prevEmpty = true;
+          continue;
+        }
+        prevEmpty = false;
+
+        const indent = line.match(/^(\s*)/)[1];
+        const content = line.trimStart();
+        const level = Math.round(indent.length / 2);
+        let formatted = '  '.repeat(level) + content;
+
+        // Remove trailing whitespace
+        formatted = formatted.trimEnd();
+
+        result.push(formatted);
+      }
+
+      // Remove trailing empty lines
+      while (result.length > 0 && result[result.length - 1] === '') result.pop();
+      const formatted = result.join('\n') + '\n';
+
+      if (formatted !== source) {
+        writeFileSync(filePath, formatted, 'utf-8');
+        console.log(`  formatted: ${file}`);
+      } else {
+        console.log(`  unchanged: ${file}`);
+      }
+    } catch (e) {
+      console.error(`  Error: ${file} — ${e.message}`);
+    }
+  }
+  process.exit(0);
+}
+
 if (files[0] === 'init') {
   const dir = files[1] ? resolve(files[1]) : process.cwd();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -131,17 +266,20 @@ if (files[0] === 'build') {
   process.exit(errors > 0 ? 1 : 0);
 }
 
-if (flags.help || files.length === 0) {
+if (flags.help) {
   console.log(`
   NAIDE - Node AI Development Environment
   A language designed for AI-speed code generation
 
   Usage:
+    naide                        Start interactive REPL
     naide <file.naide>           Run a NAIDE file
     naide <file.nx>              Run a NAIDE-X file (auto-detected)
     naide init [dir]             Create a new NAIDE project
     naide build [dir] [outdir]   Transpile all files to JavaScript
-    naide --emit <file.nx>       Output generated JavaScript
+    naide repl                   Start interactive REPL
+    naide fmt <files...>         Format NAIDE files
+    naide --emit <file>          Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
     naide -x <file.naide>        Force NAIDE-X mode
     naide -w <file.naide>        Watch mode (auto-restart on changes)

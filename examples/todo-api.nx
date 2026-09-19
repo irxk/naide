@@ -1,0 +1,31 @@
+-- Todo API in NAIDE-X (~80% fewer tokens)
+-- Run: naide examples/todo-api.nx
+
+db "data/"
+
+env:
+  PORT int default(3000)
+
+schema Todo:
+  id auto
+  title str required min(1) max(200)
+  done bool default(false)
+  created timestamp auto
+
+$app:PORT
+  cors "*"
+  cookie
+  cache "/api/todos" "30s"
+  validate "/api/todos" Todo
+  crud "/api/todos" Todo
+  openapi "/docs"
+  G"/"
+    >.h "<h1>Todo API</h1><p>GET /api/todos | /docs</p>"
+  G"/api/stats"(req,res)
+    l:all=TodoStore.all()
+    i:total=all.length
+    i:done=all.filter((t)=>t.done).length
+    >{total,done,pending:total-done}
+  error (err,req,res):
+    log.e err.message
+    >.s 500 {error:err.message}

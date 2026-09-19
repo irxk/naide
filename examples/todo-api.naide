@@ -1,0 +1,34 @@
+# Todo API — complete CRUD app in NAIDE
+# Run: naide examples/todo-api.naide
+
+db "data/"
+
+env:
+  PORT int default(3000)
+
+schema Todo:
+  id auto
+  title str required min(1) max(200)
+  done bool default(false)
+  created timestamp auto
+
+server app port PORT:
+  cors "*"
+  cookie
+  cache "/api/todos" "30s"
+  validate "/api/todos" Todo
+  crud "/api/todos" Todo
+  openapi "/docs"
+
+  get "/":
+    ret.html "<h1>Todo API</h1><p>Try: GET <a href='/api/todos'>/api/todos</a> | <a href='/docs'>/docs</a></p>"
+
+  get "/api/stats":
+    list all = TodoStore.all()
+    int total = all.length
+    int completed = all.filter((t) => t.done).length
+    ret {total, completed, pending: total - completed}
+
+  error (err, req, res):
+    log.error err.message
+    ret.status 500 {error: err.message}

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAIDE Playground</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
+  header { padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header h1 span { color: #58a6ff; }
+  .mode-toggle { display: flex; gap: 0; }
+  .mode-toggle button { padding: 6px 14px; border: 1px solid #30363d; background: #0d1117; color: #8b949e; cursor: pointer; font-size: 13px; }
+  .mode-toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .mode-toggle button:last-child { border-radius: 0 6px 6px 0; }
+  .mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+  .container { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 53px); }
+  .panel { display: flex; flex-direction: column; }
+  .panel-header { padding: 8px 16px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 12px; color: #8b949e; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+  .panel-header .stats { font-weight: 400; }
+  textarea { flex: 1; padding: 16px; background: #0d1117; color: #c9d1d9; border: none; resize: none; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; tab-size: 2; outline: none; }
+  textarea::placeholder { color: #484f58; }
+  .divider { width: 1px; background: #30363d; }
+  #output { background: #0d1117; color: #7ee787; }
+  #output.error { color: #f85149; }
+  .examples { margin-left: auto; }
+  .examples select { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>NAIDE <span>Playground</span></h1>
+  <div class="mode-toggle">
+    <button class="active" onclick="setMode('naide')">NAIDE</button>
+    <button onclick="setMode('x')">NAIDE-X</button>
+  </div>
+  <div class="examples">
+    <select onchange="loadExample(this.value)">
+      <option value="">Load example...</option>
+      <option value="hello">Hello World</option>
+      <option value="server">Server</option>
+      <option value="crud">CRUD API</option>
+      <option value="auth">Auth + JWT</option>
+      <option value="full">Full App</option>
+    </select>
+  </div>
+</header>
+<div class="container">
+  <div class="panel">
+    <div class="panel-header">
+      <span id="mode-label">NAIDE</span>
+      <span class="stats" id="input-stats"></span>
+    </div>
+    <textarea id="input" placeholder="Type NAIDE code here..." spellcheck="false"></textarea>
+  </div>
+  <div class="divider"></div>
+  <div class="panel">
+    <div class="panel-header">
+      <span>JavaScript Output</span>
+      <span class="stats" id="output-stats"></span>
+    </div>
+    <textarea id="output" readonly></textarea>
+  </div>
+</div>
+<script type="module">
+import { transpile } from '../src/index.js';
+
+let mode = 'naide';
+const input = document.getElementById('input');
+const output = document.getElementById('output');
+const inputStats = document.getElementById('input-stats');
+const outputStats = document.getElementById('output-stats');
+const modeLabel = document.getElementById('mode-label');
+
+const examples = {
+  hello: {
+    naide: `str name = "World"\n\nfn greet(str who) -> str:\n  ret "Hello, {who}!"\n\nlog greet(name)`,
+    x: `s:name="World"\n\nf greet(s:who)s\n  >"Hello, {who}!"\n\nlog greet(name)`
+  },
+  server: {
+    naide: `server app port 3000:\n  cors "*"\n\n  get "/":\n    ret {message: "Hello from NAIDE"}\n\n  get "/health":\n    ret {status: "ok"}`,
+    x: `$app:3000\n  cors "*"\n  G"/"\n    >{message:"Hello from NAIDE"}\n  G"/health"\n    >{status:"ok"}`
+  },
+  crud: {
+    naide: `db "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\nserver app port 3000:\n  cors "*"\n  crud "/api/todos" Todo\n\n  get "/":\n    ret.html "<h1>Todo API</h1>"`,
+    x: `db "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\n$app:3000\n  cors "*"\n  crud "/api/todos" Todo\n  G"/"\n    >.h "<h1>Todo API</h1>"`
+  },
+  auth: {
+    naide: `server app port 3000:\n  auth "my-secret":\n    protect "/api/*"\n    public "/api/auth/*"\n\n  post "/api/auth/login" (req, res):\n    token = auth.sign({id: 1, role: "admin"})\n    ret {token}\n\n  get "/api/profile" (req, res):\n    ret {user: req.user}`,
+    x: `$app:3000\n  auth "my-secret":\n    protect "/api/*"\n    public "/api/auth/*"\n  P"/api/auth/login"(req,res)\n    token=auth.sign({id:1,role:"admin"})\n    >{token}\n  G"/api/profile"(req,res)\n    >{user:req.user}`
+  },
+  full: {
+    naide: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\nserver app port PORT:\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n\n  post "/api/auth/register" (req, res):\n    str hashed = hash(req.body.password)\n    user = UserStore.create({...req.body, password: hashed})\n    token = auth.sign({id: user.id})\n    ret {token, user}\n\n  get "/":\n    ret.html "<h1>API</h1>"`,
+    x: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\n$app:PORT\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n  P"/api/auth/register"(req,res)\n    s:hashed=hash(req.body.password)\n    user=UserStore.create({...req.body,password:hashed})\n    token=auth.sign({id:user.id})\n    >{token,user}\n  G"/"\n    >.h "<h1>API</h1>"`
+  }
+};
+
+function countTokens(code) {
+  return code.trim().split(/[\s]+/).filter(t => t.length > 0).length;
+}
+
+function update() {
+  const code = input.value;
+  const tokens = countTokens(code);
+  const lines = code.split('\n').filter(l => l.trim()).length;
+  inputStats.textContent = `${tokens} tokens, ${lines} lines`;
+
+  if (!code.trim()) {
+    output.value = '';
+    output.classList.remove('error');
+    outputStats.textContent = '';
+    return;
+  }
+
+  try {
+    const js = transpile(code, { mode });
+    output.value = js;
+    output.classList.remove('error');
+    const jsTokens = countTokens(js);
+    const jsLines = js.split('\n').filter(l => l.trim()).length;
+    const saving = jsTokens > 0 ? Math.round((1 - tokens / jsTokens) * 100) : 0;
+    outputStats.textContent = `${jsTokens} tokens, ${jsLines} lines (${saving > 0 ? '-' : '+'}${Math.abs(saving)}% tokens)`;
+  } catch (e) {
+    output.value = e.message;
+    output.classList.add('error');
+    outputStats.textContent = 'Error';
+  }
+}
+
+window.setMode = function(m) {
+  mode = m;
+  modeLabel.textContent = m === 'x' ? 'NAIDE-X' : 'NAIDE';
+  document.querySelectorAll('.mode-toggle button').forEach((btn, i) => {
+    btn.classList.toggle('active', (i === 0 && m === 'naide') || (i === 1 && m === 'x'));
+  });
+  update();
+};
+
+window.loadExample = function(name) {
+  if (!name || !examples[name]) return;
+  input.value = examples[name][mode];
+  update();
+};
+
+input.addEventListener('input', update);
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = input.selectionStart;
+    input.value = input.value.substring(0, start) + '  ' + input.value.substring(input.selectionEnd);
+    input.selectionStart = input.selectionEnd = start + 2;
+    update();
+  }
+});
+
+// Load hello example
+input.value = examples.hello.naide;
+update();
+</script>
+</body>
+</html>
