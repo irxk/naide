@@ -42,14 +42,54 @@ naide app.naide
 
 ```bash
 naide <file>                  # Run a .naide or .nx file
+naide                         # Start interactive REPL
+naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
 naide build [dir] [outdir]    # Transpile all files to JavaScript
+naide fmt <files...>          # Format NAIDE files
 naide -w <file>               # Watch mode (auto-restart on changes)
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
 naide --mid <file.nx>         # Show intermediate NAIDE v1 (debug X mode)
 naide --ast <file>            # Print AST
 naide --tokens <file>         # Print token stream
+```
+
+### REPL
+
+```
+$ naide
+NAIDE REPL v1.5.0 — type NAIDE code, see JavaScript output
+Type .exit to quit, .eval to toggle eval mode
+
+>>> str name = "hello"
+const name = "hello";
+
+>>> fn add(int a, int b) -> int:
+...   ret a + b
+...
+function add(a, b) {
+  return (a + b);
+}
+```
+
+Type `.eval` to switch to evaluation mode (runs the code instead of showing JS).
+
+### Playground
+
+Open `playground/index.html` in a browser (via a local server) for a live in-browser transpiler with examples and token count comparison.
+
+### Benchmark
+
+```bash
+node benchmark/compare.js
+```
+
+```
+  Language     Tokens    Chars    Lines    Savings
+  JavaScript      330     2590     78    —
+  NAIDE            66      517     19    -80%
+  NAIDE-X          39      435     19    -88%
 ```
 
 ## Language Reference
