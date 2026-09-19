@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch } from 'fs';
 import { resolve, basename, extname } from 'path';
 import { compile } from '../src/index.js';
+import { spawn } from 'child_process';
 
 const args = process.argv.slice(2);
 
@@ -15,6 +16,7 @@ const flags = {
   help: false,
   mode: null,
   mid: false,
+  watch: false,
 };
 
 const files = [];
@@ -29,6 +31,7 @@ for (let i = 0; i < args.length; i++) {
     case '--help': case '-h': flags.help = true; break;
     case '--x': case '-x': flags.mode = 'x'; break;
     case '--mid': flags.mid = true; flags.run = false; break;
+    case '--watch': case '-w': flags.watch = true; break;
     default: files.push(arg);
   }
 }
@@ -44,6 +47,7 @@ if (flags.help || files.length === 0) {
     naide --emit <file.nx>       Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
     naide -x <file.naide>        Force NAIDE-X mode
+    naide -w <file.naide>        Watch mode (auto-restart on changes)
 
   Modes:
     .naide  Standard NAIDE (~40% fewer tokens than JS)
@@ -53,6 +57,7 @@ if (flags.help || files.length === 0) {
     -e, --emit     Print generated JavaScript
     -o, --output   Write generated JavaScript to file
     -x             Force NAIDE-X mode
+    -w, --watch    Watch mode: restart on file changes
     --mid          Show intermediate NAIDE v1 (X mode only)
     --ast          Print AST
     --tokens       Print tokens
@@ -84,6 +89,55 @@ for (const file of files) {
     }
 
     const runtimePath = flags.emit || flags.output ? 'naidejs/runtime' : runtimeUrl;
+
+    if (flags.watch) {
+      const tempFile = resolve(`.naide_tmp_${basename(file, ext)}.mjs`);
+      let child = null;
+
+      function start() {
+        try {
+          source = readFileSync(filePath, 'utf-8');
+          const result = compile(source, { mode, runtimePath });
+          writeFileSync(tempFile, result.js, 'utf-8');
+          child = spawn(process.execPath, [tempFile], { stdio: 'inherit' });
+          child.on('error', (err) => console.error(`[NAIDE] Process error: ${err.message}`));
+          child.on('exit', (code) => {
+            if (code !== null && code !== 0) console.log(`[NAIDE] Process exited with code ${code}`);
+          });
+        } catch (err) {
+          console.error(`\n${err.message}`);
+        }
+      }
+
+      function restart() {
+        console.log('\n[NAIDE] Change detected. Restarting...');
+        if (child) { child.kill(); child = null; }
+        start();
+      }
+
+      console.log(`[NAIDE] Watch mode — ${file}`);
+      start();
+
+      let debounce = null;
+      fsWatch(filePath, () => {
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(restart, 200);
+      });
+
+      process.on('SIGINT', () => {
+        if (child) child.kill();
+        try { unlinkSync(tempFile); } catch {}
+        process.exit(0);
+      });
+
+      process.on('SIGTERM', () => {
+        if (child) child.kill();
+        process.exit(0);
+      });
+
+      continue;
+    }
+
     const result = compile(source, { mode, runtimePath });
 
     if (flags.tokens) {

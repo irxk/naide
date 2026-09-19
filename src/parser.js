@@ -14,14 +14,11 @@ export class Parser {
   }
 
   preprocessTokens(tokens) {
-    // Remove INDENT/DEDENT pairs around pipe continuation lines
-    // Pattern: NEWLINE INDENT PIPE -> NEWLINE PIPE (and remove matching DEDENT)
     const result = [...tokens];
     const indentsToRemove = new Set();
 
     for (let i = 0; i < result.length; i++) {
       if (result[i].type !== T.INDENT) continue;
-      // Look forward past any newlines for PIPE
       let j = i + 1;
       while (j < result.length && result[j].type === T.NEWLINE) j++;
       if (j < result.length && result[j].type === T.PIPE) {
@@ -31,7 +28,6 @@ export class Parser {
 
     if (indentsToRemove.size === 0) return result;
 
-    // For each INDENT to remove, find matching DEDENT
     const dedentsToRemove = new Set();
     for (const idx of indentsToRemove) {
       let depth = 0;
@@ -94,7 +90,9 @@ export class Parser {
         tok.type === T.FROM || tok.type === T.AS || tok.type === T.SELF ||
         tok.type === T.SCHEMA || tok.type === T.CRUD || tok.type === T.AUTH ||
         tok.type === T.CORS || tok.type === T.LIMIT || tok.type === T.ENV ||
-        tok.type === T.EVERY || tok.type === T.WATCH) {
+        tok.type === T.EVERY || tok.type === T.WATCH ||
+        tok.type === T.STATIC || tok.type === T.WS ||
+        tok.type === T.GROUP || tok.type === T.COOKIE) {
       return tok.value;
     }
     throw this.error(`Expected property name but got ${tok.type} ('${tok.value}')`, tok);
@@ -148,7 +146,9 @@ export class Parser {
       case T.BREAK: this.advance(); return new ASTNode('Break');
       case T.CONTINUE: this.advance(); return new ASTNode('Continue');
       case T.MUT: return this.parseMutVariable();
-      case T.DB: return this.parseDbStatement();
+      case T.DB:
+        if (this.peek(1).type === T.DOT) return this.parseDbStatement();
+        return this.parseDbDir();
       case T.AWAIT: return this.parseAwaitStatement();
       case T.AWAIT_ALL: return this.parseAwaitAll();
       case T.SCHEMA: return this.parseSchema();
@@ -173,6 +173,19 @@ export class Parser {
       case T.WATCH:
         if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
         return this.parseWatch();
+      case T.STATIC:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseStatic();
+      case T.WS:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseWs();
+      case T.GROUP:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseGroup();
+      case T.COOKIE:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        this.advance();
+        return new ASTNode('CookieDecl');
       default:
         if (TYPE_TOKENS.has(tok.type)) {
           return this.parseTypedVariable();
@@ -181,14 +194,10 @@ export class Parser {
     }
   }
 
-  // use express
-  // use express from "express"
-  // use {readFile, writeFile} from "fs/promises"
   parseUse() {
     this.advance(); // use
 
     if (this.at(T.LBRACE)) {
-      // use {a, b} from "module"
       this.advance();
       const names = [];
       while (!this.at(T.RBRACE) && !this.at(T.EOF)) {
@@ -226,8 +235,6 @@ export class Parser {
     return tok.value;
   }
 
-  // fn name(params) -> returnType:
-  //   body
   parseFunction(isAsync, isPublic) {
     this.advance(); // fn or fn.async
     const name = this.expect(T.IDENT).value;
@@ -300,7 +307,6 @@ export class Parser {
     if (this.at(T.FN_ASYNC)) return this.parseFunction(true, true);
     if (this.at(T.MODEL)) return this.parseModel(true);
 
-    // pub variable
     if (TYPE_TOKENS.has(this.peek().type)) {
       const node = this.parseTypedVariable();
       node.isPublic = true;
@@ -310,24 +316,25 @@ export class Parser {
     throw this.error('Expected fn, model, or type after pub');
   }
 
-  // ret expression
   parseReturn() {
     this.advance(); // ret
     if (this.at(T.NEWLINE) || this.at(T.EOF) || this.at(T.DEDENT)) {
       return new ASTNode('Return', { value: null });
     }
-    // ret.status 200 {...}
     if (this.match(T.DOT)) {
       const method = this.expect(T.IDENT).value;
-      const statusCode = this.parseExpression();
-      const body = this.parseExpression();
-      return new ASTNode('ReturnStatus', { method, statusCode, body });
+      if (method === 'status') {
+        const statusCode = this.parseExpression();
+        const body = this.parseExpression();
+        return new ASTNode('ReturnStatus', { method, statusCode, body });
+      }
+      const value = this.parseExpression();
+      return new ASTNode('ReturnMethod', { method, value });
     }
     const value = this.parseExpression();
     return new ASTNode('Return', { value });
   }
 
-  // str name = "hello"
   parseTypedVariable() {
     const varType = this.advance().value;
     const name = this.expect(T.IDENT).value;
@@ -336,7 +343,6 @@ export class Parser {
     return new ASTNode('TypedVar', { varType, name, value, isMut: false, isPublic: false });
   }
 
-  // mut int counter = 0
   parseMutVariable() {
     this.advance(); // mut
     if (TYPE_TOKENS.has(this.peek().type)) {
@@ -344,19 +350,12 @@ export class Parser {
       node.isMut = true;
       return node;
     }
-    // mut name = value (no type)
     const name = this.expect(T.IDENT).value;
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
     return new ASTNode('TypedVar', { varType: null, name, value, isMut: true });
   }
 
-  // if condition:
-  //   body
-  // elif condition:
-  //   body
-  // else:
-  //   body
   parseIf() {
     this.advance(); // if
     const condition = this.parseExpression();
@@ -384,15 +383,12 @@ export class Parser {
     return new ASTNode('If', { condition, body, elifs, elseBody });
   }
 
-  // each item in collection:
-  //   body
   parseEach() {
     this.advance(); // each
     let key = null;
     const valueName = this.expect(T.IDENT).value;
     if (this.match(T.COMMA)) {
       key = valueName;
-      // The next ident is actually the value
       const val = this.expect(T.IDENT).value;
       this.expect(T.IN);
       const collection = this.parseExpression();
@@ -407,8 +403,6 @@ export class Parser {
     return new ASTNode('Each', { key: null, value: valueName, collection, body });
   }
 
-  // for i in 0..10:
-  //   body
   parseFor() {
     this.advance(); // for
     const varName = this.expect(T.IDENT).value;
@@ -421,8 +415,6 @@ export class Parser {
     return new ASTNode('For', { varName, start, end, body });
   }
 
-  // while condition:
-  //   body
   parseWhile() {
     this.advance(); // while
     const condition = this.parseExpression();
@@ -431,9 +423,6 @@ export class Parser {
     return new ASTNode('While', { condition, body });
   }
 
-  // match value:
-  //   pattern: body
-  //   _: default
   parseMatch() {
     this.advance(); // match
     const value = this.parseExpression();
@@ -471,10 +460,6 @@ export class Parser {
     return new ASTNode('Match', { value, cases });
   }
 
-  // try:
-  //   body
-  // fail e:
-  //   handler
   parseTry() {
     this.advance(); // try
     this.expect(T.COLON);
@@ -495,14 +480,10 @@ export class Parser {
     return new ASTNode('Try', { body, catchVar, catchBody });
   }
 
-  // server app port 3000:
-  //   get "/path" -> type:
-  //     body
   parseServer() {
     this.advance(); // server
     const name = this.expect(T.IDENT).value;
 
-    let portKw = null;
     let port = null;
     if (this.at(T.IDENT) && this.peek().value === 'port') {
       this.advance();
@@ -530,6 +511,17 @@ export class Parser {
         routes.push(this.parseCors());
       } else if (this.at(T.LIMIT)) {
         routes.push(this.parseLimit());
+      } else if (this.at(T.STATIC)) {
+        routes.push(this.parseStatic());
+      } else if (this.at(T.WS)) {
+        routes.push(this.parseWs());
+      } else if (this.at(T.GROUP)) {
+        routes.push(this.parseGroup());
+      } else if (this.at(T.COOKIE)) {
+        this.advance();
+        routes.push(new ASTNode('CookieDecl'));
+      } else if (this.at(T.IDENT) && this.peek().value === 'error') {
+        routes.push(this.parseErrorHandler());
       } else {
         routes.push(this.parseStatement());
       }
@@ -579,11 +571,6 @@ export class Parser {
     return new ASTNode('Middleware', { name, params, body });
   }
 
-  // model User:
-  //   str name
-  //   int age
-  //   fn greet() -> str:
-  //     ret "hi"
   parseModel(isPublic = false) {
     this.advance(); // model
     const name = this.expect(T.IDENT).value;
@@ -615,7 +602,6 @@ export class Parser {
         }
         fields.push({ name: fieldName, type: fieldType, defaultValue });
       } else {
-        // skip unknown
         this.advance();
       }
       this.skipNewlines();
@@ -625,8 +611,6 @@ export class Parser {
     return new ASTNode('Model', { name, parent, fields, methods, isPublic });
   }
 
-  // on event:
-  //   body
   parseOn() {
     this.advance(); // on
     const event = this.parseExpression();
@@ -635,8 +619,6 @@ export class Parser {
     return new ASTNode('On', { event, body });
   }
 
-  // log "message"
-  // log.error "message"
   parseLog() {
     this.advance(); // log
     let level = 'log';
@@ -664,17 +646,20 @@ export class Parser {
       const connectionString = this.parseExpression();
       return new ASTNode('DbConnect', { connectionString });
     }
-    // db.query, db.find, etc -> treat as expression
-    this.pos -= 3; // rewind to parse as expression
+    this.pos -= 3;
     return this.parseExpressionStatement();
+  }
+
+  parseDbDir() {
+    this.advance(); // db
+    const path = this.parseString();
+    return new ASTNode('DbDir', { path });
   }
 
   parseAwaitStatement() {
-    // could be await expression or standalone await call
     return this.parseExpressionStatement();
   }
 
-  // [a, b] = await.all [expr1, expr2]
   parseAwaitAll() {
     this.advance(); // await.all
     const exprs = [];
@@ -696,7 +681,6 @@ export class Parser {
   parseExpressionStatement() {
     const expr = this.parseExpression();
 
-    // Check for assignment: expr = value
     if (this.match(T.ASSIGN)) {
       const value = this.parseExpression();
       return new ASTNode('Assignment', { target: expr, value });
@@ -713,7 +697,6 @@ export class Parser {
     return new ASTNode('ExprStatement', { expression: expr });
   }
 
-  // Expression parsing with precedence climbing
   parseExpression() {
     return this.parsePipe();
   }
@@ -730,14 +713,13 @@ export class Parser {
 
   matchPipeAcrossLines() {
     if (this.match(T.PIPE)) return true;
-    // Lookahead across newlines for pipe (INDENT/DEDENT already preprocessed)
     let scanPos = this.pos;
     while (scanPos < this.tokens.length && this.tokens[scanPos].type === T.NEWLINE) {
       scanPos++;
     }
     if (scanPos < this.tokens.length && this.tokens[scanPos].type === T.PIPE) {
       while (this.at(T.NEWLINE)) this.advance();
-      this.advance(); // consume PIPE
+      this.advance();
       return true;
     }
     return false;
@@ -745,12 +727,9 @@ export class Parser {
 
   parseTernary() {
     let expr = this.parseNullish();
-    // inline if: value = if cond then a else b
     if (this.at(T.IF)) {
-      // Only treat as ternary if we're in an expression context
-      // Lookahead: if ... then ... else
       const savedPos = this.pos;
-      this.advance(); // if
+      this.advance();
       const condition = this.parseNullish();
       if (this.match(T.THEN)) {
         const consequent = this.parseNullish();
@@ -758,7 +737,6 @@ export class Parser {
         const alternate = this.parseNullish();
         return new ASTNode('Ternary', { condition, consequent, alternate });
       }
-      // Not a ternary, restore
       this.pos = savedPos;
     }
     return expr;
@@ -922,12 +900,12 @@ export class Parser {
       case T.TYPE_STR: case T.TYPE_INT: case T.TYPE_NUM:
       case T.TYPE_BOOL: case T.TYPE_LIST: case T.TYPE_MAP:
       case T.TYPE_ANY: case T.TYPE_JSON: case T.TYPE_VOID:
-        // In expression context, type keywords act as identifiers (e.g., arr.map(), JSON.parse())
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
 
       case T.SCHEMA: case T.CRUD: case T.AUTH: case T.CORS:
       case T.LIMIT: case T.ENV: case T.EVERY: case T.WATCH:
+      case T.STATIC: case T.WS: case T.GROUP: case T.COOKIE:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
 
@@ -1002,11 +980,9 @@ export class Parser {
   }
 
   parseGroupOrArrow() {
-    // Check if this is an arrow function: (params) => body
     const savedPos = this.pos;
     this.advance(); // (
 
-    // Try to parse as arrow function params
     let isArrow = false;
     let depth = 1;
     let scanPos = this.pos;
@@ -1036,7 +1012,6 @@ export class Parser {
       return new ASTNode('ArrowFn', { params, body });
     }
 
-    // Regular grouping
     this.pos = savedPos;
     this.advance(); // (
     const expr = this.parseExpression();
@@ -1114,10 +1089,8 @@ export class Parser {
     return new ASTNode('Lambda', { params, returnType, body, isAsync });
   }
 
-  // schema User:
-  //   id     auto
-  //   name   str required min(2) max(50)
-  //   email  str required email unique
+  // ===== High-level feature parsers =====
+
   parseSchema() {
     this.advance(); // schema
     const name = this.expect(T.IDENT).value;
@@ -1184,7 +1157,6 @@ export class Parser {
     return { name, type: fieldType, enumValues, modifiers };
   }
 
-  // crud "/api/users" User
   parseCrud() {
     this.advance(); // crud
     const path = this.parseString();
@@ -1192,9 +1164,6 @@ export class Parser {
     return new ASTNode('CrudDecl', { path, schemaName });
   }
 
-  // auth SECRET:
-  //   protect "/api/*"
-  //   public "/api/auth/*"
   parseAuth() {
     this.advance(); // auth
     const secret = this.parseExpression();
@@ -1224,15 +1193,12 @@ export class Parser {
     return new ASTNode('AuthDecl', { secret, protectedPaths, publicPaths });
   }
 
-  // cors "*"
-  // cors ["origin1", "origin2"]
   parseCors() {
     this.advance(); // cors
     const origins = this.parseExpression();
     return new ASTNode('CorsDecl', { origins });
   }
 
-  // limit "/api/*" 100 "1m"
   parseLimit() {
     this.advance(); // limit
     const path = this.parseString();
@@ -1241,9 +1207,6 @@ export class Parser {
     return new ASTNode('LimitDecl', { path, max, window });
   }
 
-  // env:
-  //   PORT int default(3000)
-  //   JWT_SECRET str required
   parseEnv() {
     this.advance(); // env
     this.expect(T.COLON);
@@ -1296,8 +1259,6 @@ export class Parser {
     return { name, type: fieldType, modifiers };
   }
 
-  // every "5m":
-  //   log "tick"
   parseEvery() {
     this.advance(); // every
     const interval = this.parseExpression();
@@ -1306,8 +1267,6 @@ export class Parser {
     return new ASTNode('EveryDecl', { interval, body });
   }
 
-  // watch User.create (event):
-  //   log event
   parseWatch() {
     this.advance(); // watch
     let eventName = this.expect(T.IDENT).value;
@@ -1325,5 +1284,99 @@ export class Parser {
     this.expect(T.COLON);
     const body = this.parseBlock();
     return new ASTNode('WatchDecl', { eventName, params, body });
+  }
+
+  // static "/public"
+  parseStatic() {
+    this.advance(); // static
+    const path = this.parseString();
+    return new ASTNode('StaticDecl', { path });
+  }
+
+  // ws "/chat":
+  //   on "message" (data):
+  //     broadcast(data)
+  //   on "connect":
+  //     send({type: "welcome"})
+  parseWs() {
+    this.advance(); // ws
+    const path = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+
+    const events = [];
+    this.skipNewlines();
+
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.ON)) {
+        this.advance(); // on
+        const eventName = this.parseString();
+        let params = [];
+        if (this.match(T.LPAREN)) {
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.expect(T.IDENT).value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        events.push({ name: eventName, params, body });
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+
+    return new ASTNode('WsDecl', { path, events });
+  }
+
+  parseGroup() {
+    this.advance(); // group
+    const prefix = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+
+    const routes = [];
+    this.skipNewlines();
+
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.atAny(T.GET, T.POST, T.PUT, T.DEL)) {
+        routes.push(this.parseRoute());
+      } else if (this.at(T.MID)) {
+        routes.push(this.parseMiddleware());
+      } else if (this.at(T.CRUD)) {
+        routes.push(this.parseCrud());
+      } else if (this.at(T.AUTH)) {
+        routes.push(this.parseAuth());
+      } else if (this.at(T.GROUP)) {
+        routes.push(this.parseGroup());
+      } else {
+        routes.push(this.parseStatement());
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+
+    return new ASTNode('GroupDecl', { prefix, routes });
+  }
+
+  parseErrorHandler() {
+    this.advance(); // error (ident)
+    let params = ['err', 'req', 'res'];
+    if (this.match(T.LPAREN)) {
+      params = [];
+      while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+        params.push(this.expect(T.IDENT).value);
+        this.match(T.COMMA);
+      }
+      this.expect(T.RPAREN);
+    }
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('ErrorHandler', { params, body });
   }
 }

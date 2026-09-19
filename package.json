@@ -1,7 +1,7 @@
 {
   "name": "naidejs",
-  "version": "1.1.0",
-  "description": "NAIDE - Node AI Development Environment. A language optimized for AI code generation that transpiles to Node.js. Standard mode (~40% fewer tokens) and X mode (~80% fewer tokens).",
+  "version": "1.2.0",
+  "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, WebSocket, and more — transpiles to Node.js. Standard mode (~40% fewer tokens) and X mode (~80% fewer tokens).",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -35,7 +35,11 @@
     "claude",
     "chatgpt",
     "naide",
-    "dsl"
+    "dsl",
+    "express",
+    "api",
+    "backend",
+    "server"
   ],
   "author": "pirikari.sena@gmail.com",
   "license": "MIT",

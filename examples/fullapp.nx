@@ -1,4 +1,6 @@
--- Full NAIDE-X app with high-level features
+-- Full NAIDE-X app with all features
+
+db "data/"
 
 env:
   PORT int default(3000)
@@ -8,6 +10,7 @@ schema User:
   id auto
   name str required min(2) max(50)
   email str required email
+  password str required
   role str default("user")
 
 schema Todo:
@@ -18,17 +21,51 @@ schema Todo:
 
 $app:PORT
   cors "*"
+  cookie
   auth JWT_SECRET:
     protect "/api/*"
     public "/api/auth/*"
   limit "/api/*" 100 "1m"
+  static "/public"
   crud "/api/users" User
   crud "/api/todos" Todo
+
+  group "/api/v1":
+    G"/status"
+      >{version:"1.0",status:"ok"}
+
+  P"/api/auth/register"(req,res)
+    s:hashed=hash(req.body.password)
+    user=UserStore.create({name:req.body.name,email:req.body.email,password:hashed})
+    ?user.error
+      >.s 400 {errors:user.error}
+    token=auth.sign({id:user.id,role:user.role})
+    >{token,user:{id:user.id,name:user.name,email:user.email}}
+
+  P"/api/auth/login"(req,res)
+    user=UserStore.where({email:req.body.email})[0]
+    ?not user
+      >.s 401 {error:"Invalid credentials"}
+    ?not verify(req.body.password,user.password)
+      >.s 401 {error:"Invalid credentials"}
+    token=auth.sign({id:user.id,role:user.role})
+    >{token}
+
   G"/health"
     >{status:"ok"}
-  P"/api/auth/login"(req,res)
-    s:email=req.body.email
-    >{token:"jwt-token-here"}
+
+  G"/"
+    >.h "<h1>Welcome to NAIDE</h1>"
+
+  ws "/chat":
+    on "connect":
+      send({type:"welcome"})
+    on "message" (data):
+      broadcast(data)
+
+  error (err, req, res):
+    log.error err.message
+    >.s 500 {error:"Internal server error"}
 
 every "30m":
   log"cleanup running"

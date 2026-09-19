@@ -8,6 +8,10 @@ export class Generator {
     this.schemas = new Map();
     this.needsEventBus = false;
     this.runtimePath = options.runtimePath || 'naidejs/runtime';
+    this.dbDir = null;
+    this.authSecret = null;
+    this.hasWs = false;
+    this.wsNodes = [];
   }
 
   generate(ast) {
@@ -58,6 +62,7 @@ export class Generator {
       case 'Function': return this.visitFunction(node);
       case 'Return': return this.visitReturn(node);
       case 'ReturnStatus': return this.visitReturnStatus(node);
+      case 'ReturnMethod': return this.visitReturnMethod(node);
       case 'TypedVar': return this.visitTypedVar(node);
       case 'If': return this.visitIf(node);
       case 'Each': return this.visitEach(node);
@@ -76,6 +81,7 @@ export class Generator {
       case 'CompoundAssign': return this.visitCompoundAssign(node);
       case 'ExprStatement': this.emit(this.expr(node.expression) + ';'); return;
       case 'DbConnect': return this.visitDbConnect(node);
+      case 'DbDir': return this.visitDbDir(node);
       case 'AwaitAll': return this.visitAwaitAllStatement(node);
       case 'SchemaDecl': return this.visitSchema(node);
       case 'CrudDecl': return this.visitCrudTopLevel(node);
@@ -85,6 +91,11 @@ export class Generator {
       case 'EnvDecl': return this.visitEnv(node);
       case 'EveryDecl': return this.visitEvery(node);
       case 'WatchDecl': return this.visitWatch(node);
+      case 'StaticDecl': return this.visitStaticTopLevel(node);
+      case 'WsDecl': return this.visitWsTopLevel(node);
+      case 'GroupDecl': return this.visitGroupTopLevel(node);
+      case 'ErrorHandler': return this.visitErrorHandlerTopLevel(node);
+      case 'CookieDecl': return this.visitCookieTopLevel(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -133,6 +144,26 @@ export class Generator {
 
   visitReturnStatus(node) {
     this.emit(`return res.status(${this.expr(node.statusCode)}).json(${this.expr(node.body)});`);
+  }
+
+  visitReturnMethod(node) {
+    const val = this.expr(node.value);
+    switch (node.method) {
+      case 'redirect':
+        this.emit(`return res.redirect(${val});`);
+        break;
+      case 'html':
+        this.emit(`return res.type('html').send(${val});`);
+        break;
+      case 'text':
+        this.emit(`return res.type('text').send(${val});`);
+        break;
+      case 'file':
+        this.emit(`return res.sendFile(${val});`);
+        break;
+      default:
+        this.emit(`return res.${node.method}(${val});`);
+    }
   }
 
   visitTypedVar(node) {
@@ -252,16 +283,25 @@ export class Generator {
   }
 
   visitServer(node) {
+    const hasWs = node.routes.some(r => r.type === 'WsDecl');
+
     this.emit(`import express from 'express';`);
+    if (hasWs) {
+      this.emit(`import { WebSocketServer } from 'ws';`);
+    }
     this.emitRaw('');
     this.emit(`const ${node.name} = express();`);
     this.emit(`${node.name}.use(express.json());`);
+    this.emit(`${node.name}.use(express.urlencoded({ extended: true }));`);
     this.emitRaw('');
 
     for (const mid of node.middleware) {
       this.emit(`${node.name}.use(${this.generateMiddleware(mid)});`);
       this.emitRaw('');
     }
+
+    const wsNodes = [];
+    const errorHandlers = [];
 
     for (const child of node.routes) {
       if (child.type === 'Route') {
@@ -274,18 +314,41 @@ export class Generator {
         this.visitCors(node.name, child);
       } else if (child.type === 'LimitDecl') {
         this.visitLimit(node.name, child);
+      } else if (child.type === 'StaticDecl') {
+        this.visitStatic(node.name, child);
+      } else if (child.type === 'WsDecl') {
+        wsNodes.push(child);
+      } else if (child.type === 'GroupDecl') {
+        this.visitGroup(node.name, child);
+      } else if (child.type === 'ErrorHandler') {
+        errorHandlers.push(child);
+      } else if (child.type === 'CookieDecl') {
+        this.visitCookie(node.name, child);
       } else {
         this.visitStatement(child);
       }
     }
 
+    for (const eh of errorHandlers) {
+      this.visitErrorHandler(node.name, eh);
+    }
+
     const port = node.port ? this.expr(node.port) : '3000';
     this.emitRaw('');
-    this.emit(`${node.name}.listen(${port}, () => {`);
+    if (hasWs) {
+      this.emit(`const __server = ${node.name}.listen(${port}, () => {`);
+    } else {
+      this.emit(`${node.name}.listen(${port}, () => {`);
+    }
     this.indent++;
     this.emit(`console.log(\`Server running on port \${${port}}\`);`);
     this.indent--;
     this.emit('});');
+
+    for (const wsNode of wsNodes) {
+      this.emitRaw('');
+      this.visitWs(wsNode);
+    }
   }
 
   visitRoute(appName, route) {
@@ -419,16 +482,25 @@ export class Generator {
     this.emit(`const db = new Database(${this.expr(node.connectionString)});`);
   }
 
+  visitDbDir(node) {
+    const raw = node.path.raw || node.path.parts?.map(p => p.value).join('') || 'data/';
+    this.dbDir = raw.endsWith('/') ? raw : raw + '/';
+  }
+
   visitAwaitAllStatement(node) {
     const exprs = node.expressions.map(e => this.expr(e)).join(', ');
     this.emit(`await Promise.all([${exprs}]);`);
   }
 
-  // ===== New high-level features =====
+  // ===== High-level features =====
 
   visitSchema(node) {
     this.runtimeImports.add('createSchema');
-    this.runtimeImports.add('createStore');
+    if (this.dbDir) {
+      this.runtimeImports.add('createFileStore');
+    } else {
+      this.runtimeImports.add('createStore');
+    }
 
     this.emit(`const ${node.name}Schema = createSchema('${node.name}', {`);
     this.indent++;
@@ -487,7 +559,11 @@ export class Generator {
 
     this.indent--;
     this.emit('});');
-    this.emit(`const ${node.name}Store = createStore(${node.name}Schema);`);
+    if (this.dbDir) {
+      this.emit(`const ${node.name}Store = createFileStore(${node.name}Schema, '${this.dbDir}${node.name}.json');`);
+    } else {
+      this.emit(`const ${node.name}Store = createStore(${node.name}Schema);`);
+    }
     this.emitRaw('');
 
     this.schemas.set(node.name, node);
@@ -510,6 +586,10 @@ export class Generator {
     this.runtimeImports.add('jwtAuth');
 
     const secret = this.expr(node.secret);
+    this.authSecret = secret;
+
+    this.emit(`const __authSecret = ${secret};`);
+
     const options = [];
     if (node.publicPaths.length > 0) {
       const paths = node.publicPaths.map(p => this.stringValue(p)).join(', ');
@@ -558,6 +638,125 @@ export class Generator {
 
   visitLimitTopLevel(node) {
     this.visitLimit('app', node);
+  }
+
+  visitStatic(appName, node) {
+    let raw = node.path.raw || node.path.parts?.map(p => p.value).join('') || 'public';
+    if (raw.startsWith('/')) raw = raw.slice(1);
+    this.emit(`${appName}.use(express.static(${JSON.stringify(raw)}));`);
+    this.emitRaw('');
+  }
+
+  visitStaticTopLevel(node) {
+    this.visitStatic('app', node);
+  }
+
+  visitWs(node) {
+    const path = this.stringValue(node.path);
+    this.emit(`const __wss = new WebSocketServer({ server: __server, path: ${path} });`);
+    this.emit(`__wss.on('connection', (__ws) => {`);
+    this.indent++;
+    this.emit(`const send = (d) => __ws.send(typeof d === 'string' ? d : JSON.stringify(d));`);
+    this.emit(`const broadcast = (d) => { const m = typeof d === 'string' ? d : JSON.stringify(d); for (const c of __wss.clients) if (c.readyState === 1) c.send(m); };`);
+
+    const connectEvents = node.events.filter(e => {
+      const name = e.name.raw || e.name.parts?.map(p => p.value).join('');
+      return name === 'connect' || name === 'open';
+    });
+    const otherEvents = node.events.filter(e => {
+      const name = e.name.raw || e.name.parts?.map(p => p.value).join('');
+      return name !== 'connect' && name !== 'open';
+    });
+
+    for (const evt of connectEvents) {
+      this.emitRaw('');
+      for (const stmt of evt.body) this.visitStatement(stmt);
+    }
+
+    for (const evt of otherEvents) {
+      const evtName = evt.name.raw || evt.name.parts?.map(p => p.value).join('');
+      this.emitRaw('');
+
+      if (evtName === 'message') {
+        const needsAsync = this.bodyUsesAwait(evt.body);
+        const asyncPrefix = needsAsync ? 'async ' : '';
+        this.emit(`__ws.on('message', ${asyncPrefix}(__raw) => {`);
+        this.indent++;
+        const dataParam = evt.params[0] || 'data';
+        this.emit(`const ${dataParam} = JSON.parse(__raw);`);
+        for (const stmt of evt.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit('});');
+      } else {
+        const params = evt.params.length > 0 ? evt.params.join(', ') : '';
+        const needsAsync = this.bodyUsesAwait(evt.body);
+        const asyncPrefix = needsAsync ? 'async ' : '';
+        this.emit(`__ws.on('${evtName}', ${asyncPrefix}(${params}) => {`);
+        this.indent++;
+        for (const stmt of evt.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit('});');
+      }
+    }
+
+    this.indent--;
+    this.emit('});');
+  }
+
+  visitWsTopLevel(node) {
+    this.visitWs(node);
+  }
+
+  visitGroup(appName, node) {
+    const prefix = this.stringValue(node.prefix);
+    this.groupCounter = (this.groupCounter || 0) + 1;
+    const routerName = `__router${this.groupCounter}`;
+    this.emit(`const ${routerName} = express.Router();`);
+
+    for (const child of node.routes) {
+      if (child.type === 'Route') {
+        this.visitRoute(routerName, child);
+      } else if (child.type === 'CrudDecl') {
+        this.visitCrud(routerName, child);
+      } else if (child.type === 'AuthDecl') {
+        this.visitAuth(routerName, child);
+      } else if (child.type === 'GroupDecl') {
+        this.visitGroup(routerName, child);
+      } else {
+        this.visitStatement(child);
+      }
+    }
+
+    this.emit(`${appName}.use(${prefix}, ${routerName});`);
+    this.emitRaw('');
+  }
+
+  visitGroupTopLevel(node) {
+    this.visitGroup('app', node);
+  }
+
+  visitErrorHandler(appName, node) {
+    const params = node.params.join(', ');
+    this.emit(`${appName}.use((${params}, next) => {`);
+    this.indent++;
+    for (const stmt of node.body) this.visitStatement(stmt);
+    this.indent--;
+    this.emit('});');
+    this.emitRaw('');
+  }
+
+  visitErrorHandlerTopLevel(node) {
+    this.visitErrorHandler('app', node);
+  }
+
+  visitCookie(appName, node) {
+    this.runtimeImports.add('cookieParser');
+    this.emit(`${appName}.use(cookieParser());`);
+    this.emitRaw('');
+  }
+
+  visitCookieTopLevel(node) {
+    this.visitCookie('app', node);
   }
 
   visitEnv(node) {
@@ -661,7 +860,7 @@ export class Generator {
         return `${this.expr(node.object)}?.${node.property}`;
 
       case 'Call':
-        return `${this.expr(node.callee)}(${node.args.map(a => this.expr(a)).join(', ')})`;
+        return this.generateCall(node);
 
       case 'IndexAccess':
         return `${this.expr(node.object)}[${this.expr(node.index)}]`;
@@ -712,6 +911,50 @@ export class Generator {
       default:
         return `/* expr:${node.type} */`;
     }
+  }
+
+  generateCall(node) {
+    const AUTO_IMPORT = { 'hash': 'hash', 'verify': 'verify', 'uuid': 'uuid' };
+
+    if (node.callee.type === 'Identifier' && AUTO_IMPORT[node.callee.name]) {
+      const runtimeFn = AUTO_IMPORT[node.callee.name];
+      this.runtimeImports.add(runtimeFn);
+      return `${runtimeFn}(${node.args.map(a => this.expr(a)).join(', ')})`;
+    }
+
+    if (node.callee.type === 'Identifier' && node.callee.name === 'sign') {
+      this.runtimeImports.add('jwtSign');
+      const args = node.args.map(a => this.expr(a));
+      if (args.length === 1 && this.authSecret) {
+        return `jwtSign(${args[0]}, __authSecret)`;
+      }
+      return `jwtSign(${args.join(', ')})`;
+    }
+
+    if (node.callee.type === 'MemberAccess' &&
+        node.callee.object.type === 'Identifier' &&
+        node.callee.object.name === 'api') {
+      this.runtimeImports.add('api');
+    }
+
+    if (node.callee.type === 'MemberAccess' &&
+        node.callee.object.type === 'Identifier' &&
+        node.callee.object.name === 'auth') {
+      if (node.callee.property === 'sign') {
+        this.runtimeImports.add('jwtSign');
+        const args = node.args.map(a => this.expr(a));
+        if (args.length === 1 && this.authSecret) {
+          return `jwtSign(${args[0]}, __authSecret)`;
+        }
+        return `jwtSign(${args.join(', ')})`;
+      }
+      if (node.callee.property === 'verify') {
+        this.runtimeImports.add('jwtVerify');
+        return `jwtVerify(${node.args.map(a => this.expr(a)).join(', ')})`;
+      }
+    }
+
+    return `${this.expr(node.callee)}(${node.args.map(a => this.expr(a)).join(', ')})`;
   }
 
   generateString(strData) {

@@ -112,13 +112,86 @@ l:result=[1,2,3,4,5]
   f perms()l
     >["read","write","delete"]
 
--- Server: $name:port
--- Routes: G P U D + "path"
--- $app:3000
---   G"/users"
---     >users
---   P"/users"(req,res)
---     >req.body
+-- DB persistence: db "path/"
+db "data/"
+
+-- Environment variables
+env:
+  PORT int default(3000)
+  JWT_SECRET str required
+
+-- Schema: types + modifiers
+schema User:
+  id auto
+  name str required min(2) max(50)
+  email str required email unique
+  role enum("admin","user") default("user")
+  joined timestamp auto
+
+-- Server with high-level features
+$app:PORT
+  cors "*"
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/auth/*"
+  limit "/api/*" 100 "1m"
+  static "/public"
+  crud "/api/users" User
+  cookie
+  group "/api/v1":
+    G"/status"
+      >{version:"1.0"}
+  G"/"
+    >.h "<h1>Welcome</h1>"
+  P"/api/auth/register"(req,res)
+    s:hashed=hash(req.body.password)
+    user=UserStore.create({...req.body,password:hashed})
+    token=auth.sign({id:user.id})
+    >{token,user}
+  P"/api/auth/login"(req,res)
+    user=UserStore.where({email:req.body.email})[0]
+    ?not user
+      >.s 401 {error:"Invalid credentials"}
+    ?not verify(req.body.password,user.password)
+      >.s 401 {error:"Invalid credentials"}
+    token=sign({id:user.id})
+    >{token}
+  ws "/chat":
+    on "connect":
+      send({type:"welcome"})
+    on "message" (data):
+      broadcast(data)
+
+-- Error handler
+  error (err, req, res):
+    log.e err.message
+    >.s 500 {error:"Internal error"}
+
+-- HTTP client (auto-imported)
+-- api.get(url) api.post(url,body) api.put(url,body) api.del(url) api.raw(url,opts)
+
+-- Return helpers
+-- >expr         → JSON
+-- >.s CODE expr → status code
+-- >.r "/path"   → redirect
+-- >.h "<html>"  → HTML
+-- >.t "text"    → plain text
+-- >.f "/file"   → send file
+
+-- Built-in functions (auto-imported)
+-- uuid()                → UUID
+-- hash("password")      → scrypt hash
+-- verify("pw",hashed)   → verify
+-- sign({id:1})          → JWT (uses auth secret)
+-- sign({id:1},"secret") → JWT (explicit)
+
+-- Scheduled tasks
+every "5m":
+  log"cleanup"
+
+-- Event watch
+watch User.create (event):
+  log"new: {event.data.name}"
 
 -- Import: <module or <{names}"module"
 -- <express

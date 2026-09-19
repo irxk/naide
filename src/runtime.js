@@ -1,4 +1,25 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual, scryptSync, randomBytes } from 'crypto';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { dirname } from 'path';
+
+// ===== Password Hashing (zero-dep, Node crypto) =====
+export function hash(password) {
+  const salt = randomBytes(16).toString('hex');
+  const derived = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derived}`;
+}
+
+export function verify(password, stored) {
+  const [salt, h] = stored.split(':');
+  const hashBuf = Buffer.from(h, 'hex');
+  const testBuf = scryptSync(password, salt, 64);
+  return timingSafeEqual(hashBuf, testBuf);
+}
+
+// ===== UUID =====
+export function uuid() {
+  return randomUUID();
+}
 
 // ===== Schema + Validation =====
 export function createSchema(name, fieldDefs) {
@@ -93,10 +114,96 @@ export function createStore(schema) {
   };
 }
 
-// ===== CRUD Route Registration =====
+// ===== File-Based Persistent Store =====
+export function createFileStore(schema, filePath) {
+  let _idField = null;
+  for (const [f, r] of Object.entries(schema.fields)) {
+    if (r.auto && r.type === 'id') { _idField = f; break; }
+  }
+  const idField = _idField || 'id';
+
+  const dir = dirname(filePath);
+  if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  const items = new Map();
+  try {
+    const data = JSON.parse(readFileSync(filePath, 'utf-8'));
+    for (const item of data) items.set(String(item[idField] || item.id), item);
+  } catch {}
+
+  function save() {
+    writeFileSync(filePath, JSON.stringify([...items.values()], null, 2));
+  }
+
+  return {
+    getAll() { return [...items.values()]; },
+    getById(id) { return items.get(String(id)) || null; },
+    count() { return items.size; },
+    create(data) {
+      const { valid, errors, data: validated } = schema.validate(data);
+      if (!valid) return { error: errors };
+      const id = validated[idField] || randomUUID();
+      validated[idField] = id;
+      items.set(String(id), validated);
+      save();
+      return validated;
+    },
+    update(id, data) {
+      const existing = items.get(String(id));
+      if (!existing) return null;
+      const merged = { ...existing, ...data, [idField]: existing[idField] };
+      items.set(String(id), merged);
+      save();
+      return merged;
+    },
+    delete(id) {
+      const result = items.delete(String(id));
+      if (result) save();
+      return result;
+    },
+    where(conditions) {
+      return [...items.values()].filter(item => {
+        for (const [k, v] of Object.entries(conditions)) {
+          if (item[k] !== v) return false;
+        }
+        return true;
+      });
+    },
+    clear() { items.clear(); save(); }
+  };
+}
+
+// ===== CRUD Route Registration (with pagination, search, sort) =====
 export function registerCrud(app, basePath, schema, store, eventBus) {
-  app.get(basePath, (_req, res) => {
-    res.json(store.getAll());
+  app.get(basePath, (req, res) => {
+    let items = store.getAll();
+
+    const q = req.query.q;
+    if (q) {
+      const lower = q.toLowerCase();
+      items = items.filter(item =>
+        Object.values(item).some(v =>
+          typeof v === 'string' && v.toLowerCase().includes(lower)
+        )
+      );
+    }
+
+    if (req.query.sort) {
+      const field = req.query.sort;
+      const order = req.query.order === 'desc' ? -1 : 1;
+      items.sort((a, b) => {
+        if (a[field] < b[field]) return -order;
+        if (a[field] > b[field]) return order;
+        return 0;
+      });
+    }
+
+    const total = items.length;
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    items = items.slice((page - 1) * limit, page * limit);
+
+    res.json({ data: items, total, page, limit, pages: Math.ceil(total / limit) });
   });
 
   app.get(`${basePath}/:id`, (req, res) => {
@@ -247,6 +354,57 @@ export function createEventBus() {
         try { fn({ event, data, timestamp: new Date().toISOString() }); } catch (e) { console.error('[NAIDE Event]', e.message); }
       }
     }
+  };
+}
+
+// ===== HTTP Client (zero-dep, Node 18+ fetch) =====
+async function jsonOrText(res) {
+  const ct = res.headers.get('content-type') || '';
+  return ct.includes('json') ? res.json() : res.text();
+}
+
+export const api = {
+  async get(url, opts = {}) {
+    const res = await fetch(url, { ...opts, method: 'GET' });
+    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, response: res });
+    return jsonOrText(res);
+  },
+  async post(url, body, opts = {}) {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...opts.headers }, body: JSON.stringify(body), ...opts });
+    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, response: res });
+    return jsonOrText(res);
+  },
+  async put(url, body, opts = {}) {
+    const res = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json', ...opts.headers }, body: JSON.stringify(body), ...opts });
+    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, response: res });
+    return jsonOrText(res);
+  },
+  async del(url, opts = {}) {
+    const res = await fetch(url, { method: 'DELETE', ...opts });
+    if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, response: res });
+    return jsonOrText(res);
+  },
+  async raw(url, opts = {}) {
+    return fetch(url, opts);
+  }
+};
+
+// ===== Cookie Parser =====
+export function cookieParser() {
+  return (req, res, next) => {
+    req.cookies = {};
+    const header = req.headers.cookie;
+    if (header) {
+      for (const pair of header.split(';')) {
+        const idx = pair.indexOf('=');
+        if (idx > 0) {
+          const k = pair.slice(0, idx).trim();
+          const v = pair.slice(idx + 1).trim();
+          try { req.cookies[k] = decodeURIComponent(v); } catch { req.cookies[k] = v; }
+        }
+      }
+    }
+    next();
   };
 }
 

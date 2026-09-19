@@ -165,6 +165,21 @@ describe('NAIDE-X preprocessor', () => {
     const out = preprocess('  a:data=~fetch(url)');
     assert.ok(out.includes('await fetch(url)'));
   });
+
+  it('converts ret.redirect shorthand', () => {
+    const out = preprocess('  >.r "/login"');
+    assert.ok(out.includes('ret.redirect "/login"'));
+  });
+
+  it('converts ret.html shorthand', () => {
+    const out = preprocess('  >.h "<h1>Hi</h1>"');
+    assert.ok(out.includes('ret.html "<h1>Hi</h1>"'));
+  });
+
+  it('converts ret.text shorthand', () => {
+    const out = preprocess('  >.t "pong"');
+    assert.ok(out.includes('ret.text "pong"'));
+  });
 });
 
 describe('NAIDE high-level features', () => {
@@ -220,6 +235,7 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes('SECRET'));
     assert.ok(js.includes('"/api/*"'));
     assert.ok(js.includes('public:'));
+    assert.ok(js.includes('__authSecret'));
   });
 
   it('compiles cors', () => {
@@ -252,8 +268,143 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes('(event) =>'));
   });
 
-  it('compiles full app with schema + server + crud + auth', () => {
+  it('compiles db directive with file store', () => {
+    const src = 'db "data/"\n\nschema User:\n  id auto\n  name str required';
+    const js = transpile(src);
+    assert.ok(js.includes('createFileStore'));
+    assert.ok(js.includes("'data/User.json'"));
+    assert.ok(!js.includes('createStore('), 'should not use in-memory createStore');
+  });
+
+  it('compiles static file serving in server', () => {
+    const src = 'server app port 3000:\n  static "/public"';
+    const js = transpile(src);
+    assert.ok(js.includes('express.static'));
+    assert.ok(js.includes('"public"'));
+  });
+
+  it('compiles ws (WebSocket) in server', () => {
+    const src = 'server app port 3000:\n  ws "/chat":\n    on "message" (data):\n      log data\n    on "connect":\n      log "connected"';
+    const js = transpile(src);
+    assert.ok(js.includes('WebSocketServer'));
+    assert.ok(js.includes('__server'));
+    assert.ok(js.includes('__wss'));
+    assert.ok(js.includes("'message'"));
+    assert.ok(js.includes('send'));
+    assert.ok(js.includes('broadcast'));
+    assert.ok(js.includes('JSON.parse'));
+  });
+
+  it('compiles hash() auto-import', () => {
+    const src = 'str h = hash("password")';
+    const js = transpile(src);
+    assert.ok(js.includes("import { hash }"));
+    assert.ok(js.includes('hash("password")'));
+  });
+
+  it('compiles verify() auto-import', () => {
+    const src = 'str ok = verify("pass", stored)';
+    const js = transpile(src);
+    assert.ok(js.includes('verify'));
+    assert.ok(js.includes("import"));
+  });
+
+  it('compiles uuid() auto-import', () => {
+    const src = 'str id = uuid()';
+    const js = transpile(src);
+    assert.ok(js.includes("import { uuid }"));
+    assert.ok(js.includes('uuid()'));
+  });
+
+  it('compiles sign() with auth secret', () => {
     const src = [
+      'server app port 3000:',
+      '  auth SECRET:',
+      '    protect "/api/*"',
+      '  post "/api/auth/login" (req, res):',
+      '    token = sign({id: 1})',
+      '    ret {token}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('jwtSign'));
+    assert.ok(js.includes('__authSecret'));
+  });
+
+  it('compiles auth.sign() with auth secret', () => {
+    const src = [
+      'server app port 3000:',
+      '  auth SECRET:',
+      '    protect "/api/*"',
+      '  post "/api/auth/login" (req, res):',
+      '    token = auth.sign({id: 1})',
+      '    ret {token}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('jwtSign'));
+    assert.ok(js.includes('__authSecret'));
+  });
+
+  it('compiles ret.redirect', () => {
+    const src = 'server app port 3000:\n  get "/old":\n    ret.redirect "/new"';
+    const js = transpile(src);
+    assert.ok(js.includes('res.redirect'));
+  });
+
+  it('compiles ret.html', () => {
+    const src = 'server app port 3000:\n  get "/":\n    ret.html "<h1>Hello</h1>"';
+    const js = transpile(src);
+    assert.ok(js.includes("res.type('html').send"));
+  });
+
+  it('compiles ret.text', () => {
+    const src = 'server app port 3000:\n  get "/ping":\n    ret.text "pong"';
+    const js = transpile(src);
+    assert.ok(js.includes("res.type('text').send"));
+  });
+
+  it('compiles api auto-import', () => {
+    const src = 'fn.async getData() -> any:\n  any result = await api.get("https://api.example.com/data")\n  ret result';
+    const js = transpile(src);
+    assert.ok(js.includes("import { api }"));
+    assert.ok(js.includes('api.get("https://api.example.com/data")'));
+  });
+
+  it('compiles error handler in server', () => {
+    const src = [
+      'server app port 3000:',
+      '  get "/":', '    ret {ok: true}',
+      '  error (err, req, res):',
+      '    log.error err.message',
+      '    ret.status 500 {error: "Internal error"}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('(err, req, res, next)'));
+    assert.ok(js.includes('console.error'));
+  });
+
+  it('compiles route group in server', () => {
+    const src = [
+      'server app port 3000:',
+      '  group "/api/v1":',
+      '    get "/users":', '      ret []',
+      '    post "/users" (req, res):', '      ret req.body',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('express.Router()'));
+    assert.ok(js.includes('app.use("/api/v1"'));
+  });
+
+  it('compiles cookie middleware', () => {
+    const src = 'server app port 3000:\n  cookie\n  get "/":\n    ret {ok: true}';
+    const js = transpile(src);
+    assert.ok(js.includes('cookieParser'));
+    assert.ok(js.includes("import {"));
+  });
+
+  it('compiles full app with all features', () => {
+    const src = [
+      'db "data/"',
+      '',
       'env:',
       '  PORT int default(3000)',
       '  JWT_SECRET str required',
@@ -268,18 +419,33 @@ describe('NAIDE high-level features', () => {
       '  auth JWT_SECRET:',
       '    protect "/api/*"',
       '    public "/api/auth/*"',
+      '  limit "/api/*" 100 "1m"',
+      '  static "/public"',
       '  crud "/api/users" User',
-      '  get "/health":',
-      '    ret {status: "ok"}',
+      '  post "/api/auth/register" (req, res):',
+      '    str hashed = hash(req.body.password)',
+      '    ret {ok: true}',
+      '  get "/":',
+      '    ret.html "<h1>Welcome</h1>"',
+      '',
+      'watch User.create (event):',
+      '  log "new user: {event.data.name}"',
     ].join('\n');
     const js = transpile(src);
     assert.ok(js.includes('loadEnv'));
     assert.ok(js.includes('createSchema'));
+    assert.ok(js.includes('createFileStore'));
     assert.ok(js.includes('registerCrud'));
     assert.ok(js.includes('jwtAuth'));
     assert.ok(js.includes('corsMiddleware'));
+    assert.ok(js.includes('rateLimit'));
     assert.ok(js.includes('express'));
-    assert.ok(js.includes('app.get'));
+    assert.ok(js.includes('hash'));
+    assert.ok(js.includes('express.static'));
+    assert.ok(js.includes("res.type('html').send"));
+    assert.ok(js.includes('__eventBus'));
+    assert.ok(js.includes("'data/User.json'"));
+    assert.ok(js.includes('urlencoded'));
   });
 });
 
@@ -306,5 +472,89 @@ describe('NAIDE-X full pipeline', () => {
     assert.ok(js.includes('express'));
     assert.ok(js.includes("app.get"));
     assert.ok(js.includes('listen(3000'));
+  });
+
+  it('compiles .nx with ret.redirect shorthand', () => {
+    const source = '$app:3000\n  G"/old"\n    >.r "/new"';
+    const js = transpile(source, { mode: 'x' });
+    assert.ok(js.includes('res.redirect'));
+  });
+});
+
+describe('Runtime unit tests', () => {
+  it('hash and verify password', async () => {
+    const { hash, verify } = await import('../src/runtime.js');
+    const hashed = hash('mypassword');
+    assert.ok(hashed.includes(':'));
+    assert.ok(verify('mypassword', hashed));
+    assert.ok(!verify('wrongpassword', hashed));
+  });
+
+  it('uuid generates valid UUIDs', async () => {
+    const { uuid } = await import('../src/runtime.js');
+    const id = uuid();
+    assert.ok(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id));
+  });
+
+  it('JWT sign and verify roundtrip', async () => {
+    const { jwtSign, jwtVerify } = await import('../src/runtime.js');
+    const token = jwtSign({ userId: 42 }, 'test-secret', '1h');
+    const payload = jwtVerify(token, 'test-secret');
+    assert.strictEqual(payload.userId, 42);
+    assert.ok(payload.exp);
+    assert.ok(payload.iat);
+  });
+
+  it('schema validation works', async () => {
+    const { createSchema } = await import('../src/runtime.js');
+    const schema = createSchema('Test', {
+      name: { type: 'string', required: true, min: 2 },
+      email: { type: 'string', email: true },
+    });
+    const ok = schema.validate({ name: 'John', email: 'j@e.com' });
+    assert.ok(ok.valid);
+    const fail = schema.validate({ name: 'J', email: 'bad' });
+    assert.ok(!fail.valid);
+    assert.ok(fail.errors.length >= 2);
+  });
+
+  it('api object has all methods', async () => {
+    const { api } = await import('../src/runtime.js');
+    assert.ok(typeof api.get === 'function');
+    assert.ok(typeof api.post === 'function');
+    assert.ok(typeof api.put === 'function');
+    assert.ok(typeof api.del === 'function');
+    assert.ok(typeof api.raw === 'function');
+  });
+
+  it('cookieParser parses cookies', async () => {
+    const { cookieParser } = await import('../src/runtime.js');
+    const parser = cookieParser();
+    const req = { headers: { cookie: 'session=abc123; theme=dark; name=hello%20world' } };
+    const res = {};
+    let called = false;
+    parser(req, res, () => { called = true; });
+    assert.ok(called);
+    assert.strictEqual(req.cookies.session, 'abc123');
+    assert.strictEqual(req.cookies.theme, 'dark');
+    assert.strictEqual(req.cookies.name, 'hello world');
+  });
+
+  it('createStore CRUD operations', async () => {
+    const { createSchema, createStore } = await import('../src/runtime.js');
+    const schema = createSchema('Item', {
+      id: { type: 'id', auto: true },
+      name: { type: 'string', required: true },
+    });
+    const store = createStore(schema);
+    const item = store.create({ name: 'test' });
+    assert.ok(item.id);
+    assert.strictEqual(item.name, 'test');
+    assert.strictEqual(store.getAll().length, 1);
+    assert.strictEqual(store.getById(item.id).name, 'test');
+    store.update(item.id, { name: 'updated' });
+    assert.strictEqual(store.getById(item.id).name, 'updated');
+    store.delete(item.id);
+    assert.strictEqual(store.getAll().length, 0);
   });
 });

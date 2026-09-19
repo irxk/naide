@@ -107,6 +107,14 @@ export function preprocess(source) {
       const rest = line.slice(1).trim();
       if (rest.startsWith('.s ') || rest.startsWith('.s(')) {
         out = 'ret.status ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.r ')) {
+        out = 'ret.redirect ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.h ')) {
+        out = 'ret.html ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.t ')) {
+        out = 'ret.text ' + transformContent(rest.slice(3));
+      } else if (rest.startsWith('.f ')) {
+        out = 'ret.file ' + transformContent(rest.slice(3));
       } else {
         out = rest ? 'ret ' + transformContent(rest) : 'ret';
       }

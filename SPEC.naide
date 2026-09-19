@@ -137,11 +137,124 @@ model Admin extends User:
     ret ["read", "write", "delete"]
 
 
+# ---- データベース永続化 ----
+# db ディレクトリパス → スキーマストアがJSONファイルに自動保存
+db "data/"
+
+
+# ---- 環境変数 ----
+env:
+  PORT       int default(3000)
+  JWT_SECRET str required
+  DB_URL     str default("sqlite:data.db")
+
+
+# ---- スキーマ定義 ----
+# 型: str, int, num, bool, auto(UUID), timestamp, enum(...)
+# 修飾: required, optional, min(n), max(n), email, url, unique, auto, default(val)
+schema User:
+  id       auto
+  name     str required min(2) max(50)
+  email    str required email unique
+  age      int optional min(0) max(150)
+  role     enum("admin", "user") default("user")
+  joined   timestamp auto
+
+
 # ---- サーバー定義 ----
-# Express.jsのボイラープレートが不要
-# server 名前 port ポート:
-#   get "/path" (req, res):
-#     ret {data: "response"}
+server app port PORT:
+  # CORS
+  cors "*"
+
+  # JWT認証
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/auth/*"
+
+  # レート制限
+  limit "/api/*" 100 "1m"
+
+  # 静的ファイル配信
+  static "/public"
+
+  # CRUD自動生成 (ページネーション・検索・ソート付き)
+  crud "/api/users" User
+
+  # クッキーパーサー
+  cookie
+
+  # ルートグループ
+  group "/api/v1":
+    get "/status":
+      ret {version: "1.0"}
+
+  # ルート
+  get "/":
+    ret.html "<h1>Welcome</h1>"
+
+  post "/api/auth/register" (req, res):
+    str hashed = hash(req.body.password)
+    user = UserStore.create({...req.body, password: hashed})
+    token = auth.sign({id: user.id})
+    ret {token, user}
+
+  post "/api/auth/login" (req, res):
+    user = UserStore.where({email: req.body.email})[0]
+    if not user:
+      ret.status 401 {error: "Invalid credentials"}
+    if not verify(req.body.password, user.password):
+      ret.status 401 {error: "Invalid credentials"}
+    token = sign({id: user.id})
+    ret {token}
+
+  # WebSocket
+  ws "/chat":
+    on "connect":
+      send({type: "welcome"})
+    on "message" (data):
+      broadcast(data)
+    on "close":
+      log "client left"
+
+  # エラーハンドラー
+  error (err, req, res):
+    log.error err.message
+    ret.status 500 {error: "Internal error"}
+
+
+# ---- HTTPクライアント (自動インポート) ----
+# any data = await api.get("https://api.example.com/users")
+# any result = await api.post("https://api.example.com/users", {name: "test"})
+# any result = await api.put(url, body)
+# any result = await api.del(url)
+# any raw = await api.raw(url, opts)
+
+
+# ---- レスポンスヘルパー ----
+# ret {data}                → JSON応答
+# ret.status 404 {error}    → ステータスコード付き
+# ret.redirect "/login"     → リダイレクト
+# ret.html "<h1>Hi</h1>"   → HTML応答
+# ret.text "pong"           → テキスト応答
+# ret.file "/path/to/file" → ファイル送信
+
+
+# ---- 組み込み関数 (自動インポート) ----
+# str id = uuid()                    → UUID生成
+# str h = hash("password")           → パスワードハッシュ (scrypt)
+# bool ok = verify("password", h)    → パスワード検証
+# str token = sign({id: 1})          → JWT署名 (auth秘密鍵を自動使用)
+# str token = sign({id: 1}, "secret") → JWT署名 (明示的秘密鍵)
+
+
+# ---- スケジュールタスク ----
+every "5m":
+  log "cleanup running"
+
+
+# ---- イベント監視 ----
+watch User.create (event):
+  log "new user: {event.data.name}"
 
 
 # ---- インポート ----
@@ -149,11 +262,6 @@ model Admin extends User:
 # use {名前1, 名前2} from "モジュール"
 # use モジュール from "パッケージ"
 # use モジュール as 別名
-
-
-# ---- イベント ----
-# on オブジェクト.イベント:
-#   ハンドラ
 
 
 # ---- ログ ----

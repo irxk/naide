@@ -65,6 +65,10 @@ export const T = {
   ENV: 'ENV',
   EVERY: 'EVERY',
   WATCH: 'WATCH',
+  STATIC: 'STATIC',
+  WS: 'WS',
+  GROUP: 'GROUP',
+  COOKIE: 'COOKIE',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -158,6 +162,10 @@ export const KEYWORDS = {
   'env': T.ENV,
   'every': T.EVERY,
   'watch': T.WATCH,
+  'static': T.STATIC,
+  'ws': T.WS,
+  'group': T.GROUP,
+  'cookie': T.COOKIE,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

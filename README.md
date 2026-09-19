@@ -19,6 +19,9 @@ npm install -g naidejs
 naide app.naide
 naide app.nx
 
+# Watch mode (auto-restart on changes)
+naide -w app.naide
+
 # Output generated JavaScript
 naide --emit app.nx
 
@@ -48,6 +51,14 @@ schema User:
 Types: `str`, `int`, `num`, `bool`, `auto` (UUID), `timestamp`, `enum(...)`
 Modifiers: `required`, `optional`, `min(n)`, `max(n)`, `email`, `url`, `unique`, `auto`, `default(val)`
 
+### db — Persistent file storage
+
+```python
+db "data/"
+```
+
+When declared, all schema stores persist to JSON files automatically (`data/User.json`, `data/Todo.json`, etc.). Without `db`, data is in-memory only.
+
 ### crud — Auto-generate REST endpoints
 
 ```python
@@ -56,6 +67,16 @@ server app port 3000:
 ```
 
 Generates GET (list + by ID), POST, PUT, DELETE routes with validation.
+
+**Built-in pagination, search, and sort:**
+```
+GET /api/users                     # paginated (default 20 per page)
+GET /api/users?page=2&limit=10     # page 2, 10 items
+GET /api/users?q=john              # search all string fields
+GET /api/users?sort=name&order=asc # sort by field
+```
+
+Response format: `{ data: [...], total, page, limit, pages }`
 
 ### auth — JWT authentication
 
@@ -67,6 +88,24 @@ server app port 3000:
 ```
 
 Built-in JWT sign/verify with no external dependencies.
+
+**Signing tokens in routes:**
+```python
+post "/api/auth/login" (req, res):
+  token = auth.sign({id: user.id})    # uses auth secret automatically
+  ret {token}
+```
+
+Also available as `sign(payload)` (same auto-secret) or `sign(payload, secret)` (explicit).
+
+### Password hashing
+
+```python
+str hashed = hash("mypassword")       # scrypt-based, returns salt:hash
+bool ok = verify("mypassword", hashed) # timing-safe comparison
+```
+
+Zero-dependency — uses Node.js built-in `crypto.scryptSync`.
 
 ### cors — CORS middleware
 
@@ -82,6 +121,83 @@ server app port 3000:
 server app port 3000:
   limit "/api/*" 100 "1m"
 ```
+
+### static — Serve static files
+
+```python
+server app port 3000:
+  static "/public"
+```
+
+Serves files from the `public/` directory.
+
+### ws — WebSocket
+
+```python
+server app port 3000:
+  ws "/chat":
+    on "connect":
+      send({type: "welcome"})
+    on "message" (data):
+      broadcast(data)
+    on "close":
+      log "client left"
+```
+
+Built-in `send(data)` and `broadcast(data)` helpers. Requires `npm install ws`.
+
+### group — Route groups
+
+```python
+server app port 3000:
+  group "/api/v1":
+    get "/users":
+      ret users
+    post "/users" (req, res):
+      ret req.body
+```
+
+Generates an Express Router mounted at the prefix. Groups can be nested.
+
+### cookie — Cookie parsing
+
+```python
+server app port 3000:
+  cookie
+  get "/" (req, res):
+    str theme = req.cookies.theme
+    ret {theme}
+```
+
+Parses `Cookie` headers into `req.cookies`. Zero-dependency.
+
+### error — Error handler
+
+```python
+server app port 3000:
+  get "/":
+    ret {ok: true}
+  error (err, req, res):
+    log.error err.message
+    ret.status 500 {error: "Internal error"}
+```
+
+Express error middleware. Catches unhandled errors in routes.
+
+### api — HTTP client
+
+```python
+fn.async getUsers() -> any:
+  any users = await api.get("https://api.example.com/users")
+  ret users
+
+fn.async createUser(map data) -> any:
+  any result = await api.post("https://api.example.com/users", data)
+  ret result
+```
+
+Methods: `api.get(url)`, `api.post(url, body)`, `api.put(url, body)`, `api.del(url)`, `api.raw(url, opts)`.
+Zero-dependency — uses Node.js 18+ built-in `fetch`. Auto-imported when used.
 
 ### env — Environment variables with validation
 
@@ -112,9 +228,34 @@ watch User.create (event):
 
 Automatically connected to `crud` events.
 
+### Response helpers
+
+```python
+ret {data: items}              # JSON response (default)
+ret.status 404 {error: "nope"} # custom status code
+ret.redirect "/login"           # HTTP redirect
+ret.html "<h1>Hello</h1>"      # HTML response
+ret.text "pong"                 # plain text response
+ret.file "/path/to/file"       # send file
+```
+
+### Built-in functions
+
+```python
+str id = uuid()                         # generate UUID
+str hashed = hash("password")           # hash password
+bool ok = verify("password", hashed)    # verify password
+str token = sign({id: 1})               # sign JWT (uses auth secret)
+str token = sign({id: 1}, "my-secret")  # sign JWT (explicit secret)
+```
+
+These are auto-imported from the runtime when used.
+
 ### Full example
 
 ```python
+db "data/"
+
 env:
   PORT int default(3000)
   JWT_SECRET str required
@@ -123,22 +264,53 @@ schema User:
   id auto
   name str required min(2) max(50)
   email str required email
+  password str required
 
 server app port PORT:
   cors "*"
+  cookie
   auth JWT_SECRET:
     protect "/api/*"
     public "/api/auth/*"
   limit "/api/*" 100 "1m"
+  static "/public"
   crud "/api/users" User
-  get "/health":
-    ret {status: "ok"}
+
+  group "/api/v1":
+    get "/status":
+      ret {version: "1.0"}
+
+  post "/api/auth/register" (req, res):
+    str hashed = hash(req.body.password)
+    user = UserStore.create({...req.body, password: hashed})
+    token = auth.sign({id: user.id})
+    ret {token, user}
+
+  post "/api/auth/login" (req, res):
+    user = UserStore.where({email: req.body.email})[0]
+    if not user:
+      ret.status 401 {error: "Invalid credentials"}
+    if not verify(req.body.password, user.password):
+      ret.status 401 {error: "Invalid credentials"}
+    token = auth.sign({id: user.id})
+    ret {token}
+
+  ws "/chat":
+    on "message" (data):
+      broadcast(data)
+
+  get "/":
+    ret.html "<h1>Welcome</h1>"
+
+  error (err, req, res):
+    log.error err.message
+    ret.status 500 {error: "Something went wrong"}
 
 watch User.create (event):
   log "new user: {event.data.name}"
 ```
 
-This generates a complete Express API with validation, auth, CORS, rate limiting, and CRUD — from 20 lines.
+This generates a complete production API with persistent storage, auth, password hashing, CORS, cookies, rate limiting, CRUD with pagination/search, WebSocket, route groups, error handling, and static files — from ~45 lines.
 
 ## NAIDE syntax (.naide)
 
@@ -234,11 +406,16 @@ $app:3000
   cors "*"
   auth SECRET:
     protect "/api/*"
+  static "/public"
   crud "/api/users" User
   G"/users"
     >users
   P"/users"(req,res)
     >req.body
+  G"/old"
+    >.r "/new"
+  G"/"
+    >.h "<h1>Hello</h1>"
 
 -- Error handling
 !
@@ -268,10 +445,12 @@ $app:3000
 | `+` | export | `~` | await |
 | `G` | GET | `P` | POST |
 | `U` | PUT | `D` | DELETE |
+| `>.s` | ret.status | `>.r` | ret.redirect |
+| `>.h` | ret.html | `>.t` | ret.text |
 
 Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 
-High-level: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch` — same syntax in both modes.
+High-level: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error` — same syntax in both modes. `api` is auto-imported.
 
 ## Why?
 
