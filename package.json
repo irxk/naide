@@ -1,0 +1,50 @@
+{
+  "name": "naidejs",
+  "version": "1.1.0",
+  "description": "NAIDE - Node AI Development Environment. A language optimized for AI code generation that transpiles to Node.js. Standard mode (~40% fewer tokens) and X mode (~80% fewer tokens).",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./runtime": "./src/runtime.js"
+  },
+  "bin": {
+    "naide": "bin/naide.js"
+  },
+  "type": "module",
+  "files": [
+    "bin/",
+    "src/",
+    "examples/",
+    "SPEC.naide",
+    "SPEC-X.nx",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/test.js",
+    "example": "node bin/naide.js examples/hello.naide",
+    "example:x": "node bin/naide.js examples/hello.nx"
+  },
+  "keywords": [
+    "ai",
+    "language",
+    "transpiler",
+    "nodejs",
+    "code-generation",
+    "llm",
+    "claude",
+    "chatgpt",
+    "naide",
+    "dsl"
+  ],
+  "author": "pirikari.sena@gmail.com",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/irxk/naide"
+  },
+  "homepage": "https://github.com/irxk/naide#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,50 @@
+# NAIDE - Async/Await & エラーハンドリング
+# 非同期処理がシンプル
+
+# 非同期関数
+fn.async fetchData(str url) -> any:
+  any response = await fetch(url)
+  any data = await response.json()
+  ret data
+
+# パイプで変換チェーン
+fn.async getTopUsers() -> list:
+  any data = await fetchData("https://jsonplaceholder.typicode.com/users")
+  list result = data
+    |> filter((u) => u.name.length > 5)
+    |> map((u) => {name: u.name, email: u.email})
+  ret result
+
+# エラーハンドリング
+fn.async safeFetch(str url) -> map:
+  try:
+    any data = await fetchData(url)
+    ret {ok: true, data: data}
+  fail e:
+    log.error "Fetch failed: {e.message}"
+    ret {ok: false, error: e.message}
+
+# await.all で並列実行
+fn.async loadDashboard() -> map:
+  list urls = [
+    "https://jsonplaceholder.typicode.com/users",
+    "https://jsonplaceholder.typicode.com/posts",
+    "https://jsonplaceholder.typicode.com/todos"
+  ]
+  list results = await.all urls.map((url) => fetchData(url))
+  ret {
+    users: results[0],
+    posts: results[1],
+    todos: results[2]
+  }
+
+# 実行
+fn.async main():
+  log "Fetching data..."
+  map dashboard = await safeFetch("https://jsonplaceholder.typicode.com/users")
+  if dashboard.ok:
+    log "Got {dashboard.data.length} items"
+  else:
+    log.error dashboard.error
+
+main()

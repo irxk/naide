@@ -1,0 +1,40 @@
+-- NAIDE-X async/await
+
+~f fetchData(s:url)a
+  a:res=~fetch(url)
+  a:data=~res.json()
+  >data
+
+~f getTopUsers()l
+  a:data=~fetchData("https://jsonplaceholder.typicode.com/users")
+  l:result=data
+    |>filter((u)=>u.name.length>5)
+    |>map((u)=>({name:u.name,email:u.email}))
+  >result
+
+~f safeFetch(s:url)m
+  !
+    a:data=~fetchData(url)
+    >{ok:true,data:data}
+  !!e
+    log.e"Fetch failed: {e.message}"
+    >{ok:false,error:e.message}
+
+~f loadDash()m
+  l:urls=[
+    "https://jsonplaceholder.typicode.com/users",
+    "https://jsonplaceholder.typicode.com/posts",
+    "https://jsonplaceholder.typicode.com/todos"
+  ]
+  l:results=~~urls.map((url)=>fetchData(url))
+  >{users:results[0],posts:results[1],todos:results[2]}
+
+~f main()
+  log"Fetching data..."
+  m:dash=~safeFetch("https://jsonplaceholder.typicode.com/users")
+  ?dash.ok
+    log"Got {dash.data.length} items"
+  :
+    log.e dash.error
+
+main()

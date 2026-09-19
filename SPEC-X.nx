@@ -1,0 +1,144 @@
+-- ============================================
+-- NAIDE-X Language Specification
+-- ~80% fewer tokens than JavaScript
+-- AI-only readability. Maximum generation speed.
+-- ============================================
+-- Rule: first char of line = intent
+--   > return    ? if       | elif     : else
+--   @ loop      * while    ! try      !! catch
+--   $ server    ^ model    < import   % match
+--   f func      ~f async   + export
+--   s:i:n:b:l:m:a: typed vars
+--   ~ await     ~~ await.all
+-- ============================================
+
+-- Types: s=str i=int n=num b=bool l=list m=map a=any
+s:name="hello"
+i:count=42
+n:price=9.99
+b:active=true
+l:items=[1,2,3]
+m:cfg={host:"localhost",port:3000}
+a:data=null
+
+-- Mutable: ~ prefix
+~i:counter=0
+~s:label="init"
+
+-- String interpolation: "{expr}" (double quotes)
+s:greet="Hello {name}, count is {count}"
+
+-- Functions: f name(TYPE:param,...)RETTYPE
+f add(i:a,i:b)i
+  >a+b
+
+f sayHi(s:who)
+  log"Hi {who}"
+
+f greet2(s:name,s:prefix="Hello")
+  log"{prefix}, {name}!"
+
+-- Async: ~f
+~f fetchUser(s:id)m
+  a:res=~fetch("/api/users/{id}")
+  a:data=~res.json()
+  >data
+
+-- Return: >
+-- Return with status: >.s CODE BODY
+
+-- If/elif/else: ? | :
+?count>10
+  log"many"
+|count>5
+  log"some"
+:
+  log"few"
+
+-- Inline ternary (same as NAIDE v1)
+-- s:size=if count>10 then "big" else "small"
+
+-- Each: @var<collection
+@item<items
+  log item
+
+-- Each with key: @key,val<collection
+@k,v<cfg
+  log"{k}: {v}"
+
+-- For range: @var<start..end
+@i<0..10
+  log i
+
+-- While: *condition
+*active
+  log"running"
+  active=false
+
+-- Match: %value
+s:status="ok"
+%status
+  "ok": log "success"
+  "error": log "failed"
+  _: log "unknown"
+
+-- Try/catch: ! / !!var
+~f safe(s:url)m
+  !
+    a:data=~fetch(url)
+    >{ok:true,data:data}
+  !!e
+    log.e"fail: {e.message}"
+    >{ok:false,error:e.message}
+
+-- Pipe: |> (same)
+l:result=[1,2,3,4,5]
+  |>filter((x)=>x>2)
+  |>map((x)=>x*10)
+
+-- Model: ^Name
+^User
+  s:name
+  s:email
+  i:age=0
+  f greet()s
+    >"Hi, I'm {self.name}"
+  ~f save()
+    log"Saving {self.name}..."
+
+-- Inheritance: ^Child<Parent
+^Admin<User
+  s:role="admin"
+  f perms()l
+    >["read","write","delete"]
+
+-- Server: $name:port
+-- Routes: G P U D + "path"
+-- $app:3000
+--   G"/users"
+--     >users
+--   P"/users"(req,res)
+--     >req.body
+
+-- Import: <module or <{names}"module"
+-- <express
+-- <{readFile,writeFile}"fs/promises"
+
+-- Export: + prefix
++f helper()s
+  >"exported"
++s:VER="1.0.0"
+
+-- Log: log, log.e, log.w
+log"info"
+log.e"error"
+log.w"warning"
+
+-- Null safe: ?. and ?? (same)
+a:val=data?.nested?.value??"default"
+
+-- Await all: ~~[expr1,expr2]
+
+-- Spread: ...
+l:combined=[...items,4,5,6]
+m:merged={...cfg,debug:true}

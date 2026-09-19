@@ -1,0 +1,182 @@
+# ============================================
+# NAIDE Language Specification
+# Node AI Development Environment
+# ============================================
+# AIが最速でコード生成できるように設計された言語
+#
+# 設計原則:
+#   1. 1つの書き方しかない (曖昧さゼロ)
+#   2. キーワード駆動 (行頭で意図が確定)
+#   3. 最小トークン数 (生成量削減 = 高速)
+#   4. よく使うパターンが組み込み
+#   5. インデントベース (波括弧不要)
+# ============================================
+
+
+# ---- 変数宣言 ----
+# 型名 変数名 = 値 (不変 const)
+str name = "hello"
+int count = 42
+num price = 9.99
+bool active = true
+list items = [1, 2, 3]
+map config = {host: "localhost", port: 3000}
+any data = null
+
+# 可変変数 (let)
+mut int counter = 0
+mut str label = "initial"
+
+
+# ---- 文字列補間 ----
+# ダブルクォートで {式} が自動展開
+str greeting = "Hello {name}, count is {count}"
+
+
+# ---- 関数 ----
+# fn 名前(型 引数) -> 戻り型:
+fn add(int a, int b) -> int:
+  ret a + b
+
+# 戻り値なし
+fn sayHi(str who):
+  log "Hi {who}"
+
+# デフォルト引数
+fn greet(str name, str prefix = "Hello"):
+  log "{prefix}, {name}!"
+
+# 可変長引数
+fn sum(...int nums) -> int:
+  mut int total = 0
+  each n in nums:
+    total += n
+  ret total
+
+
+# ---- 非同期関数 ----
+fn.async fetchUser(str id) -> map:
+  any res = await fetch("/api/users/{id}")
+  any data = await res.json()
+  ret data
+
+
+# ---- 条件分岐 ----
+if count > 10:
+  log "many"
+elif count > 5:
+  log "some"
+else:
+  log "few"
+
+# インライン三項
+str size = if count > 10 then "big" else "small"
+
+
+# ---- ループ ----
+# each: コレクション反復
+each item in items:
+  log item
+
+# each with key (Object.entries)
+each key, val in config:
+  log "{key}: {val}"
+
+# for: 範囲ループ
+for i in 0..10:
+  log i
+
+# while
+while active:
+  log "running"
+  active = false
+
+
+# ---- パターンマッチ ----
+str status = "ok"
+match status:
+  "ok": log "success"
+  "error": log "failed"
+  _: log "unknown"
+
+
+# ---- エラーハンドリング ----
+fn.async safeFetch(str url) -> map:
+  try:
+    any data = await fetch(url)
+    ret {ok: true, data: data}
+  fail e:
+    log.error e.message
+    ret {ok: false, error: e.message}
+
+
+# ---- パイプ演算子 ----
+# データ変換チェーンが読みやすい
+list result = [1, 2, 3, 4, 5]
+  |> filter((x) => x > 2)
+  |> map((x) => x * 10)
+
+
+# ---- クラス (model) ----
+model User:
+  str name
+  str email
+  int age = 0
+
+  fn greet() -> str:
+    ret "Hi, I'm {self.name}"
+
+  fn.async save():
+    log "Saving {self.name}..."
+
+# 継承
+model Admin extends User:
+  str role = "admin"
+
+  fn permissions() -> list:
+    ret ["read", "write", "delete"]
+
+
+# ---- サーバー定義 ----
+# Express.jsのボイラープレートが不要
+# server 名前 port ポート:
+#   get "/path" (req, res):
+#     ret {data: "response"}
+
+
+# ---- インポート ----
+# use モジュール名
+# use {名前1, 名前2} from "モジュール"
+# use モジュール from "パッケージ"
+# use モジュール as 別名
+
+
+# ---- イベント ----
+# on オブジェクト.イベント:
+#   ハンドラ
+
+
+# ---- ログ ----
+log "info message"
+log.error "error message"
+log.warn "warning"
+
+
+# ---- 公開 (export) ----
+pub fn helper() -> str:
+  ret "exported"
+
+pub str VERSION = "1.0.0"
+
+
+# ---- null安全 ----
+any val = data?.nested?.value ?? "default"
+
+
+# ---- await.all (Promise.all) ----
+# list results = await.all [expr1, expr2, expr3]
+
+
+# ---- スプレッド ----
+list combined = [...items, 4, 5, 6]
+map merged = {...config, debug: true}

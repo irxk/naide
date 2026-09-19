@@ -1,0 +1,33 @@
+# NAIDE - Hello World
+# AIが最速で生成できる言語
+
+str name = "World"
+int count = 3
+
+fn greet(str who) -> str:
+  ret "Hello, {who}!"
+
+for i in 0..count:
+  str message = greet(name)
+  log message
+
+# 条件分岐
+if count > 5:
+  log "many"
+elif count > 2:
+  log "a few"
+else:
+  log "few"
+
+# リスト操作
+list items = ["apple", "banana", "cherry"]
+
+each fruit in items:
+  log "I like {fruit}"
+
+# マッチ
+str status = "ok"
+match status:
+  "ok": log "All good"
+  "error": log "Something went wrong"
+  _: log "Unknown status"

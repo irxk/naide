@@ -1,0 +1,29 @@
+-- NAIDE-X hello world
+
+s:name="World"
+i:count=3
+
+f greet(s:who)s
+  >"Hello, {who}!"
+
+@i<0..count
+  s:msg=greet(name)
+  log msg
+
+?count>5
+  log"many"
+|count>2
+  log"a few"
+:
+  log"few"
+
+l:items=["apple","banana","cherry"]
+
+@fruit<items
+  log"I like {fruit}"
+
+s:status="ok"
+%status
+  "ok": log "All good"
+  "error": log "Something went wrong"
+  _: log "Unknown"

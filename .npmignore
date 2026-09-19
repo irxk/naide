@@ -1,0 +1,6 @@
+.naide_tmp_*
+test/
+.git/
+.github/
+node_modules/
+*.log

@@ -1,0 +1,79 @@
+# NAIDE - Full CRUD Application
+# モデル定義 + サーバー + エラーハンドリング
+
+# データモデル
+model Todo:
+  str id
+  str title
+  bool done = false
+  str createdAt
+
+  fn toggle():
+    self.done = not self.done
+
+  fn toJSON() -> map:
+    ret {
+      id: self.id,
+      title: self.title,
+      done: self.done,
+      createdAt: self.createdAt
+    }
+
+# インメモリストア
+mut list todos = []
+mut int nextId = 1
+
+# ヘルパー関数
+fn findTodo(str id) -> any:
+  each todo in todos:
+    if todo.id == id:
+      ret todo
+  ret null
+
+fn generateId() -> str:
+  str id = "todo_{nextId}"
+  nextId += 1
+  ret id
+
+# APIサーバー
+server app port 8080:
+
+  get "/api/todos":
+    ret {todos: todos, count: todos.length}
+
+  get "/api/todos/:id" (req, res):
+    any todo = findTodo(req.params.id)
+    if todo == null:
+      ret.status 404 {error: "Todo not found"}
+    ret todo
+
+  post "/api/todos" (req, res):
+    map body = req.body
+    if not body.title:
+      ret.status 400 {error: "Title is required"}
+    map todo = {
+      id: generateId(),
+      title: body.title,
+      done: false,
+      createdAt: new Date().toISOString()
+    }
+    todos.push(todo)
+    ret.status 201 todo
+
+  put "/api/todos/:id" (req, res):
+    any todo = findTodo(req.params.id)
+    if todo == null:
+      ret.status 404 {error: "Todo not found"}
+    map body = req.body
+    if body.title:
+      todo.title = body.title
+    if body.done != null:
+      todo.done = body.done
+    ret todo
+
+  del "/api/todos/:id" (req, res):
+    int idx = todos.findIndex((t) => t.id == req.params.id)
+    if idx == -1:
+      ret.status 404 {error: "Todo not found"}
+    todos.splice(idx, 1)
+    ret {status: "deleted"}

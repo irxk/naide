@@ -1,0 +1,37 @@
+-- Full NAIDE-X app with high-level features
+
+env:
+  PORT int default(3000)
+  JWT_SECRET str required
+
+schema User:
+  id auto
+  name str required min(2) max(50)
+  email str required email
+  role str default("user")
+
+schema Todo:
+  id auto
+  title str required min(1)
+  done bool default(false)
+  created timestamp auto
+
+$app:PORT
+  cors "*"
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/auth/*"
+  limit "/api/*" 100 "1m"
+  crud "/api/users" User
+  crud "/api/todos" Todo
+  G"/health"
+    >{status:"ok"}
+  P"/api/auth/login"(req,res)
+    s:email=req.body.email
+    >{token:"jwt-token-here"}
+
+every "30m":
+  log"cleanup running"
+
+watch User.create (event):
+  log"new user: {event.data.name}"

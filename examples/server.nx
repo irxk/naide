@@ -1,0 +1,27 @@
+-- NAIDE-X REST API server
+
+$app:3000
+
+  G"/"
+    >{message:"Welcome to NAIDE-X API"}
+
+  G"/users"
+    l:users=[
+      {id:1,name:"Alice",age:30},
+      {id:2,name:"Bob",age:25}
+    ]
+    >users
+
+  G"/users/:id"(req,res)
+    s:id=req.params.id
+    >{id:id,name:"User {id}"}
+
+  P"/users"(req,res)
+    m:body=req.body
+    log"Creating user: {body.name}"
+    >{status:"created",user:body}
+
+  D"/users/:id"(req,res)
+    s:id=req.params.id
+    log"Deleting user {id}"
+    >{status:"deleted",id:id}

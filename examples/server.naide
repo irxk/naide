@@ -1,0 +1,28 @@
+# NAIDE - REST API Server
+# 従来のExpressだと30行以上 → NAIDEなら直感的
+
+server app port 3000:
+
+  get "/":
+    ret {message: "Welcome to NAIDE API"}
+
+  get "/users":
+    list users = [
+      {id: 1, name: "Alice", age: 30},
+      {id: 2, name: "Bob", age: 25}
+    ]
+    ret users
+
+  get "/users/:id" (req, res):
+    str id = req.params.id
+    ret {id: id, name: "User {id}"}
+
+  post "/users" (req, res):
+    map body = req.body
+    log "Creating user: {body.name}"
+    ret {status: "created", user: body}
+
+  del "/users/:id" (req, res):
+    str id = req.params.id
+    log "Deleting user {id}"
+    ret {status: "deleted", id: id}

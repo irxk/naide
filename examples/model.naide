@@ -1,0 +1,44 @@
+# NAIDE - Model (Class) の例
+# AIがクラスを最速で書ける構文
+
+model Animal:
+  str name
+  str sound
+  int age = 0
+
+  fn speak() -> str:
+    ret "{self.name} says {self.sound}!"
+
+  fn isOld() -> bool:
+    ret self.age > 10
+
+model Dog extends Animal:
+  str breed
+
+  fn fetch(str item) -> str:
+    ret "{self.name} fetched the {item}!"
+
+# インスタンス作成
+any dog = new Dog("Rex", "Woof", 5, "Labrador")
+log dog.speak()
+log dog.fetch("ball")
+
+if dog.isOld():
+  log "{dog.name} is old"
+else:
+  log "{dog.name} is young"
+
+# リスト操作 + パイプ
+list animals = [
+  new Animal("Cat", "Meow", 3),
+  new Animal("Bird", "Tweet", 12),
+  new Animal("Fish", "Blub", 1)
+]
+
+list oldAnimals = animals
+  |> filter((a) => a.age > 5)
+  |> map((a) => a.name)
+
+log "Old animals:"
+each name in oldAnimals:
+  log "  - {name}"

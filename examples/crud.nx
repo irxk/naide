@@ -1,0 +1,64 @@
+-- NAIDE-X full CRUD
+
+^Todo
+  s:id
+  s:title
+  b:done=false
+  s:createdAt
+
+  f toggle()
+    self.done=not self.done
+
+  f toJSON()m
+    >{id:self.id,title:self.title,done:self.done,createdAt:self.createdAt}
+
+~l:todos=[]
+~i:nextId=1
+
+f findTodo(s:id)a
+  @todo<todos
+    ?todo.id==id
+      >todo
+  >null
+
+f genId()s
+  s:id="todo_{nextId}"
+  nextId+=1
+  >id
+
+$app:8080
+
+  G"/api/todos"
+    >{todos:todos,count:todos.length}
+
+  G"/api/todos/:id"(req,res)
+    a:todo=findTodo(req.params.id)
+    ?todo==null
+      >.s 404 {error:"Todo not found"}
+    >todo
+
+  P"/api/todos"(req,res)
+    m:body=req.body
+    ?not body.title
+      >.s 400 {error:"Title is required"}
+    m:todo={id:genId(),title:body.title,done:false,createdAt:new Date().toISOString()}
+    todos.push(todo)
+    >.s 201 todo
+
+  U"/api/todos/:id"(req,res)
+    a:todo=findTodo(req.params.id)
+    ?todo==null
+      >.s 404 {error:"Todo not found"}
+    m:body=req.body
+    ?body.title
+      todo.title=body.title
+    ?body.done!=null
+      todo.done=body.done
+    >todo
+
+  D"/api/todos/:id"(req,res)
+    i:idx=todos.findIndex((t)=>t.id==req.params.id)
+    ?idx==-1
+      >.s 404 {error:"Todo not found"}
+    todos.splice(idx,1)
+    >{status:"deleted"}
