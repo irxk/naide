@@ -1418,11 +1418,81 @@ describe('Runtime unit tests', () => {
   });
 
   // ===== Debug mode in help text =====
-  it('help text includes debug and check commands', async () => {
+  it('help text includes debug, check, and target commands', async () => {
     const { execSync } = await import('child_process');
     const help = execSync('node bin/naide.js --help', { encoding: 'utf-8' });
     assert.ok(help.includes('--debug'));
     assert.ok(help.includes('--check'));
     assert.ok(help.includes('naide pkg'));
+    assert.ok(help.includes('--target'));
+    assert.ok(help.includes('python'));
+    assert.ok(help.includes('bun'));
+  });
+
+  // ===== compileAsync with target =====
+  it('compileAsync returns code for node target', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('str name = "hello"\n', { target: 'node' });
+    assert.ok(result.js.includes('const name = "hello"'));
+    assert.ok(result.code);
+  });
+
+  // ===== Python target =====
+  it('compileAsync generates Python for variables', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('str name = "hello"\nint count = 42\n', { target: 'python' });
+    assert.ok(result.code.includes('name = "hello"'));
+    assert.ok(result.code.includes('count = 42'));
+  });
+
+  it('compileAsync generates Python functions', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('fn add(int a, int b) -> int:\n  ret a + b\n', { target: 'python' });
+    assert.ok(result.code.includes('def add(a, b):'));
+    assert.ok(result.code.includes('return a + b'));
+  });
+
+  it('compileAsync generates Flask server', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('server app port 3000:\n  get "/":\n    ret {ok: true}\n', { target: 'python' });
+    assert.ok(result.code.includes('Flask'));
+    assert.ok(result.code.includes("@app.route"));
+    assert.ok(result.code.includes('app.run'));
+  });
+
+  // ===== Bun target =====
+  it('compileAsync generates Bun.serve server', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('server app port 3000:\n  get "/":\n    ret {ok: true}\n', { target: 'bun' });
+    assert.ok(result.code.includes('Bun.serve'));
+    assert.ok(result.code.includes('fetch(req)'));
+    assert.ok(result.code.includes('new Response'));
+  });
+
+  it('compileAsync Bun target generates variables as JS', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const result = await compileAsync('str name = "hello"\nint count = 42\n', { target: 'bun' });
+    assert.ok(result.code.includes('const name = "hello"'));
+    assert.ok(result.code.includes('const count = 42'));
+  });
+
+  it('compileAsync Bun server has route matching', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'server app port 8080:\n  get "/api/hello":\n    ret {msg: "hi"}\n  post "/api/data" (req, res):\n    ret {ok: true}\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes("method === 'GET'"));
+    assert.ok(result.code.includes("method === 'POST'"));
+    assert.ok(result.code.includes('"/api/hello"'));
+  });
+
+  // ===== LSP capabilities =====
+  it('LSP server file exists and exports handlers', async () => {
+    const { readFileSync } = await import('fs');
+    const lsp = readFileSync('lsp/server.js', 'utf-8');
+    assert.ok(lsp.includes('definitionProvider'));
+    assert.ok(lsp.includes('referencesProvider'));
+    assert.ok(lsp.includes('getDefinition'));
+    assert.ok(lsp.includes('getReferences'));
+    assert.ok(lsp.includes('indexSymbols'));
   });
 });

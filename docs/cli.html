@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CLI Reference — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html" class="active">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>CLI Reference</h1>
+      <p>The <code>naide</code> command-line tool compiles, runs, tests, and manages NAIDE projects.</p>
+
+      <h2>Basic Usage</h2>
+      <pre><code>$ naide &lt;file&gt;              # Compile and run
+$ naide &lt;file&gt; -o out.mjs   # Compile to file
+$ naide &lt;file&gt; -w           # Watch mode (auto-recompile)</code></pre>
+
+      <h2>Compilation Targets</h2>
+      <pre><code>$ naide app.naide                    # Node.js (default)
+$ naide app.naide --target python     # Python / Flask
+$ naide app.naide --target bun        # Bun runtime
+$ naide app.naide -t py               # Short alias</code></pre>
+      <table>
+        <tr><th>Target</th><th>Output</th><th>Server</th></tr>
+        <tr><td><code>node</code> (default)</td><td>JavaScript (.mjs)</td><td>Express</td></tr>
+        <tr><td><code>python</code> / <code>py</code></td><td>Python (.py)</td><td>Flask</td></tr>
+        <tr><td><code>bun</code></td><td>JavaScript (.js)</td><td>Bun.serve()</td></tr>
+      </table>
+
+      <h2>Type Checking</h2>
+      <pre><code>$ naide --check app.naide            # Type-check only, no run
+$ naide check app.naide              # Same as above</code></pre>
+
+      <h2>Debugging</h2>
+      <pre><code>$ naide app.naide --debug             # Launch with Chrome DevTools
+$ naide app.naide -d                  # Short alias</code></pre>
+      <p>Opens <code>node --inspect-brk</code> for step-through debugging in Chrome DevTools.</p>
+
+      <h2>Testing</h2>
+      <pre><code>$ naide test tests.naide             # Run test file</code></pre>
+
+      <h2>Package Ecosystem</h2>
+      <pre><code>$ naide pkg init                     # Initialize package.json
+$ naide pkg install &lt;name&gt;           # Install a package
+$ naide pkg publish                  # Publish to npm
+$ naide pkg list                     # List installed packages</code></pre>
+
+      <h2>Deployment</h2>
+      <pre><code>$ naide deploy                       # Generate Dockerfile</code></pre>
+      <p>Generates a production Dockerfile with multi-stage build.</p>
+
+      <h2>NX Conversion</h2>
+      <pre><code>$ naide convert app.naide            # Convert .naide to .nx</code></pre>
+
+      <h2>REPL</h2>
+      <pre><code>$ naide                              # Interactive REPL
+NAIDE v1.9.0 REPL
+&gt; str name = "World"
+&gt; log "Hello, {name}!"
+Hello, World!</code></pre>
+
+      <h2>All Flags</h2>
+      <table>
+        <tr><th>Flag</th><th>Description</th></tr>
+        <tr><td><code>-o &lt;file&gt;</code></td><td>Output compiled code to file</td></tr>
+        <tr><td><code>-w, --watch</code></td><td>Watch mode</td></tr>
+        <tr><td><code>-t, --target</code></td><td>Compilation target (node/python/bun)</td></tr>
+        <tr><td><code>-d, --debug</code></td><td>Debug mode with Chrome DevTools</td></tr>
+        <tr><td><code>--check</code></td><td>Type-check only</td></tr>
+        <tr><td><code>--ast</code></td><td>Print AST</td></tr>
+        <tr><td><code>--tokens</code></td><td>Print tokens</td></tr>
+        <tr><td><code>-h, --help</code></td><td>Show help</td></tr>
+        <tr><td><code>-v, --version</code></td><td>Show version</td></tr>
+      </table>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

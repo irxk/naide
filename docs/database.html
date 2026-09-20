@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Database — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html" class="active">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>Database</h1>
+      <p>NAIDE supports JSON file storage, SQLite, and PostgreSQL out of the box.</p>
+
+      <h2>JSON File Store</h2>
+      <p>Zero-dependency file-based storage, great for prototyping:</p>
+      <pre><code>db "data/"
+
+schema User:
+  id auto
+  name str required min(2)
+  email str required email
+
+server app port 3000:
+  crud "/api/users" User</code></pre>
+      <p>This creates a <code>data/</code> directory with JSON files for each schema. CRUD routes are auto-generated.</p>
+
+      <h2>SQLite</h2>
+      <p>Production-ready embedded database:</p>
+      <pre><code>db.sql "sqlite" "app.db"
+
+schema Todo:
+  id auto
+  title str required
+  done bool default(false)
+  created_at timestamp
+
+server app port 3000:
+  crud "/api/todos" Todo</code></pre>
+      <p>Uses <code>better-sqlite3</code> under the hood with WAL mode for concurrent access.</p>
+
+      <h2>PostgreSQL</h2>
+      <pre><code>db.sql "postgres" "postgresql://localhost/mydb"
+
+schema Product:
+  id auto
+  name str required
+  price num required min(0)
+  in_stock bool default(true)</code></pre>
+
+      <h2>Schema Definitions</h2>
+      <p>Schemas define structure, validation, and auto-generate CRUD operations:</p>
+      <table>
+        <tr><th>Type</th><th>Description</th></tr>
+        <tr><td><code>auto</code></td><td>Auto-incrementing ID</td></tr>
+        <tr><td><code>str</code></td><td>String</td></tr>
+        <tr><td><code>int</code></td><td>Integer</td></tr>
+        <tr><td><code>num</code></td><td>Number (float)</td></tr>
+        <tr><td><code>bool</code></td><td>Boolean</td></tr>
+        <tr><td><code>timestamp</code></td><td>ISO timestamp</td></tr>
+        <tr><td><code>enum</code></td><td>Enumerated values</td></tr>
+      </table>
+
+      <h3>Modifiers</h3>
+      <table>
+        <tr><th>Modifier</th><th>Description</th></tr>
+        <tr><td><code>required</code></td><td>Field must be present</td></tr>
+        <tr><td><code>optional</code></td><td>Field is optional</td></tr>
+        <tr><td><code>unique</code></td><td>Value must be unique</td></tr>
+        <tr><td><code>default(val)</code></td><td>Default value</td></tr>
+        <tr><td><code>min(n)</code></td><td>Minimum value or length</td></tr>
+        <tr><td><code>max(n)</code></td><td>Maximum value or length</td></tr>
+        <tr><td><code>email</code></td><td>Email format validation</td></tr>
+        <tr><td><code>pattern("regex")</code></td><td>Regex validation</td></tr>
+      </table>
+
+      <h2>CRUD Routes</h2>
+      <p><code>crud "/api/users" User</code> generates:</p>
+      <table>
+        <tr><th>Method</th><th>Path</th><th>Action</th></tr>
+        <tr><td>GET</td><td>/api/users</td><td>List all</td></tr>
+        <tr><td>GET</td><td>/api/users/:id</td><td>Get by ID</td></tr>
+        <tr><td>POST</td><td>/api/users</td><td>Create</td></tr>
+        <tr><td>PUT</td><td>/api/users/:id</td><td>Update</td></tr>
+        <tr><td>DELETE</td><td>/api/users/:id</td><td>Delete</td></tr>
+      </table>
+
+      <h2>Schema Migration</h2>
+      <p>When your schema changes, NAIDE can auto-migrate the database:</p>
+      <pre><code>schema User v2:
+  id auto
+  name str required min(2)
+  email str required email
+  role str default("user")    # new field</code></pre>
+      <p>The version tag triggers automatic migration for file-based and SQLite stores.</p>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

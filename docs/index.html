@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAIDE — AI-Optimized Language for Node.js</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html" class="active">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <div class="hero">
+        <h1>NAIDE</h1>
+        <p class="tagline">AI-optimized language for Node.js</p>
+        <div class="install-cmd"><span>$ </span>npm install -g naider</div>
+        <p style="color: var(--text-dim); font-size: 14px;">Multi-target: Node.js, Python (Flask), and Bun</p>
+      </div>
+
+      <!-- Feature cards -->
+      <div class="features">
+        <div class="feature-card">
+          <h3>AI-Native</h3>
+          <p>Built-in <code>ai.ask</code>, <code>ai.json</code>, <code>ai.stream</code>, embeddings, RAG, and prompt templates. Zero-dependency LLM integration.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Zero Dependencies</h3>
+          <p>Servers, auth, CRUD, file uploads, WebSockets, job queues, and more &mdash; all built into the runtime. No <code>npm install</code> needed.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Minimal Tokens</h3>
+          <p>NAIDE uses ~40% fewer tokens than JavaScript. NAIDE-X uses ~80% fewer. Faster AI generation, more room in context windows.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Two Syntax Modes</h3>
+          <p><code>.naide</code> is human-readable. <code>.nx</code> is AI-optimized. Convert freely between them with <code>naide convert</code>.</p>
+        </div>
+      </div>
+
+      <!-- Quick example -->
+      <div class="example-section">
+        <h2>A Full API in 15 Lines</h2>
+        <div class="example-grid">
+          <pre class="labeled"><span class="label">app.naide</span><code class="lang-naide"><span class="kw">schema</span> <span class="type">User</span>:
+  id    <span class="type">auto</span>
+  name  <span class="type">str</span> <span class="kw">required</span>
+  email <span class="type">str</span> <span class="kw">required</span> <span class="kw">email</span>
+
+<span class="kw">db</span> <span class="str">"data/"</span>
+
+<span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">cors</span> <span class="str">"*"</span>
+  <span class="kw">crud</span> <span class="str">"/api/users"</span> User
+  <span class="kw">auth</span> JWT_SECRET:
+    <span class="kw">protect</span> <span class="str">"/api/*"</span>
+    <span class="kw">public</span> <span class="str">"/api/auth/*"</span>
+
+  <span class="kw">post</span> <span class="str">"/api/ask"</span> (req, res):
+    <span class="type">str</span> answer = <span class="kw">await</span> ai.ask(req.body.prompt)
+    <span class="kw">ret</span> {answer}</code></pre>
+          <pre class="labeled"><span class="label">What you get</span><code>&#10004; REST API with CRUD + pagination
+&#10004; JWT authentication
+&#10004; CORS enabled
+&#10004; Schema validation
+&#10004; Persistent JSON database
+&#10004; AI/LLM endpoint
+&#10004; Auto-generated from ~15 lines
+&#10004; Zero external dependencies
+
+Run it:
+<span style="color: var(--green);">$ naide app.naide</span>
+
+Build to JavaScript:
+<span style="color: var(--green);">$ naide build</span></code></pre>
+        </div>
+      </div>
+
+      <!-- Benchmark -->
+      <h2>Token Efficiency</h2>
+      <table>
+        <thead>
+          <tr><th>Language</th><th>Tokens</th><th>Chars</th><th>Lines</th><th>Savings</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>JavaScript</td><td>330</td><td>2590</td><td>78</td><td>&mdash;</td></tr>
+          <tr><td>NAIDE</td><td>66</td><td>517</td><td>19</td><td style="color: var(--green);">-80%</td></tr>
+          <tr><td>NAIDE-X</td><td>39</td><td>435</td><td>19</td><td style="color: var(--green);">-88%</td></tr>
+        </tbody>
+      </table>
+      <p>Benchmark compares equivalent server applications. Fewer tokens means faster AI code generation and more room in context windows.</p>
+
+      <!-- Links -->
+      <h2>Learn More</h2>
+      <ul>
+        <li><a href="guide.html">Getting Started</a> &mdash; install, create a project, run your first app</li>
+        <li><a href="syntax.html">Syntax Reference</a> &mdash; variables, functions, control flow, classes</li>
+        <li><a href="server.html">Server &amp; API</a> &mdash; routes, auth, CRUD, WebSockets, SSE</li>
+        <li><a href="ai.html">AI / LLM</a> &mdash; prompts, streaming, embeddings, RAG</li>
+        <li><a href="database.html">Database</a> &mdash; JSON storage, SQLite, PostgreSQL</li>
+        <li><a href="testing.html">Testing</a> &mdash; test blocks, assertions, mock/spy</li>
+        <li><a href="cli.html">CLI Reference</a> &mdash; all commands and flags</li>
+        <li><a href="nx.html">NAIDE-X Syntax</a> &mdash; compressed AI-only syntax</li>
+      </ul>
+
+      <div class="footer">
+        <p>NAIDE is MIT licensed. &mdash; <a href="https://www.npmjs.com/package/naider">npm</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

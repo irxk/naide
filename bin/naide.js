@@ -2,7 +2,7 @@
 
 import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
 import { resolve, basename, extname, join, relative } from 'path';
-import { compile } from '../src/index.js';
+import { compile, compileAsync } from '../src/index.js';
 import { spawn } from 'child_process';
 
 import { createRequire } from 'module';
@@ -76,6 +76,7 @@ const flags = {
   watch: false,
   debug: false,
   check: false,
+  target: 'node',
 };
 
 const files = [];
@@ -93,6 +94,7 @@ for (let i = 0; i < args.length; i++) {
     case '--watch': case '-w': flags.watch = true; break;
     case '--debug': case '-d': flags.debug = true; break;
     case '--check': flags.check = true; flags.run = false; break;
+    case '--target': case '-t': flags.target = args[++i]; break;
     default: files.push(arg);
   }
 }
@@ -681,6 +683,11 @@ if (flags.help) {
     naide -w <file.naide>        Watch mode (auto-restart on changes)
     naide -d <file>              Debug mode (Node.js inspector)
 
+  Targets:
+    node    Node.js / JavaScript (default)
+    bun     Bun-optimized JavaScript
+    python  Python (Flask for servers)
+
   Modes:
     .naide  Standard NAIDE (~40% fewer tokens than JS)
     .nx     NAIDE-X extreme (~80% fewer tokens than JS)
@@ -691,6 +698,7 @@ if (flags.help) {
     -x             Force NAIDE-X mode
     -w, --watch    Watch mode: restart on file changes
     -d, --debug    Start with Node.js debugger (--inspect-brk)
+    -t, --target   Compile target: node (default), bun, python/py
     --check        Type-check files without running
     --mid          Show intermediate NAIDE v1 (X mode only)
     --ast          Print AST
@@ -772,7 +780,10 @@ for (const file of files) {
       continue;
     }
 
-    const result = compile(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check });
+    const useAsync = flags.target !== 'node';
+    const result = useAsync
+      ? await compileAsync(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check, target: flags.target })
+      : compile(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check });
 
     if (flags.check) {
       const { typeErrors } = result;
@@ -794,15 +805,37 @@ for (const file of files) {
       continue;
     }
 
+    const outputCode = result.code || result.js;
+    const outputExt = flags.target === 'python' || flags.target === 'py' ? '.py' : '.mjs';
+
     if (flags.output) {
-      writeFileSync(flags.output, result.js, 'utf-8');
+      writeFileSync(flags.output, outputCode, 'utf-8');
       console.log(`Written to ${flags.output}`);
       continue;
     }
 
     if (flags.emit) {
-      console.log(result.js);
+      console.log(outputCode);
       continue;
+    }
+
+    if (flags.target === 'python' || flags.target === 'py') {
+      const outFile = flags.output || resolve(basename(file, ext) + '.py');
+      writeFileSync(outFile, outputCode, 'utf-8');
+      console.log(`  ${file} → ${basename(outFile)} (Python)`);
+      continue;
+    }
+
+    if (flags.target === 'bun') {
+      const tempFile = resolve(`.naide_tmp_${basename(file, ext)}.mjs`);
+      writeFileSync(tempFile, outputCode, 'utf-8');
+      console.log(`[NAIDE] Running with Bun — ${file}`);
+      const bunChild = spawn('bun', ['run', tempFile], { stdio: 'inherit', shell: true });
+      bunChild.on('close', (code) => {
+        try { unlinkSync(tempFile); } catch {}
+        process.exit(code || 0);
+      });
+      await new Promise(() => {});
     }
 
     // Run mode

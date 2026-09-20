@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Server &amp; API — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html" class="active">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+      <h1>Server &amp; API</h1>
+      <p>All server features are zero-dependency &mdash; the runtime is bundled with the NAIDE package. No need to install Express or any other framework.</p>
+
+      <!-- server -->
+      <h2>server &mdash; HTTP Server</h2>
+      <p>The <code>server</code> keyword creates an HTTP server with route handlers:</p>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">get</span> <span class="str">"/"</span>:
+    <span class="kw">ret</span> {message: <span class="str">"hello"</span>}
+
+  <span class="kw">post</span> <span class="str">"/api/data"</span> (req, res):
+    <span class="kw">ret</span> req.body
+
+  <span class="kw">put</span> <span class="str">"/api/data/:id"</span> (req, res):
+    <span class="kw">ret</span> {updated: <span class="num">true</span>}
+
+  <span class="kw">del</span> <span class="str">"/api/data/:id"</span>:
+    <span class="kw">ret</span> {deleted: <span class="num">true</span>}
+
+  <span class="kw">patch</span> <span class="str">"/api/data/:id"</span> (req, res):
+    <span class="kw">ret</span> {patched: <span class="num">true</span>}</code></pre>
+      <p>Supported HTTP methods: <code>get</code>, <code>post</code>, <code>put</code>, <code>del</code>, <code>patch</code>. The <code>(req, res)</code> parameters are optional &mdash; omit them if you only need to return data.</p>
+
+      <!-- Response Helpers -->
+      <h2>Response Helpers</h2>
+      <p>The <code>ret</code> keyword supports several response modes:</p>
+      <pre><code class="lang-naide"><span class="kw">ret</span> {data: items}                        <span class="cmt"># JSON (default)</span>
+<span class="kw">ret.status</span> <span class="num">404</span> {error: <span class="str">"nope"</span>}          <span class="cmt"># status code</span>
+<span class="kw">ret.redirect</span> <span class="str">"/login"</span>                    <span class="cmt"># redirect</span>
+<span class="kw">ret.redirect</span> <span class="num">301</span> <span class="str">"/new-url"</span>             <span class="cmt"># redirect with status</span>
+<span class="kw">ret.html</span> <span class="str">"&lt;h1&gt;Hello&lt;/h1&gt;"</span>               <span class="cmt"># HTML</span>
+<span class="kw">ret.text</span> <span class="str">"pong"</span>                          <span class="cmt"># plain text</span>
+<span class="kw">ret.file</span> <span class="str">"/path/to/file"</span>                <span class="cmt"># send file</span>
+<span class="kw">ret.download</span> <span class="str">"/path/to/file.zip"</span>        <span class="cmt"># file download</span>
+<span class="kw">ret.download</span> <span class="str">"/file.zip"</span> <span class="str">"custom.zip"</span>   <span class="cmt"># download with filename</span>
+<span class="kw">ret.render</span> <span class="str">"template"</span> {data}            <span class="cmt"># render template (requires view)</span></code></pre>
+
+      <!-- Schema -->
+      <h2>schema &mdash; Data Models</h2>
+      <p>Define data schemas with types and validation rules:</p>
+      <pre><code class="lang-naide"><span class="kw">schema</span> <span class="fn">User</span>:
+  id       <span class="type">auto</span>
+  name     <span class="type">str</span> <span class="kw">required</span> <span class="kw">min</span>(<span class="num">2</span>) <span class="kw">max</span>(<span class="num">50</span>)
+  email    <span class="type">str</span> <span class="kw">required</span> <span class="kw">email</span> <span class="kw">unique</span>
+  age      <span class="type">int</span> <span class="kw">optional</span> <span class="kw">min</span>(<span class="num">0</span>) <span class="kw">max</span>(<span class="num">150</span>)
+  role     <span class="kw">enum</span>(<span class="str">"admin"</span>, <span class="str">"user"</span>) <span class="kw">default</span>(<span class="str">"user"</span>)
+  joined   <span class="type">timestamp</span> <span class="type">auto</span></code></pre>
+
+      <h3>Schema Types</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>str</code></td><td>String value</td></tr>
+          <tr><td><code>int</code></td><td>Integer number</td></tr>
+          <tr><td><code>num</code></td><td>Any number</td></tr>
+          <tr><td><code>bool</code></td><td>Boolean</td></tr>
+          <tr><td><code>auto</code></td><td>Auto-generated UUID</td></tr>
+          <tr><td><code>timestamp</code></td><td>Auto-generated timestamp</td></tr>
+          <tr><td><code>enum(...)</code></td><td>One of the listed values</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Modifiers</h3>
+      <p><code>required</code>, <code>optional</code>, <code>min(n)</code>, <code>max(n)</code>, <code>email</code>, <code>url</code>, <code>unique</code>, <code>auto</code>, <code>default(val)</code></p>
+
+      <!-- CRUD -->
+      <h2>crud &mdash; Auto-Generated REST Endpoints</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">crud</span> <span class="str">"/api/users"</span> User</code></pre>
+      <p>Generates these endpoints automatically:</p>
+      <table>
+        <thead><tr><th>Method</th><th>Path</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET</code></td><td>/api/users</td><td>List all (with pagination)</td></tr>
+          <tr><td><code>GET</code></td><td>/api/users/:id</td><td>Get by ID</td></tr>
+          <tr><td><code>POST</code></td><td>/api/users</td><td>Create (with validation)</td></tr>
+          <tr><td><code>PUT</code></td><td>/api/users/:id</td><td>Update</td></tr>
+          <tr><td><code>DELETE</code></td><td>/api/users/:id</td><td>Delete</td></tr>
+        </tbody>
+      </table>
+      <p>Built-in pagination, search, and sort via query parameters:</p>
+      <pre><code>GET /api/users?page=2&amp;limit=10&amp;q=john&amp;sort=name&amp;order=asc</code></pre>
+      <p>Response format: <code>{ data: [...], total, page, limit, pages }</code></p>
+
+      <!-- validate -->
+      <h2>validate &mdash; Request Validation</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">validate</span> <span class="str">"/api/users"</span> User
+
+  <span class="kw">post</span> <span class="str">"/api/users"</span> (req, res):
+    user = UserStore.create(req.body)   <span class="cmt"># body is pre-validated</span>
+    <span class="kw">ret</span> user</code></pre>
+      <p>Auto-validates POST/PUT/PATCH request bodies against the schema. Returns <code>400</code> with error details if validation fails. Validated data replaces <code>req.body</code>.</p>
+
+      <!-- Auth -->
+      <h2>auth &mdash; JWT Authentication</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">auth</span> JWT_SECRET:
+    <span class="kw">protect</span> <span class="str">"/api/*"</span>
+    <span class="kw">public</span> <span class="str">"/api/auth/*"</span>
+
+  <span class="kw">post</span> <span class="str">"/api/auth/login"</span> (req, res):
+    token = <span class="bi">auth.sign</span>({id: user.id})
+    <span class="kw">ret</span> {token}</code></pre>
+      <p>Paths matching <code>protect</code> require a valid JWT in the <code>Authorization: Bearer &lt;token&gt;</code> header. Paths matching <code>public</code> are excluded. The decoded token is available on <code>req.user</code>.</p>
+
+      <!-- cors / limit / cookie / session -->
+      <h2>Middleware</h2>
+      <h3>cors &mdash; Cross-Origin Requests</h3>
+      <pre><code class="lang-naide"><span class="kw">cors</span> <span class="str">"*"</span>                    <span class="cmt"># allow all origins</span></code></pre>
+
+      <h3>limit &mdash; Rate Limiting</h3>
+      <pre><code class="lang-naide"><span class="kw">limit</span> <span class="str">"/api/*"</span> <span class="num">100</span> <span class="str">"1m"</span>    <span class="cmt"># 100 requests per minute</span></code></pre>
+
+      <h3>cookie &mdash; Cookie Parser</h3>
+      <pre><code class="lang-naide"><span class="kw">cookie</span>                     <span class="cmt"># parses cookies into req.cookies</span></code></pre>
+
+      <h3>session &mdash; Cookie Sessions</h3>
+      <pre><code class="lang-naide"><span class="kw">session</span> <span class="str">"my-secret"</span>        <span class="cmt"># enables req.session</span></code></pre>
+
+      <!-- mid -->
+      <h2>mid &mdash; Custom Middleware</h2>
+      <pre><code class="lang-naide"><span class="kw">fn</span> <span class="fn">logger</span>(req, res, next):
+  <span class="bi">log</span> req.method, req.url
+  next()
+
+<span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">mid</span> logger               <span class="cmt"># apply globally</span>
+  <span class="kw">mid</span> logger <span class="str">"/api"</span>        <span class="cmt"># apply to path only</span></code></pre>
+
+      <h3>Route-Level Middleware</h3>
+      <p>Apply middleware to specific routes with bracket syntax:</p>
+      <pre><code class="lang-naide"><span class="kw">get</span> <span class="str">"/admin"</span> [authCheck] (req, res):
+  <span class="kw">ret</span> {admin: <span class="num">true</span>}
+
+<span class="kw">post</span> <span class="str">"/api/data"</span> [auth, logger, validator] (req, res):
+  <span class="kw">ret</span> req.body</code></pre>
+      <p>Compiles to: <code>app.get("/admin", authCheck, (req, res) =&gt; { ... })</code></p>
+
+      <!-- upload -->
+      <h2>upload &mdash; File Uploads</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">upload</span> <span class="str">"/api/upload"</span> <span class="str">"avatar"</span> (req, res):
+    <span class="kw">ret</span> {filename: req.file.filename, size: req.file.size}</code></pre>
+      <p>Zero-dependency multipart parser. <code>req.file</code> contains <code>{filename, contentType, data, size}</code>.</p>
+
+      <!-- view -->
+      <h2>view &mdash; Template Rendering</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">view</span> <span class="str">"./views"</span>
+
+  <span class="kw">get</span> <span class="str">"/"</span>:
+    <span class="kw">ret.render</span> <span class="str">"home"</span> {title: <span class="str">"Welcome"</span>, items: [<span class="str">"a"</span>, <span class="str">"b"</span>]}</code></pre>
+      <p>Reads <code>.html</code> files with template syntax: <code>{{variable}}</code>, <code>{{if key}}...{{/if}}</code>, <code>{{each item in list}}...{{/each}}</code>.</p>
+
+      <!-- static -->
+      <h2>static &mdash; Serve Static Files</h2>
+      <pre><code class="lang-naide"><span class="kw">static</span> <span class="str">"/public"</span></code></pre>
+
+      <!-- group -->
+      <h2>group &mdash; Route Groups</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">group</span> <span class="str">"/api/v1"</span>:
+    <span class="kw">get</span> <span class="str">"/users"</span>:
+      <span class="kw">ret</span> users
+    <span class="kw">post</span> <span class="str">"/users"</span> (req, res):
+      <span class="kw">ret</span> req.body</code></pre>
+      <p>Groups routes under a common path prefix.</p>
+
+      <!-- sse -->
+      <h2>sse &mdash; Server-Sent Events</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">sse</span> <span class="str">"/events"</span>
+
+  <span class="kw">post</span> <span class="str">"/api/notify"</span> (req, res):
+    sse.broadcast req.body
+    <span class="kw">ret</span> {ok: <span class="num">true</span>}</code></pre>
+      <p>Available functions: <code>sse.send(data)</code>, <code>sse.broadcast(data)</code>, <code>sse.count</code>.</p>
+
+      <!-- ws -->
+      <h2>ws &mdash; WebSocket</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">ws</span> <span class="str">"/chat"</span>:
+    <span class="kw">on</span> <span class="str">"connect"</span>:
+      send({type: <span class="str">"welcome"</span>})
+    <span class="kw">on</span> <span class="str">"message"</span> (data):
+      broadcast(data)
+    <span class="kw">on</span> <span class="str">"close"</span>:
+      <span class="bi">log</span> <span class="str">"client left"</span></code></pre>
+      <p>Built-in <code>send(data)</code> and <code>broadcast(data)</code>. Requires <code>npm install ws</code>.</p>
+
+      <!-- cache -->
+      <h2>cache &mdash; Response Caching</h2>
+      <pre><code class="lang-naide"><span class="kw">cache</span> <span class="str">"/api/*"</span> <span class="str">"5m"</span></code></pre>
+      <p>Caches GET responses in memory with a TTL. Sets <code>X-Cache: HIT/MISS</code> header.</p>
+
+      <!-- error -->
+      <h2>error &mdash; Error Handler</h2>
+      <pre><code class="lang-naide"><span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">error</span> (err, req, res):
+    <span class="bi">log.error</span> err.message
+    <span class="kw">ret.status</span> <span class="num">500</span> {error: <span class="str">"Internal error"</span>}</code></pre>
+      <p>Async route handlers are automatically wrapped with try/catch. Routes with explicit <code>try/fail</code> blocks are left as-is.</p>
+
+      <!-- openapi -->
+      <h2>openapi &mdash; API Docs</h2>
+      <pre><code class="lang-naide"><span class="kw">openapi</span> <span class="str">"/docs"</span></code></pre>
+      <p>Auto-generates an OpenAPI 3.1 JSON spec from your schemas, served at the specified path.</p>
+
+      <!-- queue -->
+      <h2>queue &mdash; Job Queue</h2>
+      <pre><code class="lang-naide"><span class="kw">queue</span> jobs:
+  <span class="kw">job</span> <span class="str">"sendEmail"</span> (data):
+    <span class="bi">log</span> <span class="str">"sending to {data.to}"</span>
+  <span class="kw">job</span> <span class="str">"resize"</span> (data):
+    <span class="bi">log</span> <span class="str">"resizing {data.path}"</span>
+
+<span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">post</span> <span class="str">"/api/notify"</span> (req, res):
+    jobs.add(<span class="str">"sendEmail"</span>, {to: req.body.email})
+    <span class="kw">ret</span> {queued: <span class="num">true</span>}</code></pre>
+      <p>In-memory async job queue for background processing.</p>
+
+      <!-- Scheduled Tasks & Events -->
+      <h2>Scheduled Tasks &amp; Events</h2>
+      <pre><code class="lang-naide"><span class="kw">every</span> <span class="str">"5m"</span>:
+  <span class="bi">log</span> <span class="str">"cleanup running"</span>
+
+<span class="kw">watch</span> User.create (event):
+  <span class="bi">log</span> <span class="str">"new user: {event.data.name}"</span></code></pre>
+      <p>Intervals: <code>"30s"</code>, <code>"5m"</code>, <code>"1h"</code>, <code>"1d"</code>. The <code>watch</code> keyword connects to <code>crud</code> events automatically.</p>
+
+      <div class="footer">
+        <p><a href="syntax.html">&larr; Syntax Reference</a> &middot; <a href="ai.html">AI / LLM &rarr;</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html" class="active">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+      <h1>Getting Started</h1>
+      <p>NAIDE is a programming language that transpiles to Node.js. It is designed for AI-speed code generation: one way to write everything, keyword-driven intent, and minimal token count.</p>
+
+      <h2>Installation</h2>
+      <p>Install the CLI globally via npm:</p>
+      <pre><code>npm install -g naider</code></pre>
+      <p>This gives you the <code>naide</code> command. Verify it works:</p>
+      <pre><code>naide --version</code></pre>
+
+      <h2>Create a Project</h2>
+      <p>Scaffold a new NAIDE project with <code>init</code>:</p>
+      <pre><code>naide init my-app
+cd my-app
+npm install
+npm run dev</code></pre>
+      <p>This creates a project directory with a starter <code>.naide</code> file and <code>package.json</code>.</p>
+
+      <h2>Your First App</h2>
+      <p>Create a file called <code>app.naide</code>:</p>
+      <pre><code class="lang-naide"><span class="cmt"># app.naide</span>
+<span class="kw">server</span> app <span class="kw">port</span> <span class="num">3000</span>:
+  <span class="kw">get</span> <span class="str">"/"</span>:
+    <span class="kw">ret</span> {message: <span class="str">"Hello from NAIDE"</span>}
+
+  <span class="kw">get</span> <span class="str">"/greet/:name"</span> (req, res):
+    <span class="kw">ret</span> {hello: req.params.name}</code></pre>
+
+      <p>Run it:</p>
+      <pre><code>naide app.naide</code></pre>
+      <p>Your server is now running at <code>http://localhost:3000</code>. Visit <code>/greet/world</code> to see <code>{"hello":"world"}</code>.</p>
+
+      <h2>See the Output</h2>
+      <p>To see what JavaScript NAIDE generates without running it:</p>
+      <pre><code>naide --emit app.naide</code></pre>
+      <p>To write the JavaScript to a file:</p>
+      <pre><code>naide -o app.mjs app.naide</code></pre>
+
+      <h2>Watch Mode</h2>
+      <p>Auto-restart on file changes during development:</p>
+      <pre><code>naide -w app.naide</code></pre>
+
+      <h2>Build a Project</h2>
+      <p>Transpile all <code>.naide</code> and <code>.nx</code> files to JavaScript:</p>
+      <pre><code>naide build</code></pre>
+      <p>Output goes to <code>dist/</code> by default. You can specify source and output directories:</p>
+      <pre><code>naide build src/ dist/</code></pre>
+
+      <h2>Editor Support</h2>
+      <p>Install the VS Code extension with one command:</p>
+      <pre><code>naide vscode</code></pre>
+      <p>This provides syntax highlighting, LSP diagnostics, autocomplete, and hover docs for <code>.naide</code> and <code>.nx</code> files. Restart VS Code after installation.</p>
+      <p>For other editors, start the Language Server:</p>
+      <pre><code>naide lsp</code></pre>
+
+      <h2>REPL</h2>
+      <p>Start an interactive session to experiment with NAIDE syntax:</p>
+      <pre><code>$ naide
+NAIDE REPL v1.9.0 -- type NAIDE code, see JavaScript output
+Type .exit to quit, .eval to toggle eval mode
+
+&gt;&gt;&gt; <span style="color: var(--accent);">str name = "hello"</span>
+const name = "hello";
+
+&gt;&gt;&gt; <span style="color: var(--accent);">fn add(int a, int b) -> int:</span>
+...   <span style="color: var(--accent);">ret a + b</span>
+...
+function add(a, b) {
+  return a + b;
+}</code></pre>
+      <p>Type <code>.eval</code> to switch to evaluation mode, which runs the code instead of showing the JavaScript output.</p>
+
+      <h2>Deploy</h2>
+      <p>Generate Docker deployment files:</p>
+      <pre><code>naide deploy</code></pre>
+      <p>Then build and run the container:</p>
+      <pre><code>docker build -t my-naide-app .
+docker run -p 3000:3000 my-naide-app</code></pre>
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li><a href="syntax.html">Syntax Reference</a> &mdash; learn the full language</li>
+        <li><a href="server.html">Server &amp; API</a> &mdash; build web servers and APIs</li>
+        <li><a href="ai.html">AI / LLM</a> &mdash; integrate AI into your apps</li>
+        <li><a href="cli.html">CLI Reference</a> &mdash; all available commands</li>
+      </ul>
+
+      <div class="footer">
+        <p><a href="index.html">&larr; Home</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

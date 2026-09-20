@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAIDE-X Syntax — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html" class="active">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>NAIDE-X (.nx) Syntax</h1>
+      <p>NAIDE-X is an ultra-compact syntax optimized for AI token efficiency. Files use the <code>.nx</code> extension and compile through a preprocessor into standard NAIDE before transpilation.</p>
+
+      <div class="callout">
+        <strong>When to use NX?</strong> Use <code>.nx</code> when you're generating code with AI and want minimal tokens. Use <code>.naide</code> for human-readable code.
+      </div>
+
+      <h2>Variables</h2>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>str name = "World"</code></td><td><code>s:name="World"</code></td></tr>
+        <tr><td><code>int count = 42</code></td><td><code>i:count=42</code></td></tr>
+        <tr><td><code>num price = 9.99</code></td><td><code>n:price=9.99</code></td></tr>
+        <tr><td><code>bool active = true</code></td><td><code>b:active=true</code></td></tr>
+        <tr><td><code>any data = null</code></td><td><code>a:data=null</code></td></tr>
+        <tr><td><code>list items = []</code></td><td><code>l:items=[]</code></td></tr>
+        <tr><td><code>map config = {}</code></td><td><code>m:config={}</code></td></tr>
+      </table>
+
+      <h2>Functions</h2>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>fn greet(name):</code></td><td><code>f greet(name)</code></td></tr>
+        <tr><td><code>fn.async fetch():</code></td><td><code>~f fetch()</code></td></tr>
+        <tr><td><code>ret value</code></td><td><code>>value</code></td></tr>
+        <tr><td><code>pub fn add(a, b):</code></td><td><code>+f add(a,b)</code></td></tr>
+      </table>
+
+      <h3>Return Type Annotations</h3>
+      <pre><code>f greet(s:who)s     # fn greet(who) -> str
+  >"Hello, {who}!"
+
+~f load(s:url)a    # async fn load(url) -> any
+  a:res=~fetch(url)
+  >~res.json()</code></pre>
+
+      <h2>Server &amp; Routes</h2>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>server app port 3000:</code></td><td><code>$app:3000</code></td></tr>
+        <tr><td><code>get "/":</code></td><td><code>G"/"</code></td></tr>
+        <tr><td><code>post "/api":</code></td><td><code>P"/api"</code></td></tr>
+        <tr><td><code>put "/api/:id":</code></td><td><code>U"/api/:id"</code></td></tr>
+        <tr><td><code>del "/api/:id":</code></td><td><code>D"/api/:id"</code></td></tr>
+        <tr><td><code>patch "/api/:id":</code></td><td><code>X"/api/:id"</code></td></tr>
+      </table>
+
+      <h3>Response Shorthands</h3>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>ret.html "..."</code></td><td><code>>.h "..."</code></td></tr>
+        <tr><td><code>ret.redirect "/new"</code></td><td><code>>.r "/new"</code></td></tr>
+        <tr><td><code>ret.text "..."</code></td><td><code>>.t "..."</code></td></tr>
+        <tr><td><code>ret.file "path"</code></td><td><code>>.f "path"</code></td></tr>
+        <tr><td><code>ret.render "view" {}</code></td><td><code>>.v "view" {}</code></td></tr>
+        <tr><td><code>ret.download "path"</code></td><td><code>>.d "path"</code></td></tr>
+      </table>
+
+      <h2>Control Flow</h2>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>if condition:</code></td><td><code>?condition</code></td></tr>
+        <tr><td><code>elif condition:</code></td><td><code>??condition</code></td></tr>
+        <tr><td><code>else:</code></td><td><code>??</code></td></tr>
+        <tr><td><code>each item in list:</code></td><td><code>@item in list</code></td></tr>
+        <tr><td><code>for i in 0..10:</code></td><td><code>#i 0..10</code></td></tr>
+        <tr><td><code>while cond:</code></td><td><code>&amp;cond</code></td></tr>
+      </table>
+
+      <h2>Error Handling</h2>
+      <pre><code>!                  # try:
+  risky()
+!!e                # fail e:
+  log e.message
+!!!                # ensure:
+  cleanup()</code></pre>
+
+      <h2>Logging</h2>
+      <table>
+        <tr><th>NAIDE</th><th>NX</th></tr>
+        <tr><td><code>log "msg"</code></td><td><code>log"msg"</code></td></tr>
+        <tr><td><code>log.warn "msg"</code></td><td><code>log.w"msg"</code></td></tr>
+        <tr><td><code>log.error "msg"</code></td><td><code>log.e"msg"</code></td></tr>
+        <tr><td><code>log.info "msg"</code></td><td><code>log.i"msg"</code></td></tr>
+        <tr><td><code>log.debug "msg"</code></td><td><code>log.d"msg"</code></td></tr>
+      </table>
+
+      <h2>Complete Example</h2>
+      <pre><code># NX: Todo API in minimal tokens
+$app:3000
+  G"/"
+    >{msg:"Todo API"}
+  G"/api/todos"
+    l:todos=[{id:1,title:"Learn NAIDE",done:false}]
+    >todos
+  P"/api/todos"(req,res)
+    a:todo=req.body
+    >{created:true}</code></pre>
+
+      <h2>Converting NAIDE to NX</h2>
+      <pre><code>$ naide convert app.naide    # outputs app.nx</code></pre>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

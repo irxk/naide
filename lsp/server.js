@@ -1,6 +1,7 @@
 import { compile } from '../src/index.js';
 
 const documents = new Map();
+const symbolIndex = new Map();
 let buffer = '';
 
 process.stdin.setEncoding('utf-8');
@@ -37,6 +38,8 @@ function handleMessage(msg) {
           textDocumentSync: 1,
           completionProvider: { triggerCharacters: ['.', '"'] },
           hoverProvider: true,
+          definitionProvider: true,
+          referencesProvider: true,
         }
       });
       break;
@@ -66,6 +69,14 @@ function handleMessage(msg) {
 
     case 'textDocument/hover':
       respond(msg.id, getHover(msg.params));
+      break;
+
+    case 'textDocument/definition':
+      respond(msg.id, getDefinition(msg.params));
+      break;
+
+    case 'textDocument/references':
+      respond(msg.id, getReferences(msg.params));
       break;
 
     case 'shutdown':
@@ -133,7 +144,136 @@ function validateDocument(uri) {
     });
   }
 
+  indexSymbols(uri, text);
   notify('textDocument/publishDiagnostics', { uri, diagnostics });
+}
+
+function indexSymbols(uri, text) {
+  const symbols = { definitions: new Map(), references: new Map() };
+  const lines = text.split('\n');
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trimStart();
+
+    const fnMatch = trimmed.match(/^(?:pub\s+)?(?:fn\.async|fn)\s+(\w+)\s*\(/);
+    if (fnMatch) {
+      const name = fnMatch[1];
+      const col = line.indexOf(name);
+      symbols.definitions.set(name, { line: i, col, kind: 'function' });
+    }
+
+    const varMatch = trimmed.match(/^(?:pub\s+)?(?:mut\s+)?(?:str|int|num|bool|list|map|any|json|void)\s+(\w+)\s*=/);
+    if (varMatch) {
+      const name = varMatch[1];
+      const col = line.indexOf(name);
+      symbols.definitions.set(name, { line: i, col, kind: 'variable' });
+    }
+
+    const modelMatch = trimmed.match(/^model\s+(\w+)/);
+    if (modelMatch) {
+      const name = modelMatch[1];
+      const col = line.indexOf(name);
+      symbols.definitions.set(name, { line: i, col, kind: 'class' });
+    }
+
+    const schemaMatch = trimmed.match(/^schema\s+(\w+)/);
+    if (schemaMatch) {
+      const name = schemaMatch[1];
+      const col = line.indexOf(name);
+      symbols.definitions.set(name, { line: i, col, kind: 'schema' });
+    }
+
+    const promptMatch = trimmed.match(/^prompt\s+(\w+)/);
+    if (promptMatch) {
+      const name = promptMatch[1];
+      const col = line.indexOf(name);
+      symbols.definitions.set(name, { line: i, col, kind: 'prompt' });
+    }
+
+    for (const def of symbols.definitions.keys()) {
+      const re = new RegExp(`\\b${def}\\b`, 'g');
+      let m;
+      while ((m = re.exec(line)) !== null) {
+        if (i === symbols.definitions.get(def)?.line && m.index === symbols.definitions.get(def)?.col) continue;
+        if (!symbols.references.has(def)) symbols.references.set(def, []);
+        symbols.references.get(def).push({ line: i, col: m.index });
+      }
+    }
+  }
+
+  symbolIndex.set(uri, symbols);
+}
+
+function getWordAtPosition(text, line, col) {
+  const lines = text.split('\n');
+  if (line >= lines.length) return null;
+  const lineText = lines[line];
+  let start = col, end = col;
+  while (start > 0 && /\w/.test(lineText[start - 1])) start--;
+  while (end < lineText.length && /\w/.test(lineText[end])) end++;
+  return lineText.slice(start, end) || null;
+}
+
+function getDefinition(params) {
+  const uri = params.textDocument.uri;
+  const text = documents.get(uri);
+  if (!text) return null;
+
+  const word = getWordAtPosition(text, params.position.line, params.position.character);
+  if (!word) return null;
+
+  const symbols = symbolIndex.get(uri);
+  if (!symbols) return null;
+
+  const def = symbols.definitions.get(word);
+  if (!def) return null;
+
+  return {
+    uri,
+    range: {
+      start: { line: def.line, character: def.col },
+      end: { line: def.line, character: def.col + word.length },
+    },
+  };
+}
+
+function getReferences(params) {
+  const uri = params.textDocument.uri;
+  const text = documents.get(uri);
+  if (!text) return [];
+
+  const word = getWordAtPosition(text, params.position.line, params.position.character);
+  if (!word) return [];
+
+  const symbols = symbolIndex.get(uri);
+  if (!symbols) return [];
+
+  const results = [];
+
+  const def = symbols.definitions.get(word);
+  if (def) {
+    results.push({
+      uri,
+      range: {
+        start: { line: def.line, character: def.col },
+        end: { line: def.line, character: def.col + word.length },
+      },
+    });
+  }
+
+  const refs = symbols.references.get(word) || [];
+  for (const ref of refs) {
+    results.push({
+      uri,
+      range: {
+        start: { line: ref.line, character: ref.col },
+        end: { line: ref.line, character: ref.col + word.length },
+      },
+    });
+  }
+
+  return results;
 }
 
 function getCompletions() {

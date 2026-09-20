@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI / LLM — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html" class="active">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>AI / LLM Integration</h1>
+      <p>NAIDE provides first-class AI integration. The <code>ai</code> module is auto-imported when used — no setup required.</p>
+
+      <h2>Text Generation</h2>
+      <pre><code>str answer = await ai.ask("What is the capital of France?")
+log answer</code></pre>
+
+      <h2>Structured JSON</h2>
+      <p>Get structured data from natural language with <code>ai.json</code>:</p>
+      <pre><code>map user = await ai.json("Extract the user info from: John, 25, Tokyo", {
+  name: "str",
+  age: "int",
+  city: "str"
+})
+log user.name   # "John"</code></pre>
+
+      <h2>Multi-turn Chat</h2>
+      <pre><code>list messages = [{role: "user", content: "Hello"}]
+str reply = await ai.chat(messages)
+log reply</code></pre>
+
+      <h2>Streaming</h2>
+      <p>Stream responses token by token:</p>
+      <pre><code>for await chunk of ai.stream("Write a poem about code"):
+  log chunk</code></pre>
+
+      <h2>Embeddings</h2>
+      <p>Generate vector embeddings for text:</p>
+      <pre><code>list vec = await ai.embed("NAIDE is amazing")
+log vec.length   # 1536 (dimensions)</code></pre>
+
+      <h2>Similarity</h2>
+      <p>Compute cosine similarity between two vectors:</p>
+      <pre><code>list a = await ai.embed("dog")
+list b = await ai.embed("puppy")
+num score = ai.similarity(a, b)
+log score   # ~0.92</code></pre>
+
+      <h2>Prompt Templates</h2>
+      <p>Define reusable, parameterized prompts:</p>
+      <pre><code>prompt summarize {lang: "en"}:
+  "Summarize the following text in {lang}:"
+  "{text}"
+
+str result = await ai.ask(summarize({text: "Long article here..."}))</code></pre>
+
+      <h2>RAG Pattern</h2>
+      <p>Combine embeddings and vector store for retrieval-augmented generation:</p>
+      <pre><code>use {createVectorStore} from "naider/runtime"
+
+# Build knowledge base
+any store = createVectorStore()
+list docs = ["NAIDE compiles to JS", "NAIDE has built-in AI", "NAIDE supports Flask"]
+each doc in docs:
+  list vec = await ai.embed(doc)
+  store.add(uuid(), vec, {text: doc})
+
+# Query
+list query = await ai.embed("How does NAIDE handle AI?")
+list results = store.search(query, 3)
+str context = results.map(r => r.meta.text).join("\n")
+str answer = await ai.ask("Based on: {context}\n\nAnswer: How does NAIDE handle AI?")</code></pre>
+
+      <h2>AI in Server Routes</h2>
+      <pre><code>server app port 3000:
+  post "/api/ask" (req, res):
+    str answer = await ai.ask(req.body.prompt)
+    ret {answer}
+
+  post "/api/summarize" (req, res):
+    str summary = await ai.ask(summarize({text: req.body.text}))
+    ret {summary}</code></pre>
+
+      <h2>Configuration</h2>
+      <p>Set AI provider via environment variables:</p>
+      <pre><code># OpenAI (default)
+OPENAI_API_KEY=sk-...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...</code></pre>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

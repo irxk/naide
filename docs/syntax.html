@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syntax Reference — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html" class="active">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+      <h1>Syntax Reference</h1>
+      <p>NAIDE uses indentation-based blocks, keyword-driven statements, and explicit type annotations. The first token on each line determines intent.</p>
+
+      <!-- Variables -->
+      <h2>Variables</h2>
+      <p>Variables are immutable by default (<code>const</code>). Use <code>mut</code> for mutable bindings (<code>let</code>).</p>
+      <pre><code class="lang-naide"><span class="type">str</span> name = <span class="str">"hello"</span>          <span class="cmt"># immutable (const)</span>
+<span class="type">int</span> count = <span class="num">42</span>
+<span class="type">num</span> price = <span class="num">9.99</span>
+<span class="type">bool</span> active = <span class="num">true</span>
+<span class="type">list</span> items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]
+<span class="type">map</span> config = {host: <span class="str">"localhost"</span>}
+<span class="type">any</span> data = <span class="num">null</span>
+
+<span class="kw">mut</span> <span class="type">int</span> counter = <span class="num">0</span>          <span class="cmt"># mutable (let)</span>
+<span class="kw">mut</span> <span class="type">str</span> label = <span class="str">"init"</span></code></pre>
+
+      <h3>Available Types</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Description</th><th>JavaScript</th></tr></thead>
+        <tbody>
+          <tr><td><code>str</code></td><td>String</td><td><code>string</code></td></tr>
+          <tr><td><code>int</code></td><td>Integer number</td><td><code>number</code></td></tr>
+          <tr><td><code>num</code></td><td>Any number (accepts <code>int</code>)</td><td><code>number</code></td></tr>
+          <tr><td><code>bool</code></td><td>Boolean</td><td><code>boolean</code></td></tr>
+          <tr><td><code>list</code></td><td>Array</td><td><code>Array</code></td></tr>
+          <tr><td><code>map</code></td><td>Object / dictionary</td><td><code>Object</code></td></tr>
+          <tr><td><code>any</code></td><td>Any type</td><td>(untyped)</td></tr>
+          <tr><td><code>json</code></td><td>JSON-compatible value</td><td>(untyped)</td></tr>
+          <tr><td><code>void</code></td><td>No return value</td><td><code>void</code></td></tr>
+        </tbody>
+      </table>
+
+      <!-- String Interpolation -->
+      <h2>String Interpolation</h2>
+      <p>Double-quoted strings with <code>{expr}</code> are automatically interpolated into template literals:</p>
+      <pre><code class="lang-naide"><span class="type">str</span> greeting = <span class="str">"Hello {name}, you have {count} items"</span></code></pre>
+      <p>Compiles to:</p>
+      <pre><code class="lang-js"><span class="kw">const</span> greeting = <span class="str">`Hello ${name}, you have ${count} items`</span>;</code></pre>
+
+      <!-- Functions -->
+      <h2>Functions</h2>
+      <p>Functions use <code>fn</code>, with optional typed parameters and return type:</p>
+      <pre><code class="lang-naide"><span class="kw">fn</span> <span class="fn">add</span>(<span class="type">int</span> a, <span class="type">int</span> b) -> <span class="type">int</span>:
+  <span class="kw">ret</span> a + b
+
+<span class="kw">fn</span> <span class="fn">greet</span>(<span class="type">str</span> name, <span class="type">str</span> prefix = <span class="str">"Hello"</span>):
+  <span class="bi">log</span> <span class="str">"{prefix}, {name}!"</span></code></pre>
+
+      <h3>Rest Parameters</h3>
+      <pre><code class="lang-naide"><span class="kw">fn</span> <span class="fn">sum</span>(...<span class="type">int</span> nums) -> <span class="type">int</span>:
+  <span class="kw">mut</span> <span class="type">int</span> total = <span class="num">0</span>
+  <span class="kw">each</span> n <span class="kw">in</span> nums:
+    total += n
+  <span class="kw">ret</span> total</code></pre>
+
+      <h3>Async Functions</h3>
+      <pre><code class="lang-naide"><span class="kw">fn.async</span> <span class="fn">fetchUser</span>(<span class="type">str</span> id) -> <span class="type">map</span>:
+  <span class="type">any</span> res = <span class="kw">await</span> fetch(<span class="str">"/api/users/{id}"</span>)
+  <span class="kw">ret</span> <span class="kw">await</span> res.json()</code></pre>
+
+      <!-- Control Flow -->
+      <h2>Control Flow</h2>
+      <h3>If / Elif / Else</h3>
+      <pre><code class="lang-naide"><span class="kw">if</span> count > <span class="num">10</span>:
+  <span class="bi">log</span> <span class="str">"many"</span>
+<span class="kw">elif</span> count > <span class="num">5</span>:
+  <span class="bi">log</span> <span class="str">"some"</span>
+<span class="kw">else</span>:
+  <span class="bi">log</span> <span class="str">"few"</span></code></pre>
+
+      <h3>Ternary Expression</h3>
+      <pre><code class="lang-naide"><span class="type">str</span> size = <span class="kw">if</span> count > <span class="num">10</span> <span class="kw">then</span> <span class="str">"big"</span> <span class="kw">else</span> <span class="str">"small"</span></code></pre>
+
+      <!-- Loops -->
+      <h2>Loops</h2>
+      <h3>each &mdash; Iterate Arrays</h3>
+      <pre><code class="lang-naide"><span class="kw">each</span> item <span class="kw">in</span> items:
+  <span class="bi">log</span> item</code></pre>
+
+      <h3>each &mdash; Iterate Object Keys/Values</h3>
+      <pre><code class="lang-naide"><span class="kw">each</span> key, val <span class="kw">in</span> config:
+  <span class="bi">log</span> <span class="str">"{key}: {val}"</span></code></pre>
+
+      <h3>for &mdash; Numeric Range</h3>
+      <pre><code class="lang-naide"><span class="kw">for</span> i <span class="kw">in</span> <span class="num">0</span>..<span class="num">10</span>:
+  <span class="bi">log</span> i</code></pre>
+
+      <h3>while</h3>
+      <pre><code class="lang-naide"><span class="kw">while</span> active:
+  <span class="bi">log</span> <span class="str">"running"</span>
+  active = <span class="num">false</span></code></pre>
+
+      <!-- Pattern Matching -->
+      <h2>Pattern Matching</h2>
+      <pre><code class="lang-naide"><span class="kw">match</span> status:
+  <span class="str">"ok"</span>: <span class="bi">log</span> <span class="str">"success"</span>
+  <span class="str">"error"</span>: <span class="bi">log</span> <span class="str">"failed"</span>
+  _: <span class="bi">log</span> <span class="str">"unknown"</span></code></pre>
+      <p>Compiles to a <code>switch</code> statement. Use <code>_</code> for the default case.</p>
+
+      <!-- Error Handling -->
+      <h2>Error Handling</h2>
+      <pre><code class="lang-naide"><span class="kw">try</span>:
+  data = <span class="kw">await</span> fetchData(url)
+<span class="kw">fail</span> e:
+  <span class="bi">log.error</span> e.message
+<span class="kw">ensure</span>:
+  <span class="bi">log</span> <span class="str">"request completed"</span></code></pre>
+      <p><code>fail</code> is NAIDE's <code>catch</code>. <code>ensure</code> is NAIDE's <code>finally</code> &mdash; the block always runs whether the <code>try</code> succeeds or fails. Both <code>fail</code> and <code>ensure</code> are optional:</p>
+      <pre><code class="lang-naide"><span class="kw">try</span>:
+  conn = <span class="kw">await</span> openConnection()
+  <span class="kw">ret</span> <span class="kw">await</span> conn.query(<span class="str">"SELECT 1"</span>)
+<span class="kw">ensure</span>:
+  conn.close()</code></pre>
+
+      <!-- Type Checking -->
+      <h2>Type Checking</h2>
+      <pre><code class="lang-naide"><span class="kw">if</span> <span class="kw">typeof</span> data == <span class="str">"string"</span>:
+  <span class="bi">log</span> <span class="str">"is string"</span>
+
+<span class="kw">if</span> err <span class="kw">instanceof</span> TypeError:
+  <span class="bi">log</span> <span class="str">"type error"</span></code></pre>
+      <p><code>typeof</code> returns the type as a string. <code>instanceof</code> checks if a value is an instance of a class or constructor.</p>
+
+      <!-- Classes -->
+      <h2>Classes (model)</h2>
+      <p>Use <code>model</code> to define classes with typed properties:</p>
+      <pre><code class="lang-naide"><span class="kw">model</span> <span class="fn">User</span>:
+  <span class="type">str</span> name
+  <span class="type">str</span> email
+  <span class="type">int</span> age = <span class="num">0</span>
+
+  <span class="kw">fn</span> <span class="fn">greet</span>() -> <span class="type">str</span>:
+    <span class="kw">ret</span> <span class="str">"Hi, I'm {self.name}"</span>
+
+<span class="kw">model</span> <span class="fn">Admin</span> <span class="kw">extends</span> User:
+  <span class="type">str</span> role = <span class="str">"admin"</span>
+  <span class="kw">fn</span> <span class="fn">permissions</span>() -> <span class="type">list</span>:
+    <span class="kw">ret</span> [<span class="str">"read"</span>, <span class="str">"write"</span>, <span class="str">"delete"</span>]</code></pre>
+      <p><code>self</code> refers to the current instance (compiles to <code>this</code>).</p>
+
+      <!-- Pipe Operator -->
+      <h2>Pipe Operator</h2>
+      <pre><code class="lang-naide"><span class="type">list</span> result = data
+  |> filter((x) => x.active)
+  |> map((x) => x.name)
+  |> sort()</code></pre>
+      <p>Pipes chain method calls for readable data transformations.</p>
+
+      <!-- Imports / Exports -->
+      <h2>Imports &amp; Exports</h2>
+      <h3>Imports</h3>
+      <pre><code class="lang-naide"><span class="kw">use</span> express
+<span class="kw">use</span> {readFile, writeFile} <span class="kw">from</span> <span class="str">"fs/promises"</span>
+<span class="kw">use</span> axios <span class="kw">from</span> <span class="str">"axios"</span></code></pre>
+      <p><code>use</code> compiles to <code>import</code>. When importing between NAIDE files, extensions are automatically rewritten to <code>.mjs</code>:</p>
+      <pre><code class="lang-naide"><span class="kw">use</span> {handleUser} <span class="kw">from</span> <span class="str">"./routes.naide"</span></code></pre>
+
+      <h3>Exports</h3>
+      <pre><code class="lang-naide"><span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">helper</span>() -> <span class="type">str</span>:
+  <span class="kw">ret</span> <span class="str">"exported"</span>
+
+<span class="kw">pub</span> <span class="type">str</span> VERSION = <span class="str">"1.0.0"</span></code></pre>
+      <p><code>pub</code> marks functions and variables as exported (<code>export</code>).</p>
+
+      <!-- Environment Variables -->
+      <h2>Environment Variables</h2>
+      <pre><code class="lang-naide"><span class="kw">env</span>:
+  PORT       <span class="type">int</span> <span class="kw">default</span>(<span class="num">3000</span>)
+  JWT_SECRET <span class="type">str</span> <span class="kw">required</span>
+  DB_URL     <span class="type">str</span> <span class="kw">default</span>(<span class="str">"data/"</span>)</code></pre>
+      <p>Variables become constants read from <code>process.env</code>. Missing <code>required</code> variables cause the process to exit with an error.</p>
+
+      <!-- Built-in Functions -->
+      <h2>Built-in Functions</h2>
+      <pre><code class="lang-naide"><span class="type">str</span> id = <span class="bi">uuid</span>()                          <span class="cmt"># UUID generation</span>
+<span class="type">str</span> hashed = <span class="bi">hash</span>(<span class="str">"password"</span>)            <span class="cmt"># scrypt hash</span>
+<span class="type">bool</span> ok = <span class="bi">verify</span>(<span class="str">"password"</span>, hashed)     <span class="cmt"># timing-safe verify</span>
+<span class="type">str</span> token = <span class="bi">sign</span>({id: <span class="num">1</span>})                <span class="cmt"># JWT (uses auth secret)</span>
+<span class="type">str</span> token = <span class="bi">sign</span>({id: <span class="num">1</span>}, <span class="str">"my-secret"</span>)   <span class="cmt"># JWT (explicit secret)</span></code></pre>
+      <p>These are auto-imported from the NAIDE runtime when used.</p>
+
+      <!-- HTTP Client -->
+      <h2>HTTP Client</h2>
+      <pre><code class="lang-naide"><span class="kw">fn.async</span> <span class="fn">getUsers</span>() -> <span class="type">any</span>:
+  <span class="type">any</span> users = <span class="kw">await</span> api.get(<span class="str">"https://api.example.com/users"</span>)
+  <span class="kw">ret</span> users
+
+<span class="kw">fn.async</span> <span class="fn">createUser</span>(<span class="type">map</span> data) -> <span class="type">any</span>:
+  <span class="type">any</span> result = <span class="kw">await</span> api.post(<span class="str">"https://api.example.com/users"</span>, data)
+  <span class="kw">ret</span> result</code></pre>
+      <p>Available methods: <code>api.get(url)</code>, <code>api.post(url, body)</code>, <code>api.put(url, body)</code>, <code>api.del(url)</code>, <code>api.raw(url, opts)</code>.</p>
+
+      <!-- Plugin System -->
+      <h2>Plugin System</h2>
+      <pre><code class="lang-naide"><span class="bi">registerPlugin</span>(<span class="str">"logger"</span>, (opts) =>
+  <span class="kw">ret</span> {log: (msg) => <span class="bi">log</span> <span class="str">"[{opts.prefix}] {msg}"</span>}
+)
+
+<span class="type">any</span> logger = <span class="bi">usePlugin</span>(<span class="str">"logger"</span>, {prefix: <span class="str">"APP"</span>})
+logger.log(<span class="str">"started"</span>)
+
+<span class="type">list</span> names = <span class="bi">listPlugins</span>()</code></pre>
+      <p><code>registerPlugin(name, setup)</code> registers a plugin factory. <code>usePlugin(name, opts?)</code> initializes on first call and returns cached exports. <code>listPlugins()</code> returns registered plugin names.</p>
+
+      <div class="footer">
+        <p><a href="guide.html">&larr; Getting Started</a> &middot; <a href="server.html">Server &amp; API &rarr;</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

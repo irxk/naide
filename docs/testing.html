@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Testing — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.9.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="testing.html" class="active">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>Testing</h1>
+      <p>NAIDE has built-in test and assertion support, powered by Node.js <code>node:test</code>.</p>
+
+      <h2>Writing Tests</h2>
+      <pre><code>test "addition works":
+  assert 1 + 1 == 2
+
+test "string concatenation":
+  str result = "hello" + " world"
+  assert result == "hello world"</code></pre>
+
+      <h2>Running Tests</h2>
+      <pre><code>$ naide test tests.naide</code></pre>
+      <p>Or compile and run with Node.js test runner:</p>
+      <pre><code>$ naide tests.naide -o tests.mjs
+$ node --test tests.mjs</code></pre>
+
+      <h2>Assertions</h2>
+      <p>The <code>assert</code> keyword maps to <code>node:assert/strict</code>:</p>
+      <pre><code>assert 1 == 1           # strict equal
+assert "a" != "b"       # not equal
+assert list.length > 0  # truthy expression
+assert result           # truthy check</code></pre>
+
+      <h2>Mock Functions</h2>
+      <p>Create mock functions to track calls:</p>
+      <pre><code>use {createMock} from "naider/runtime"
+
+any mockFn = createMock()
+mockFn("hello")
+mockFn("world")
+
+assert mockFn.callCount() == 2
+assert mockFn.calledWith("hello")
+
+# Set return value
+mockFn.returns(42)
+assert mockFn() == 42
+
+# Wrap existing function
+any mock = createMock((x) => x * 2)
+assert mock(5) == 10
+
+# Change implementation
+mock.impl((x) => x + 1)
+assert mock(5) == 6
+
+# Reset all state
+mock.reset()</code></pre>
+
+      <h2>Spies</h2>
+      <p>Spy on object methods without replacing them:</p>
+      <pre><code>use {createSpy} from "naider/runtime"
+
+any obj = {greet: (name) => "hi " + name}
+any spy = createSpy(obj, "greet")
+
+obj.greet("world")
+assert spy.callCount() == 1
+assert spy.calledWith("world")
+
+# Restore original method
+spy.restore()</code></pre>
+
+      <h2>Testing Server Routes</h2>
+      <pre><code>test "GET / returns ok":
+  # Compile and test with your HTTP testing library
+  assert true
+
+test "validates user input":
+  use {createSchema, validateMiddleware} from "naider/runtime"
+  any schema = createSchema("User", {name: {type: "string", required: true, min: 2}})
+  any mid = validateMiddleware(schema)
+
+  # Short name fails validation
+  any req = {method: "POST", body: {name: "A"}}
+  any res = {status: (c) => {return {json: (d) => null}}}
+  bool called = false
+  mid(req, res, () => {called = true})
+  assert not called</code></pre>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
