@@ -107,7 +107,8 @@ export class Parser {
       type === T.SSE || type === T.CACHE || type === T.PATCH || type === T.MID ||
       type === T.VALIDATE || type === T.TEST || type === T.ASSERT ||
       type === T.QUEUE || type === T.JOB || type === T.OPENAPI ||
-      type === T.TYPEOF || type === T.INSTANCEOF || type === T.ENSURE;
+      type === T.TYPEOF || type === T.INSTANCEOF || type === T.ENSURE ||
+      type === T.MODEL || type === T.PROMPT;
   }
 
   expectPropertyName() {
@@ -218,6 +219,9 @@ export class Parser {
       case T.QUEUE:
         if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
         return this.parseQueue();
+      case T.PROMPT:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parsePrompt();
       default:
         if (TYPE_TOKENS.has(tok.type)) {
           return this.parseTypedVariable();
@@ -233,7 +237,13 @@ export class Parser {
       this.advance();
       const names = [];
       while (!this.at(T.RBRACE) && !this.at(T.EOF)) {
-        const name = this.expect(T.IDENT).value;
+        const tok = this.peek();
+        let name;
+        if (this.isIdentLike(tok.type)) {
+          name = this.advance().value;
+        } else {
+          name = this.expect(T.IDENT).value;
+        }
         let alias = null;
         if (this.match(T.AS)) {
           alias = this.expect(T.IDENT).value;
@@ -758,6 +768,14 @@ export class Parser {
       const connectionString = this.parseExpression();
       return new ASTNode('DbConnect', { connectionString });
     }
+    if (method === 'sql') {
+      const driver = this.parseString();
+      let connection = null;
+      if (this.at(T.STRING)) {
+        connection = this.parseString();
+      }
+      return new ASTNode('DbSql', { driver, connection });
+    }
     this.pos -= 3;
     return this.parseExpressionStatement();
   }
@@ -1043,6 +1061,7 @@ export class Parser {
       case T.VALIDATE: case T.TEST: case T.ASSERT:
       case T.QUEUE: case T.JOB: case T.OPENAPI:
       case T.TYPEOF: case T.INSTANCEOF: case T.ENSURE:
+      case T.PROMPT:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1196,7 +1215,12 @@ export class Parser {
         this.expect(T.RBRACKET);
         key = new ASTNode('Computed', { expr: key });
       } else {
-        key = this.expect(T.IDENT).value;
+        const tok = this.peek();
+        if (this.isIdentLike(tok.type)) {
+          key = this.advance().value;
+        } else {
+          key = this.expect(T.IDENT).value;
+        }
       }
 
       if (this.match(T.COLON)) {
@@ -1620,5 +1644,28 @@ export class Parser {
     this.advance(); // openapi
     const path = this.parseString();
     return new ASTNode('OpenapiDecl', { path });
+  }
+
+  parsePrompt() {
+    this.advance(); // prompt
+    const name = this.expect(T.IDENT).value;
+    let defaults = null;
+    if (this.at(T.LBRACE)) {
+      defaults = this.parseObject();
+    }
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const lines = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.STRING)) {
+        lines.push(this.parseString());
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('PromptDecl', { name, defaults, lines });
   }
 }

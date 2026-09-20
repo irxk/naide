@@ -1,7 +1,7 @@
 {
-  "name": "naidejs",
-  "version": "1.5.0",
-  "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, WebSocket, and more — transpiles to Node.js. Standard mode (~40% fewer tokens) and X mode (~80% fewer tokens).",
+  "name": "naider",
+  "version": "1.7.0",
+  "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, SQL, AI/LLM, WebSocket, and more — transpiles to Node.js.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -14,6 +14,7 @@
   "files": [
     "bin/",
     "src/",
+    "lsp/",
     "examples/",
     "vscode-naide/",
     "SPEC.naide",

@@ -730,6 +730,250 @@ describe('NAIDE-X full pipeline', () => {
   });
 });
 
+describe('AI integration', () => {
+  it('auto-imports ai on ai.ask()', () => {
+    const src = 'fn.async main():\n  any answer = await ai.ask("What is 2+2?")\n  log answer';
+    const js = transpile(src);
+    assert.ok(js.includes("import { ai }"));
+    assert.ok(js.includes('ai.ask("What is 2+2?")'));
+  });
+
+  it('auto-imports ai on ai.json()', () => {
+    const src = 'fn.async extract():\n  any data = await ai.json("extract name", {name: "str"})\n  ret data';
+    const js = transpile(src);
+    assert.ok(js.includes("import { ai }"));
+    assert.ok(js.includes('ai.json('));
+  });
+
+  it('auto-imports ai on ai.chat()', () => {
+    const src = 'fn.async chat():\n  any reply = await ai.chat([{role: "user", content: "hi"}])\n  ret reply';
+    const js = transpile(src);
+    assert.ok(js.includes('ai'));
+    assert.ok(js.includes('ai.chat('));
+  });
+
+  it('ai.ask in server route', () => {
+    const src = [
+      'server app port 3000:',
+      '  post "/api/ai" (req, res):',
+      '    any answer = await ai.ask(req.body.prompt)',
+      '    ret {answer}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes("import { ai }"));
+    assert.ok(js.includes('ai.ask(req.body.prompt)'));
+  });
+
+  it('ai object has ask, json, chat methods', async () => {
+    const { ai } = await import('../src/runtime.js');
+    assert.ok(typeof ai.ask === 'function');
+    assert.ok(typeof ai.json === 'function');
+    assert.ok(typeof ai.chat === 'function');
+  });
+});
+
+describe('SQL database support', () => {
+  it('compiles db.sql sqlite', () => {
+    const src = 'db.sql "sqlite" "app.db"';
+    const js = transpile(src);
+    assert.ok(js.includes("import Database from 'better-sqlite3'"));
+    assert.ok(js.includes('new Database("app.db")'));
+    assert.ok(js.includes("journal_mode = WAL"));
+  });
+
+  it('compiles db.sql sqlite with default path', () => {
+    const src = 'db.sql "sqlite"';
+    const js = transpile(src);
+    assert.ok(js.includes("import Database from 'better-sqlite3'"));
+    assert.ok(js.includes('new Database("data.db")'));
+  });
+
+  it('compiles db.sql postgres', () => {
+    const src = 'db.sql "postgres" "postgresql://localhost/mydb"';
+    const js = transpile(src);
+    assert.ok(js.includes("import pg from 'pg'"));
+    assert.ok(js.includes('pg.Pool'));
+    assert.ok(js.includes('postgresql://localhost/mydb'));
+  });
+
+  it('schema uses SQLite store with db.sql', () => {
+    const src = [
+      'db.sql "sqlite" "test.db"',
+      '',
+      'schema User:',
+      '  id auto',
+      '  name str required',
+      '  email str required email',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes("import Database from 'better-sqlite3'"));
+    assert.ok(js.includes('createSqliteStore'));
+    assert.ok(js.includes("createSqliteStore(__db, 'User', UserSchema)"));
+    assert.ok(!js.includes('createFileStore'));
+    assert.ok(!js.includes('createStore('));
+  });
+
+  it('db.sql + schema + server compiles', () => {
+    const src = [
+      'db.sql "sqlite" "app.db"',
+      '',
+      'schema Todo:',
+      '  id auto',
+      '  title str required',
+      '  done bool default(false)',
+      '',
+      'server app port 3000:',
+      '  crud "/api/todos" Todo',
+      '  get "/":', '    ret.html "<h1>Todo</h1>"',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('better-sqlite3'));
+    assert.ok(js.includes('createSqliteStore'));
+    assert.ok(js.includes('registerCrud'));
+    assert.ok(js.includes('express'));
+  });
+
+  it('createSqliteStore is exported from runtime', async () => {
+    const { createSqliteStore } = await import('../src/runtime.js');
+    assert.ok(typeof createSqliteStore === 'function');
+  });
+});
+
+describe('AI streaming & embeddings', () => {
+  it('ai.stream is exported from runtime', async () => {
+    const { ai } = await import('../src/runtime.js');
+    assert.ok(typeof ai.stream === 'function');
+  });
+
+  it('ai.embed is exported from runtime', async () => {
+    const { ai } = await import('../src/runtime.js');
+    assert.ok(typeof ai.embed === 'function');
+  });
+
+  it('ai.similarity computes cosine similarity', async () => {
+    const { ai } = await import('../src/runtime.js');
+    const a = [1, 0, 0];
+    const b = [1, 0, 0];
+    assert.strictEqual(ai.similarity(a, b), 1);
+    const c = [0, 1, 0];
+    const sim = ai.similarity(a, c);
+    assert.ok(sim < 0.01);
+  });
+
+  it('auto-imports ai on ai.stream()', () => {
+    const js = transpile('fn.async main():\n  any s = await ai.stream("hello")');
+    assert.ok(js.includes("import { ai } from"));
+  });
+
+  it('auto-imports ai on ai.embed()', () => {
+    const js = transpile('fn.async main():\n  any v = await ai.embed("hello")');
+    assert.ok(js.includes("import { ai } from"));
+  });
+});
+
+describe('Vector store', () => {
+  it('createVectorStore is exported from runtime', async () => {
+    const { createVectorStore } = await import('../src/runtime.js');
+    assert.ok(typeof createVectorStore === 'function');
+  });
+
+  it('vector store add and search', async () => {
+    const { createVectorStore, ai } = await import('../src/runtime.js');
+    const store = createVectorStore();
+    store.add('a', [1, 0, 0], { text: 'hello' });
+    store.add('b', [0, 1, 0], { text: 'world' });
+    store.add('c', [0.9, 0.1, 0], { text: 'hi' });
+    assert.strictEqual(store.size, 3);
+    const results = store.search([1, 0, 0], 2);
+    assert.strictEqual(results.length, 2);
+    assert.strictEqual(results[0].id, 'a');
+    assert.strictEqual(results[1].id, 'c');
+  });
+
+  it('vector store remove and clear', async () => {
+    const { createVectorStore } = await import('../src/runtime.js');
+    const store = createVectorStore();
+    store.add('x', [1, 0]);
+    assert.strictEqual(store.size, 1);
+    store.remove('x');
+    assert.strictEqual(store.size, 0);
+    store.add('y', [0, 1]);
+    store.clear();
+    assert.strictEqual(store.size, 0);
+  });
+});
+
+describe('Prompt templates', () => {
+  it('compiles prompt declaration', () => {
+    const src = 'prompt summarize:\n  "Summarize the following text:"\n  "{text}"';
+    const js = transpile(src);
+    assert.ok(js.includes('createPrompt'));
+    assert.ok(js.includes('const summarize = createPrompt('));
+  });
+
+  it('compiles prompt with defaults', () => {
+    const src = 'prompt translate {lang: "ja"}:\n  "Translate to {lang}: {text}"';
+    const js = transpile(src);
+    assert.ok(js.includes('createPrompt'));
+    assert.ok(js.includes('{ lang: "ja" }'));
+  });
+
+  it('createPrompt works at runtime', async () => {
+    const { createPrompt } = await import('../src/runtime.js');
+    const p = createPrompt('Hello {name}, welcome to {place}', { place: 'NAIDE' });
+    assert.strictEqual(p({ name: 'Alice' }), 'Hello Alice, welcome to NAIDE');
+    assert.strictEqual(p({ name: 'Bob', place: 'Tokyo' }), 'Hello Bob, welcome to Tokyo');
+  });
+
+  it('prompt used with ai.ask in server', () => {
+    const src = [
+      'prompt summarize:',
+      '  "Summarize: {text}"',
+      '',
+      'server app port 3000:',
+      '  post "/api/summarize" (req, res):',
+      '    str p = summarize({text: req.body.text})',
+      '    str answer = await ai.ask(p)',
+      '    ret {answer}',
+    ].join('\n');
+    const js = transpile(src);
+    assert.ok(js.includes('createPrompt'));
+    assert.ok(js.includes('ai'));
+    assert.ok(js.includes('const summarize'));
+  });
+});
+
+describe('Deploy command', () => {
+  it('naide deploy is in help text', async () => {
+    const { readFileSync } = await import('fs');
+    const cli = readFileSync('bin/naide.js', 'utf-8');
+    assert.ok(cli.includes('naide deploy'));
+    assert.ok(cli.includes('Dockerfile'));
+  });
+});
+
+describe('Inter-file imports', () => {
+  it('rewrites .naide imports to .mjs', () => {
+    const src = 'use {handler} from "./routes.naide"';
+    const js = transpile(src);
+    assert.ok(js.includes('./routes.mjs'));
+    assert.ok(!js.includes('.naide'));
+  });
+
+  it('rewrites .nx imports to .mjs', () => {
+    const src = 'use utils from "./helpers.nx"';
+    const js = transpile(src);
+    assert.ok(js.includes('./helpers.mjs'));
+    assert.ok(!js.includes('.nx'));
+  });
+
+  it('does not rewrite non-naide imports', () => {
+    const src = 'use express';
+    const js = transpile(src);
+    assert.ok(js.includes("'express'"));
+  });
+});
+
 describe('Parser stability', () => {
   it('ignores semicolons (JS habit)', () => {
     const js = transpile('str x = 1;\nstr y = 2;');

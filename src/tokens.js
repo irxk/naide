@@ -84,6 +84,7 @@ export const T = {
   TYPEOF: 'TYPEOF',
   INSTANCEOF: 'INSTANCEOF',
   ENSURE: 'ENSURE',
+  PROMPT: 'PROMPT',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -196,6 +197,7 @@ export const KEYWORDS = {
   'typeof': T.TYPEOF,
   'instanceof': T.INSTANCEOF,
   'ensure': T.ENSURE,
+  'prompt': T.PROMPT,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

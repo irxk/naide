@@ -163,6 +163,10 @@ model Admin extends User:
 # db ディレクトリパス → スキーマストアがJSONファイルに自動保存
 db "data/"
 
+# SQLデータベース — スキーマストアがSQLテーブルに自動保存
+# db.sql "sqlite" "app.db"          # SQLite (better-sqlite3)
+# db.sql "postgres" "postgres://localhost/mydb"  # PostgreSQL
+
 
 # ---- 環境変数 ----
 env:
@@ -335,6 +339,52 @@ queue jobs:
 # str token = sign({id: 1}, "secret") → JWT署名 (明示的秘密鍵)
 
 
+# ---- AI / LLM 統合 (ゼロ依存、Node 18+ fetch) ----
+# APIキー: AI_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY のいずれかを環境変数に設定
+# プロバイダー自動判定: sk-ant-* → Anthropic、それ以外 → OpenAI互換
+
+# シンプルなプロンプト
+# str answer = await ai.ask("Explain NAIDE")
+
+# 構造化JSON出力
+# map result = await ai.json("List 3 colors", {colors: ["string"]})
+
+# マルチターンチャット
+# list msgs = [{role: "user", content: "Hi"}]
+# str reply = await ai.chat(msgs)
+
+# オプション付き
+# str answer = await ai.ask("hello", {model: "gpt-4o", maxTokens: 100})
+
+# サーバールート内で使用
+# server app port 3000:
+#   post "/api/ask" (req, res):
+#     str answer = await ai.ask(req.body.prompt)
+#     ret {answer}
+
+# ストリーミング (SSEリアルタイム応答)
+# each chunk in await ai.stream("Write a poem"):
+#   log chunk
+
+# エンベディング (ベクトル生成)
+# list vec = await ai.embed("hello world")
+# list vecs = await ai.embed(["hello", "world"])
+
+# コサイン類似度
+# num score = ai.similarity(vec1, vec2)
+
+
+# ---- プロンプトテンプレート ----
+# 再利用可能なプロンプト定義
+prompt summarize {lang: "en"}:
+  "Summarize in {lang}:"
+  "{text}"
+
+# 使用例:
+# str p = summarize({text: "hello world"})
+# str answer = await ai.ask(p)
+
+
 # ---- スケジュールタスク ----
 every "5m":
   log "cleanup running"
@@ -350,6 +400,7 @@ watch User.create (event):
 # use {名前1, 名前2} from "モジュール"
 # use モジュール from "パッケージ"
 # use モジュール as 別名
+# use {handler} from "./routes.naide"     # NAIDEファイル間インポート (.mjs に自動変換)
 
 
 # ---- ログ ----

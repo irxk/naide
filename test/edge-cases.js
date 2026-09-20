@@ -342,6 +342,55 @@ const tests = [
   ['ensure as identifier', 'any ensure = "cleanup"'],
   ['typeof as property name', 'any t = obj.typeof'],
   ['instanceof as property', 'any x = cls.instanceof'],
+  // v1.6 edge cases - AI integration
+  ['ai.ask in async fn', 'fn.async main():\n  any answer = await ai.ask("What is 2+2?")\n  log answer'],
+  ['ai.json with schema', 'fn.async extract():\n  any data = await ai.json("extract", {name: "str", age: "int"})\n  ret data'],
+  ['ai.chat with messages', 'fn.async chat():\n  any reply = await ai.chat([{role: "user", content: "hi"}])\n  ret reply'],
+  ['ai.ask in server route', [
+    'server app port 3000:',
+    '  post "/api/ai" (req, res):',
+    '    any answer = await ai.ask(req.body.prompt)',
+    '    ret {answer}',
+  ].join('\n')],
+  ['ai with options', 'fn.async main():\n  any r = await ai.ask("hello", {model: "gpt-4o", maxTokens: 100})\n  ret r'],
+  // v1.6 edge cases - SQL database
+  ['db.sql sqlite', 'db.sql "sqlite" "app.db"'],
+  ['db.sql sqlite default', 'db.sql "sqlite"'],
+  ['db.sql postgres', 'db.sql "postgres" "postgresql://localhost/mydb"'],
+  ['db.sql with schema', [
+    'db.sql "sqlite" "test.db"',
+    '',
+    'schema User:',
+    '  id auto',
+    '  name str required',
+  ].join('\n')],
+  ['db.sql full app', [
+    'db.sql "sqlite" "app.db"',
+    '',
+    'schema Todo:',
+    '  id auto',
+    '  title str required min(1) max(200)',
+    '  done bool default(false)',
+    '',
+    'server app port 3000:',
+    '  cors "*"',
+    '  crud "/api/todos" Todo',
+    '  get "/":', '    ret.html "<h1>SQL Todo</h1>"',
+  ].join('\n')],
+  ['ai + db.sql combined', [
+    'db.sql "sqlite" "ai-app.db"',
+    '',
+    'schema Prompt:',
+    '  id auto',
+    '  text str required',
+    '  response str required',
+    '',
+    'server app port 3000:',
+    '  crud "/api/prompts" Prompt',
+    '  post "/api/ask" (req, res):',
+    '    any answer = await ai.ask(req.body.text)',
+    '    ret {answer}',
+  ].join('\n')],
   ['all v1.5 features combined', [
     'server app port 3000:',
     '  get "/admin" [authCheck] (req, res):',
@@ -359,6 +408,60 @@ const tests = [
     '    ret.redirect 301 "/new"',
     '  get "/dl":',
     '    ret.download "/file.zip" "download.zip"',
+  ].join('\n')],
+
+  // v1.6 edge cases - AI streaming & embeddings
+  ['ai.stream in async fn', 'fn.async main():\n  any stream = await ai.stream("hello")'],
+  ['ai.embed single text', 'fn.async main():\n  list vec = await ai.embed("hello world")'],
+  ['ai.embed batch', 'fn.async main():\n  list vecs = await ai.embed(["hello", "world"])'],
+  ['ai.similarity usage', 'fn.async main():\n  list a = await ai.embed("hello")\n  list b = await ai.embed("world")\n  num score = ai.similarity(a, b)'],
+  ['ai.stream in server route', [
+    'server app port 3000:',
+    '  get "/stream" (req, res):',
+    '    any stream = await ai.stream(req.query.q)',
+    '    ret {ok: true}',
+  ].join('\n')],
+
+  // v1.6 edge cases - Prompt templates
+  ['prompt basic', 'prompt greet:\n  "Hello {name}"'],
+  ['prompt with defaults', 'prompt translate {lang: "ja"}:\n  "Translate to {lang}: {text}"'],
+  ['prompt multi-line', 'prompt review:\n  "Review this code:"\n  "{code}"\n  "Focus on: {focus}"'],
+  ['prompt with ai.ask', [
+    'prompt summarize:',
+    '  "Summarize: {text}"',
+    '',
+    'fn.async main():',
+    '  str p = summarize({text: "hello world"})',
+    '  str answer = await ai.ask(p)',
+  ].join('\n')],
+
+  // v1.6 edge cases - Inter-file imports
+  ['import from .naide file', 'use {handler} from "./routes.naide"'],
+  ['import from .nx file', 'use utils from "./helpers.nx"'],
+  ['import default + destructured .naide', 'use {auth, validate} from "./middleware.naide"'],
+
+  // v1.6 edge cases - Deploy
+  ['prompt as identifier', 'fn test():\n  any prompt = "hello"\n  ret prompt'],
+
+  // v1.6 all combined
+  ['all v1.6 features combined', [
+    'prompt summarize {lang: "en"}:',
+    '  "Summarize in {lang}: {text}"',
+    '',
+    'db.sql "sqlite" "app.db"',
+    '',
+    'schema Doc:',
+    '  id auto',
+    '  title str required',
+    '  content str required',
+    '',
+    'server app port 3000:',
+    '  cors "*"',
+    '  crud "/api/docs" Doc',
+    '  post "/api/ask" (req, res):',
+    '    str p = summarize({text: req.body.text})',
+    '    str answer = await ai.ask(p)',
+    '    ret {answer}',
   ].join('\n')],
 ];
 

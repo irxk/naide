@@ -1,0 +1,21 @@
+# AI-powered API
+# Set AI_KEY or OPENAI_API_KEY env var
+
+server app port 3000:
+  cors "*"
+
+  post "/api/ask" (req, res):
+    str answer = await ai.ask(req.body.prompt)
+    ret {answer}
+
+  post "/api/summarize" (req, res):
+    str summary = await ai.ask("Summarize this text concisely: {req.body.text}")
+    ret {summary}
+
+  post "/api/extract" (req, res):
+    map data = await ai.json("Extract name, email, and phone from: {req.body.text}", {name: "string", email: "string", phone: "string"})
+    ret data
+
+  post "/api/chat" (req, res):
+    str reply = await ai.chat(req.body.messages)
+    ret {reply}

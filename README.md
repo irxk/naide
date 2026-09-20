@@ -12,7 +12,7 @@ Two syntax modes:
 ## Install
 
 ```bash
-npm install -g naidejs
+npm install -g naider
 ```
 
 ## Quick Start
@@ -47,6 +47,9 @@ naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
 naide build [dir] [outdir]    # Transpile all files to JavaScript
 naide fmt <files...>          # Format NAIDE files
+naide lsp                     # Start Language Server (LSP)
+naide vscode                  # Install VS Code extension
+naide deploy [dir]            # Generate Dockerfile for deployment
 naide -w <file>               # Watch mode (auto-restart on changes)
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
@@ -59,7 +62,7 @@ naide --tokens <file>         # Print token stream
 
 ```
 $ naide
-NAIDE REPL v1.5.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.6.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -561,10 +564,166 @@ fn.async createUser(map data) -> any:
 
 Methods: `api.get(url)`, `api.post(url, body)`, `api.put(url, body)`, `api.del(url)`, `api.raw(url, opts)`.
 
+## AI / LLM Integration
+
+Built-in AI client — zero dependencies, auto-detects provider from API key:
+
+```python
+fn.async main():
+  # Simple prompt
+  str answer = await ai.ask("Explain NAIDE in one sentence")
+
+  # Structured JSON output
+  map result = await ai.json("List 3 colors", {colors: ["string"]})
+
+  # Multi-turn chat
+  list msgs = [{role: "user", content: "Hi"}, {role: "assistant", content: "Hello!"}, {role: "user", content: "What is 2+2?"}]
+  str reply = await ai.chat(msgs)
+
+  # With options
+  str answer2 = await ai.ask("hello", {model: "gpt-4o", maxTokens: 100})
+```
+
+Set `AI_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` env var. Provider auto-detected: `sk-ant-*` → Anthropic, otherwise OpenAI-compatible.
+
+### AI Streaming
+
+```python
+fn.async main():
+  each chunk in await ai.stream("Write a poem"):
+    log chunk
+```
+
+Returns an async iterator of text chunks — works with SSE for real-time chat UIs.
+
+### Embeddings & Vector Search (RAG)
+
+```python
+fn.async main():
+  # Generate embeddings
+  list vec = await ai.embed("hello world")
+  list vecs = await ai.embed(["hello", "world"])
+
+  # Cosine similarity
+  num score = ai.similarity(vec1, vec2)
+```
+
+Built-in vector store for RAG:
+
+```python
+fn.async search(str query):
+  list qVec = await ai.embed(query)
+  list results = vectors.search(qVec, 5)
+  ret results
+```
+
+`createVectorStore()` — in-memory vector store with `add(id, embedding, metadata)`, `search(queryEmbedding, topK)`, `remove(id)`, `clear()`.
+
+### Prompt Templates
+
+Reusable prompt declarations with default variables:
+
+```python
+prompt summarize {lang: "en"}:
+  "Summarize the following text in {lang}:"
+  "{text}"
+
+fn.async main():
+  str p = summarize({text: "hello world"})
+  str answer = await ai.ask(p)
+```
+
+Multi-line templates are joined with newlines. Variables use `{name}` syntax.
+
+### AI in Server Routes
+
+```python
+server app port 3000:
+  post "/api/ask" (req, res):
+    str answer = await ai.ask(req.body.prompt)
+    ret {answer}
+```
+
+## SQL Database
+
+SQLite and PostgreSQL support with the same store API:
+
+```python
+db.sql "sqlite" "app.db"
+
+schema User:
+  id    auto
+  name  str required
+  email str required email
+
+server app port 3000:
+  crud "/api/users" User
+```
+
+Schemas with `db.sql` auto-use SQL storage instead of JSON files. Same API: `getAll`, `getById`, `create`, `update`, `delete`, `where`, `count`, `clear`.
+
+PostgreSQL:
+
+```python
+db.sql "postgres" "postgresql://localhost/mydb"
+```
+
+## Language Server (LSP)
+
+Built-in LSP for editor integration — diagnostics, completions, and hover docs:
+
+```bash
+naide lsp
+```
+
+### VS Code
+
+```bash
+naide vscode
+```
+
+One command installs the extension — syntax highlighting, LSP diagnostics, autocomplete, and hover docs for `.naide` and `.nx` files. Restart VS Code after install.
+
+## Deploy
+
+Generate deployment files with one command:
+
+```bash
+naide deploy
+```
+
+Creates `Dockerfile` and `.dockerignore`. Then:
+
+```bash
+docker build -t naide-app .
+docker run -p 3000:3000 naide-app
+```
+
+## Multi-File Projects
+
+Import between NAIDE files — extensions are auto-rewritten to `.mjs` in output:
+
+```python
+# routes.naide
+pub fn.async handleUser(req, res):
+  ret {user: req.params.id}
+```
+
+```python
+# app.naide
+use {handleUser} from "./routes.naide"
+
+server app port 3000:
+  get "/user/:id" [handleUser] (req, res):
+    ret {ok: true}
+```
+
+Build all files with `naide build`, which compiles every `.naide`/`.nx` file to `.mjs`.
+
 ## Full Example
 
 ```python
-db "data/"
+db.sql "sqlite" "app.db"
 
 env:
   PORT int default(3000)
@@ -615,6 +774,10 @@ server app port PORT:
     token = auth.sign({id: user.id})
     ret {token}
 
+  post "/api/ask" (req, res):
+    str answer = await ai.ask(req.body.prompt)
+    ret {answer}
+
   get "/admin" [authCheck] (req, res):
     if typeof req.user == "undefined":
       ret.status 401 {error: "not authenticated"}
@@ -646,7 +809,7 @@ every "30m":
   log "cleanup"
 ```
 
-This generates a complete production API — auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, route middleware, file downloads, redirects with status codes, type checking, error handling with ensure/finally, and event-driven hooks — from ~70 lines.
+This generates a complete production API — SQLite database, AI/LLM integration, auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, route middleware, file downloads, redirects with status codes, type checking, error handling with ensure/finally, and event-driven hooks — from ~75 lines.
 
 ## NAIDE-X Syntax (.nx)
 
@@ -702,7 +865,7 @@ $app:3000                   -- server app port 3000:
 
 Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 
-High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`.
+High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `db.sql`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`, `ai`, `prompt`.
 
 NAIDE-X log shorthands: `log.e` = error, `log.w` = warn, `log.i` = info, `log.d` = debug.
 

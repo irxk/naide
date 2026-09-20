@@ -1,0 +1,23 @@
+# SQLite-backed API
+# npm install better-sqlite3
+
+db.sql "sqlite" "app.db"
+
+env:
+  PORT int default(3000)
+
+schema Task:
+  id     auto
+  title  str required min(1) max(200)
+  done   bool default(false)
+
+server app port PORT:
+  cors "*"
+  crud "/api/tasks" Task
+
+  put "/api/tasks/:id/toggle" (req, res):
+    task = TaskStore.getById(req.params.id)
+    if not task:
+      ret.status 404 {error: "Not found"}
+    updated = TaskStore.update(req.params.id, {done: !task.done})
+    ret updated

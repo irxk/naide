@@ -666,6 +666,292 @@ export function buildOpenApiSpec(schemas) {
   return spec;
 }
 
+// ===== AI Integration (zero-dep, Node 18+ fetch) =====
+export const ai = {
+  async ask(prompt, options = {}) {
+    const apiKey = options.key || process.env.AI_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('AI requires API key: set AI_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY env var');
+    if (apiKey.startsWith('sk-ant-')) {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: options.model || process.env.AI_MODEL || 'claude-sonnet-4-20250514',
+          max_tokens: options.maxTokens || 1024,
+          system: options.system || undefined,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      if (!res.ok) throw new Error(`AI error: ${res.status}`);
+      const data = await res.json();
+      return data.content[0].text;
+    }
+    const baseUrl = options.baseUrl || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
+    const messages = [];
+    if (options.system) messages.push({ role: 'system', content: options.system });
+    messages.push({ role: 'user', content: prompt });
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: options.model || process.env.AI_MODEL || 'gpt-4o-mini',
+        messages, max_tokens: options.maxTokens || 1024, temperature: options.temperature
+      })
+    });
+    if (!res.ok) throw new Error(`AI error: ${res.status}`);
+    const data = await res.json();
+    return data.choices[0].message.content;
+  },
+
+  async json(prompt, schema, options = {}) {
+    const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema);
+    const result = await ai.ask(`${prompt}\n\nRespond ONLY with valid JSON matching: ${schemaStr}`, options);
+    try { return JSON.parse(result); } catch {
+      const m = result.match(/\{[\s\S]*\}/) || result.match(/\[[\s\S]*\]/);
+      if (m) return JSON.parse(m[0]);
+      throw new Error('AI did not return valid JSON');
+    }
+  },
+
+  async stream(prompt, options = {}) {
+    const apiKey = options.key || process.env.AI_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('AI requires API key');
+    if (apiKey.startsWith('sk-ant-')) {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: options.model || process.env.AI_MODEL || 'claude-sonnet-4-20250514',
+          max_tokens: options.maxTokens || 1024,
+          system: options.system || undefined,
+          messages: [{ role: 'user', content: prompt }],
+          stream: true
+        })
+      });
+      if (!res.ok) throw new Error(`AI error: ${res.status}`);
+      return _sseStream(res, 'anthropic');
+    }
+    const baseUrl = options.baseUrl || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
+    const messages = [];
+    if (options.system) messages.push({ role: 'system', content: options.system });
+    messages.push({ role: 'user', content: prompt });
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: options.model || process.env.AI_MODEL || 'gpt-4o-mini',
+        messages, max_tokens: options.maxTokens || 1024, temperature: options.temperature,
+        stream: true
+      })
+    });
+    if (!res.ok) throw new Error(`AI error: ${res.status}`);
+    return _sseStream(res, 'openai');
+  },
+
+  async embed(text, options = {}) {
+    const apiKey = options.key || process.env.AI_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('AI embed requires API key (OpenAI-compatible)');
+    const baseUrl = options.baseUrl || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
+    const input = Array.isArray(text) ? text : [text];
+    const res = await fetch(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: options.model || process.env.AI_EMBED_MODEL || 'text-embedding-3-small',
+        input
+      })
+    });
+    if (!res.ok) throw new Error(`AI embed error: ${res.status}`);
+    const data = await res.json();
+    const embeddings = data.data.map(d => d.embedding);
+    return Array.isArray(text) ? embeddings : embeddings[0];
+  },
+
+  similarity(a, b) {
+    let dot = 0, normA = 0, normB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  },
+
+  async chat(messages, options = {}) {
+    const apiKey = options.key || process.env.AI_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('AI requires API key');
+    if (apiKey.startsWith('sk-ant-')) {
+      const system = messages.find(m => m.role === 'system')?.content;
+      const msgs = messages.filter(m => m.role !== 'system');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: options.model || process.env.AI_MODEL || 'claude-sonnet-4-20250514',
+          max_tokens: options.maxTokens || 1024,
+          system: system || undefined, messages: msgs
+        })
+      });
+      if (!res.ok) throw new Error(`AI error: ${res.status}`);
+      const data = await res.json();
+      return data.content[0].text;
+    }
+    const baseUrl = options.baseUrl || process.env.AI_BASE_URL || 'https://api.openai.com/v1';
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: options.model || process.env.AI_MODEL || 'gpt-4o-mini',
+        messages, max_tokens: options.maxTokens || 1024, temperature: options.temperature
+      })
+    });
+    if (!res.ok) throw new Error(`AI error: ${res.status}`);
+    const data = await res.json();
+    return data.choices[0].message.content;
+  }
+};
+
+// ===== SQL Store — SQLite (via better-sqlite3) =====
+export function createSqliteStore(db, tableName, schema) {
+  const fields = Object.entries(schema.fields);
+  const idField = fields.find(([_, r]) => r.auto && r.type === 'id')?.[0] || 'id';
+
+  const columns = fields.map(([name, rules]) => {
+    let type = 'TEXT';
+    if (rules.type === 'integer') type = 'INTEGER';
+    if (rules.type === 'number') type = 'REAL';
+    if (rules.type === 'boolean') type = 'INTEGER';
+    let col = `"${name}" ${type}`;
+    if (rules.auto && rules.type === 'id') col += ' PRIMARY KEY';
+    if (rules.required && !(rules.auto && rules.type === 'id')) col += ' NOT NULL';
+    if (rules.default !== undefined) {
+      const def = typeof rules.default === 'boolean' ? (rules.default ? 1 : 0) :
+                  typeof rules.default === 'string' ? `'${rules.default}'` : rules.default;
+      col += ` DEFAULT ${def}`;
+    }
+    return col;
+  }).join(', ');
+
+  db.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${columns})`);
+
+  function toRow(data) {
+    const row = { ...data };
+    for (const [name, rules] of fields) {
+      if (rules.type === 'boolean' && name in row) row[name] = row[name] ? 1 : 0;
+    }
+    return row;
+  }
+
+  function fromRow(row) {
+    if (!row) return null;
+    const result = { ...row };
+    for (const [name, rules] of fields) {
+      if (rules.type === 'boolean' && name in result) result[name] = !!result[name];
+    }
+    return result;
+  }
+
+  return {
+    getAll() { return db.prepare(`SELECT * FROM "${tableName}"`).all().map(fromRow); },
+    getById(id) { return fromRow(db.prepare(`SELECT * FROM "${tableName}" WHERE "${idField}" = ?`).get(id)); },
+    count() { return db.prepare(`SELECT COUNT(*) as c FROM "${tableName}"`).get().c; },
+    create(data) {
+      const { valid, errors, data: validated } = schema.validate(data);
+      if (!valid) return { error: errors };
+      const row = toRow(validated);
+      const cols = Object.keys(row);
+      const placeholders = cols.map(() => '?').join(', ');
+      db.prepare(`INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`).run(...cols.map(c => row[c]));
+      return validated;
+    },
+    update(id, data) {
+      const existing = this.getById(id);
+      if (!existing) return null;
+      const merged = { ...existing, ...data, [idField]: existing[idField] };
+      const row = toRow(merged);
+      const sets = Object.keys(row).filter(k => k !== idField).map(k => `"${k}" = ?`).join(', ');
+      const vals = Object.keys(row).filter(k => k !== idField).map(k => row[k]);
+      db.prepare(`UPDATE "${tableName}" SET ${sets} WHERE "${idField}" = ?`).run(...vals, id);
+      return merged;
+    },
+    delete(id) {
+      return db.prepare(`DELETE FROM "${tableName}" WHERE "${idField}" = ?`).run(id).changes > 0;
+    },
+    where(conditions) {
+      const keys = Object.keys(conditions);
+      if (keys.length === 0) return this.getAll();
+      const where = keys.map(k => `"${k}" = ?`).join(' AND ');
+      return db.prepare(`SELECT * FROM "${tableName}" WHERE ${where}`).all(...keys.map(k => conditions[k])).map(fromRow);
+    },
+    clear() { db.exec(`DELETE FROM "${tableName}"`); }
+  };
+}
+
+// ===== SSE Stream Parser (for ai.stream) =====
+async function* _sseStream(res, provider) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const parsed = JSON.parse(data);
+        if (provider === 'anthropic') {
+          if (parsed.type === 'content_block_delta' && parsed.delta?.text) yield parsed.delta.text;
+        } else {
+          const content = parsed.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        }
+      } catch {}
+    }
+  }
+}
+
+// ===== Vector Store (in-memory, cosine similarity) =====
+export function createVectorStore() {
+  const items = [];
+
+  return {
+    add(id, embedding, metadata = {}) {
+      const existing = items.findIndex(i => i.id === id);
+      if (existing >= 0) items[existing] = { id, embedding, metadata };
+      else items.push({ id, embedding, metadata });
+    },
+
+    search(queryEmbedding, topK = 5) {
+      return items
+        .map(item => ({ ...item, score: ai.similarity(queryEmbedding, item.embedding) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
+    },
+
+    remove(id) {
+      const idx = items.findIndex(i => i.id === id);
+      if (idx >= 0) { items.splice(idx, 1); return true; }
+      return false;
+    },
+
+    get size() { return items.length; },
+    clear() { items.length = 0; }
+  };
+}
+
+// ===== Prompt Template =====
+export function createPrompt(template, defaults = {}) {
+  return function(vars = {}) {
+    const merged = { ...defaults, ...vars };
+    return template.replace(/\{(\w+)\}/g, (_, key) => {
+      if (key in merged) return String(merged[key]);
+      return `{${key}}`;
+    });
+  };
+}
+
 // ===== Helpers =====
 function parseMs(str) {
   if (typeof str === 'number') return str;

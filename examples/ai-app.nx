@@ -1,0 +1,21 @@
+-- AI-powered API (NAIDE-X)
+-- Set AI_KEY or OPENAI_API_KEY env var
+
+$app:3000
+  cors "*"
+
+  P"/api/ask"(req,res)
+    s:answer=~ai.ask(req.body.prompt)
+    >{answer}
+
+  P"/api/summarize"(req,res)
+    s:summary=~ai.ask("Summarize: {req.body.text}")
+    >{summary}
+
+  P"/api/extract"(req,res)
+    m:data=~ai.json("Extract name, email, phone: {req.body.text}",{name:"string",email:"string",phone:"string"})
+    >data
+
+  P"/api/chat"(req,res)
+    s:reply=~ai.chat(req.body.messages)
+    >{reply}

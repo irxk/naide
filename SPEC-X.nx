@@ -123,6 +123,10 @@ l:result=[1,2,3,4,5]
 -- DB persistence: db "path/"
 db "data/"
 
+-- SQL database: db.sql "driver" "connection"
+-- db.sql "sqlite" "app.db"
+-- db.sql "postgres" "postgresql://localhost/mydb"
+
 -- Environment variables
 env:
   PORT int default(3000)
@@ -221,6 +225,22 @@ queue jobs:
 
 -- OpenAPI: auto-generate spec from schemas
 --   openapi "/docs"
+
+-- AI / LLM integration (auto-imported, zero-dep)
+-- s:answer=~ai.ask("Explain NAIDE")
+-- m:result=~ai.json("List 3 colors",{colors:["string"]})
+-- s:reply=~ai.chat(msgs)
+-- s:a=~ai.ask("hi",{model:"gpt-4o",maxTokens:100})
+-- Streaming: ~f main(): @chunk<~ai.stream("poem") ...
+-- Embed: l:vec=~ai.embed("hello")
+-- Similarity: n:score=ai.similarity(a,b)
+
+-- Prompt template
+-- prompt summarize {lang:"en"}:
+--   "Summarize in {lang}: {text}"
+
+-- Inter-file import (.naide/.nx → .mjs auto-rewrite)
+-- <{handler}"./routes.naide"
 
 -- Scheduled tasks
 every "5m":

@@ -7,13 +7,15 @@ export class Generator {
     this.runtimeImports = new Set();
     this.schemas = new Map();
     this.needsEventBus = false;
-    this.runtimePath = options.runtimePath || 'naidejs/runtime';
+    this.runtimePath = options.runtimePath || 'naider/runtime';
     this.dbDir = null;
     this.authSecret = null;
     this.hasWs = false;
     this.wsNodes = [];
     this.hasTests = false;
     this.hasAsserts = false;
+    this.dbSql = false;
+    this.sqlDriver = null;
   }
 
   generate(ast) {
@@ -92,6 +94,7 @@ export class Generator {
       case 'ExprStatement': this.emit(this.expr(node.expression) + ';'); return;
       case 'DbConnect': return this.visitDbConnect(node);
       case 'DbDir': return this.visitDbDir(node);
+      case 'DbSql': return this.visitDbSql(node);
       case 'AwaitAll': return this.visitAwaitAllStatement(node);
       case 'SchemaDecl': return this.visitSchema(node);
       case 'CrudDecl': return this.visitCrudTopLevel(node);
@@ -120,6 +123,7 @@ export class Generator {
       case 'OpenapiDecl': return this.visitOpenapiTopLevel(node);
       case 'ReturnRedirect': return this.visitReturnRedirect(node);
       case 'ReturnDownload': return this.visitReturnDownload(node);
+      case 'PromptDecl': return this.visitPrompt(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -129,13 +133,17 @@ export class Generator {
     const source = node.source ? this.stringValue(node.source) : `'${node.name}'`;
     const alias = node.alias || node.name;
     if (source.includes('express')) this.usesExpress = true;
-    this.emit(`import ${alias} from ${source};`);
+    this.emit(`import ${alias} from ${this.rewriteNaideImport(source)};`);
   }
 
   visitUseDestructured(node) {
     const source = this.stringValue(node.source);
     const names = node.names.map(n => n.alias ? `${n.name} as ${n.alias}` : n.name).join(', ');
-    this.emit(`import { ${names} } from ${source};`);
+    this.emit(`import { ${names} } from ${this.rewriteNaideImport(source)};`);
+  }
+
+  rewriteNaideImport(source) {
+    return source.replace(/\.(naide|nx)(['"])/g, '.mjs$2');
   }
 
   visitFunction(node) {
@@ -539,6 +547,24 @@ export class Generator {
     this.dbDir = raw.endsWith('/') ? raw : raw + '/';
   }
 
+  visitDbSql(node) {
+    this.dbSql = true;
+    const driverRaw = node.driver.raw || node.driver.parts?.map(p => p.value).join('') || 'sqlite';
+    this.sqlDriver = driverRaw;
+
+    if (driverRaw === 'sqlite') {
+      this.emit(`import Database from 'better-sqlite3';`);
+      const conn = node.connection ? this.stringValue(node.connection) : '"data.db"';
+      this.emit(`const __db = new Database(${conn});`);
+      this.emit(`__db.pragma('journal_mode = WAL');`);
+    } else if (driverRaw === 'postgres' || driverRaw === 'pg') {
+      this.emit(`import pg from 'pg';`);
+      const conn = node.connection ? this.stringValue(node.connection) : 'process.env.DATABASE_URL';
+      this.emit(`const __pool = new pg.Pool({ connectionString: ${conn} });`);
+    }
+    this.emitRaw('');
+  }
+
   visitAwaitAllStatement(node) {
     const exprs = node.expressions.map(e => this.expr(e)).join(', ');
     this.emit(`await Promise.all([${exprs}]);`);
@@ -611,7 +637,10 @@ export class Generator {
 
     this.indent--;
     this.emit('});');
-    if (this.dbDir) {
+    if (this.dbSql && this.sqlDriver === 'sqlite') {
+      this.runtimeImports.add('createSqliteStore');
+      this.emit(`const ${node.name}Store = createSqliteStore(__db, '${node.name}', ${node.name}Schema);`);
+    } else if (this.dbDir) {
       this.emit(`const ${node.name}Store = createFileStore(${node.name}Schema, '${this.dbDir}${node.name}.json');`);
     } else {
       this.emit(`const ${node.name}Store = createStore(${node.name}Schema);`);
@@ -961,6 +990,15 @@ export class Generator {
     this.emitRaw('');
   }
 
+  visitPrompt(node) {
+    this.runtimeImports.add('createPrompt');
+    const lines = node.lines.map(l => this.generateString(l));
+    const template = lines.length === 1 ? lines[0] : `${lines.join(' + "\\n" + ')}`;
+    const defaults = node.defaults ? this.expr(node.defaults) : '{}';
+    this.emit(`const ${node.name} = createPrompt(${template}, ${defaults});`);
+    this.emitRaw('');
+  }
+
   visitOpenapi(appName, node) {
     this.runtimeImports.add('buildOpenApiSpec');
     const path = this.stringValue(node.path);
@@ -1157,6 +1195,12 @@ export class Generator {
         node.callee.object.type === 'Identifier' &&
         node.callee.object.name === 'api') {
       this.runtimeImports.add('api');
+    }
+
+    if (node.callee.type === 'MemberAccess' &&
+        node.callee.object.type === 'Identifier' &&
+        node.callee.object.name === 'ai') {
+      this.runtimeImports.add('ai');
     }
 
     if (node.callee.type === 'MemberAccess' &&

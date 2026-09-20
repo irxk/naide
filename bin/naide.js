@@ -36,12 +36,61 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// ── VS Code Extension Install ──
+if (files[0] === 'vscode') {
+  const os = await import('os');
+  const extSrc = new URL('../vscode-naide', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
+  const extName = 'irxk.naide-lang-1.1.0';
+  const extDir = join(os.homedir(), '.vscode', 'extensions', extName);
+
+  if (existsSync(extDir)) {
+    console.log(`\n  NAIDE VS Code extension already installed at:\n  ${extDir}\n`);
+    console.log('  To reinstall, delete the folder and run again.');
+    process.exit(0);
+  }
+
+  const copyDir = (src, dest) => {
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src)) {
+      const srcPath = join(src, entry);
+      const destPath = join(dest, entry);
+      if (statSync(srcPath).isDirectory()) {
+        copyDir(srcPath, destPath);
+      } else {
+        writeFileSync(destPath, readFileSync(srcPath));
+      }
+    }
+  };
+
+  try {
+    copyDir(extSrc, extDir);
+    console.log(`\n  NAIDE VS Code extension installed!
+
+  Location: ${extDir}
+
+  Restart VS Code to activate.
+  Features: syntax highlighting, LSP diagnostics, autocomplete, hover docs
+`);
+  } catch (e) {
+    console.error(`  Error: ${e.message}`);
+    console.log('\n  Manual install: copy vscode-naide/ to ~/.vscode/extensions/irxk.naide-lang-1.1.0/');
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+// ── LSP ──
+if (files[0] === 'lsp') {
+  await import('../lsp/server.js');
+  await new Promise(() => {});
+}
+
 // ── REPL ──
 if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
   const { transpile } = await import('../src/index.js');
 
-  console.log(`\n  NAIDE REPL v1.5.0 — type NAIDE code, see JavaScript output`);
+  console.log(`\n  NAIDE REPL v1.6.0 — type NAIDE code, see JavaScript output`);
   console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
 
   const rl = createInterface({
@@ -180,7 +229,7 @@ if (files[0] === 'init') {
     writeFileSync(resolve(dir, 'package.json'), JSON.stringify({
       name, version: '1.0.0', type: 'module',
       scripts: { start: 'naide app.naide', dev: 'naide -w app.naide', build: 'naide --emit app.naide -o dist/app.mjs' },
-      dependencies: { naidejs: '^1.3.0' }
+      dependencies: { naider: '^1.7.0' }
     }, null, 2) + '\n');
   }
 
@@ -266,6 +315,57 @@ if (files[0] === 'build') {
   process.exit(errors > 0 ? 1 : 0);
 }
 
+// ── Deploy ──
+if (files[0] === 'deploy') {
+  const dir = resolve(files[1] || '.');
+
+  const dockerfileContent = `FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --production
+COPY . .
+RUN npx naide build . dist
+EXPOSE 3000
+CMD ["node", "dist/app.mjs"]
+`;
+
+  const dockerignoreContent = `node_modules
+.git
+*.naide
+*.nx
+.naide_tmp_*
+dist
+`;
+
+  writeFileSync(resolve(dir, 'Dockerfile'), dockerfileContent);
+  writeFileSync(resolve(dir, '.dockerignore'), dockerignoreContent);
+
+  const pkgPath = resolve(dir, 'package.json');
+  if (existsSync(pkgPath)) {
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    if (!pkg.scripts) pkg.scripts = {};
+    pkg.scripts['docker:build'] = 'docker build -t naide-app .';
+    pkg.scripts['docker:run'] = 'docker run -p 3000:3000 naide-app';
+    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  }
+
+  console.log(`\n  NAIDE deploy files generated!
+
+  Files created:
+    Dockerfile
+    .dockerignore
+
+  Commands:
+    docker build -t naide-app .
+    docker run -p 3000:3000 naide-app
+
+  Or use npm scripts:
+    npm run docker:build
+    npm run docker:run
+`);
+  process.exit(0);
+}
+
 if (flags.help) {
   console.log(`
   NAIDE - Node AI Development Environment
@@ -278,6 +378,9 @@ if (flags.help) {
     naide init [dir]             Create a new NAIDE project
     naide build [dir] [outdir]   Transpile all files to JavaScript
     naide repl                   Start interactive REPL
+    naide lsp                    Start language server (LSP)
+    naide vscode                 Install VS Code extension
+    naide deploy [dir]           Generate Dockerfile for deployment
     naide fmt <files...>         Format NAIDE files
     naide --emit <file>          Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
@@ -323,7 +426,7 @@ for (const file of files) {
       continue;
     }
 
-    const runtimePath = flags.emit || flags.output ? 'naidejs/runtime' : runtimeUrl;
+    const runtimePath = flags.emit || flags.output ? 'naider/runtime' : runtimeUrl;
 
     if (flags.watch) {
       const tempFile = resolve(`.naide_tmp_${basename(file, ext)}.mjs`);
