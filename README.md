@@ -68,7 +68,7 @@ naide --tokens <file>         # Print token stream
 
 ```
 $ naide
-NAIDE REPL v1.8.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.9.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"

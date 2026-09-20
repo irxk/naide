@@ -151,7 +151,7 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
   const { transpile } = await import('../src/index.js');
 
-  console.log(`\n  NAIDE REPL v1.8.0 — type NAIDE code, see JavaScript output`);
+  console.log(`\n  NAIDE REPL v1.9.0 — type NAIDE code, see JavaScript output`);
   console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
 
   const rl = createInterface({
@@ -290,7 +290,7 @@ if (files[0] === 'init') {
     writeFileSync(resolve(dir, 'package.json'), JSON.stringify({
       name, version: '1.0.0', type: 'module',
       scripts: { start: 'naide app.naide', dev: 'naide -w app.naide', build: 'naide --emit app.naide -o dist/app.mjs' },
-      dependencies: { naider: '^1.8.0' }
+      dependencies: { naider: '^1.9.0' }
     }, null, 2) + '\n');
   }
 
