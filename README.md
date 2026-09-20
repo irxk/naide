@@ -46,12 +46,17 @@ naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
 naide build [dir] [outdir]    # Transpile all files to JavaScript
+naide check <files...>        # Type-check without running
 naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
 naide vscode                  # Install VS Code extension
 naide deploy [dir]            # Generate Dockerfile for deployment
-naide convert <files...>       # Convert .nx ↔ .naide (bidirectional)
+naide convert <files...>      # Convert .nx ↔ .naide (bidirectional)
+naide pkg init                # Create naide.pkg.json manifest
+naide pkg install <name>      # Install a NAIDE package
+naide pkg publish             # Publish package to npm
 naide -w <file>               # Watch mode (auto-restart on changes)
+naide -d <file>               # Debug mode (Node.js inspector)
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
 naide --mid <file.nx>         # Show intermediate NAIDE v1 (debug X mode)
@@ -943,6 +948,63 @@ When you run a `.naide` file, the CLI scans generated JavaScript for missing dep
 ```
 [NAIDE] Missing: express — run: npm install express
 ```
+
+## Type Checker
+
+Compile-time type checking without running the code:
+
+```bash
+naide check app.naide
+```
+
+Catches type mismatches at compile time:
+
+```
+  app.naide:3 ERROR: Type mismatch: cannot assign str to int
+  app.naide:7 WARN: Type warning: reassigning int variable 'count' with str
+```
+
+The type checker understands NAIDE's type annotations (`str`, `int`, `num`, `bool`, `list`, `map`), infers types from expressions and function return values, and checks assignments for compatibility. `num` accepts `int` values. `any` and `json` accept all types.
+
+Also available as a flag: `naide --check app.naide` or programmatically via `compile(source, { typeCheck: true })`.
+
+## Async Error Handling
+
+Async route handlers are automatically wrapped with try/catch to prevent unhandled rejections:
+
+```python
+server app port 3000:
+  post "/api/data" (req, res):
+    any data = await fetchData()    # if this throws...
+    ret data                        # ...a 500 JSON error is returned automatically
+```
+
+Generated code includes `try { ... } catch (__err) { res.status(500).json({ error: __err.message }) }` around async handlers. Routes with explicit `try/fail` blocks are left as-is.
+
+A global `process.on('unhandledRejection')` handler is also added to server code to catch any remaining async errors.
+
+## Debugger
+
+Debug NAIDE programs with the Node.js inspector:
+
+```bash
+naide -d app.naide              # starts with --inspect-brk
+```
+
+Then open `chrome://inspect` in Chrome to connect. The program pauses at the first line so you can set breakpoints before execution.
+
+## Package Ecosystem
+
+Manage NAIDE packages via npm:
+
+```bash
+naide pkg init                  # create naide.pkg.json manifest
+naide pkg install my-plugin     # install from npm + add to manifest
+naide pkg publish               # publish to npm with naide-plugin keyword
+naide pkg list                  # list installed NAIDE packages
+```
+
+The `naide.pkg.json` manifest tracks NAIDE-specific metadata (main entry, exports, dependencies) while using npm as the underlying registry.
 
 ## Why NAIDE?
 

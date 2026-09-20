@@ -74,6 +74,8 @@ const flags = {
   mode: null,
   mid: false,
   watch: false,
+  debug: false,
+  check: false,
 };
 
 const files = [];
@@ -89,6 +91,8 @@ for (let i = 0; i < args.length; i++) {
     case '--x': case '-x': flags.mode = 'x'; break;
     case '--mid': flags.mid = true; flags.run = false; break;
     case '--watch': case '-w': flags.watch = true; break;
+    case '--debug': case '-d': flags.debug = true; break;
+    case '--check': flags.check = true; flags.run = false; break;
     default: files.push(arg);
   }
 }
@@ -430,6 +434,174 @@ if (files[0] === 'convert') {
   process.exit(0);
 }
 
+// ── Type Check ──
+if (files[0] === 'check') {
+  const targets = files.slice(1);
+  if (targets.length === 0) {
+    console.log('  Usage: naide check <file.naide|file.nx> [files...]');
+    process.exit(0);
+  }
+
+  let totalErrors = 0;
+  let totalWarnings = 0;
+  for (const file of targets) {
+    const filePath = resolve(file);
+    try {
+      const source = readFileSync(filePath, 'utf-8');
+      const ext = extname(file);
+      const mode = ext === '.nx' ? 'x' : 'naide';
+      const result = compile(source, { mode, typeCheck: true });
+      const { typeErrors } = result;
+
+      if (typeErrors) {
+        for (const e of typeErrors.errors) {
+          console.log(`  ${file}:${e.line} ERROR: ${e.message}`);
+          totalErrors++;
+        }
+        for (const w of typeErrors.warnings) {
+          console.log(`  ${file}:${w.line} WARN: ${w.message}`);
+          totalWarnings++;
+        }
+      }
+
+      if (!typeErrors || (typeErrors.errors.length === 0 && typeErrors.warnings.length === 0)) {
+        console.log(`  ${file}: OK`);
+      }
+    } catch (e) {
+      console.error(`  ${file}: ${e.message.split('\n')[0]}`);
+      totalErrors++;
+    }
+  }
+
+  console.log(`\n  ${totalErrors} error(s), ${totalWarnings} warning(s)`);
+  process.exit(totalErrors > 0 ? 1 : 0);
+}
+
+// ── Package Ecosystem ──
+if (files[0] === 'pkg') {
+  const subcmd = files[1];
+
+  if (!subcmd || subcmd === 'help') {
+    console.log(`
+  NAIDE Package Manager
+
+  Usage:
+    naide pkg init                Create naide.pkg.json manifest
+    naide pkg install <name>      Install a NAIDE package from npm
+    naide pkg publish             Publish current package to npm
+    naide pkg list                List installed NAIDE packages
+`);
+    process.exit(0);
+  }
+
+  const pkgManifestPath = resolve('naide.pkg.json');
+
+  if (subcmd === 'init') {
+    if (existsSync(pkgManifestPath)) {
+      console.log('  naide.pkg.json already exists.');
+      process.exit(0);
+    }
+    const npmPkgPath = resolve('package.json');
+    let name = 'my-naide-pkg';
+    if (existsSync(npmPkgPath)) {
+      try { name = JSON.parse(readFileSync(npmPkgPath, 'utf-8')).name || name; } catch {}
+    }
+    const manifest = {
+      name,
+      version: '1.0.0',
+      description: '',
+      main: 'index.naide',
+      keywords: ['naide', 'naide-plugin'],
+      exports: {},
+      dependencies: {},
+    };
+    writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`\n  Created naide.pkg.json\n`);
+    process.exit(0);
+  }
+
+  if (subcmd === 'install') {
+    const pkgName = files[2];
+    if (!pkgName) {
+      console.log('  Usage: naide pkg install <package-name>');
+      process.exit(1);
+    }
+
+    console.log(`  Installing ${pkgName}...`);
+    const child = spawn('npm', ['install', pkgName], { stdio: 'inherit', shell: true });
+    child.on('close', (code) => {
+      if (code === 0) {
+        if (existsSync(pkgManifestPath)) {
+          try {
+            const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
+            const npmPkg = resolve('node_modules', pkgName, 'package.json');
+            if (existsSync(npmPkg)) {
+              const ver = JSON.parse(readFileSync(npmPkg, 'utf-8')).version;
+              manifest.dependencies[pkgName] = `^${ver}`;
+              writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
+            }
+          } catch {}
+        }
+        console.log(`\n  Installed ${pkgName}`);
+      }
+      process.exit(code);
+    });
+    await new Promise(() => {});
+  }
+
+  if (subcmd === 'publish') {
+    if (!existsSync(pkgManifestPath)) {
+      console.log('  No naide.pkg.json found. Run: naide pkg init');
+      process.exit(1);
+    }
+
+    const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
+    const npmPkgPath = resolve('package.json');
+    if (!existsSync(npmPkgPath)) {
+      writeFileSync(npmPkgPath, JSON.stringify({
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        type: 'module',
+        main: manifest.main,
+        keywords: manifest.keywords,
+        files: ['*.naide', '*.nx', 'src/', 'naide.pkg.json'],
+      }, null, 2) + '\n');
+    }
+
+    console.log(`  Publishing ${manifest.name}@${manifest.version}...`);
+    const child = spawn('npm', ['publish', '--access', 'public'], { stdio: 'inherit', shell: true });
+    child.on('close', (code) => {
+      if (code === 0) console.log(`\n  Published ${manifest.name}@${manifest.version}`);
+      process.exit(code);
+    });
+    await new Promise(() => {});
+  }
+
+  if (subcmd === 'list') {
+    if (!existsSync(pkgManifestPath)) {
+      console.log('  No naide.pkg.json found.');
+      process.exit(0);
+    }
+    const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
+    const deps = Object.entries(manifest.dependencies || {});
+    if (deps.length === 0) {
+      console.log('  No NAIDE packages installed.');
+    } else {
+      console.log('\n  NAIDE packages:\n');
+      for (const [name, ver] of deps) {
+        console.log(`    ${name}  ${ver}`);
+      }
+      console.log('');
+    }
+    process.exit(0);
+  }
+
+  console.log(`  Unknown subcommand: naide pkg ${subcmd}`);
+  console.log('  Run: naide pkg help');
+  process.exit(1);
+}
+
 // ── Deploy ──
 if (files[0] === 'deploy') {
   const dir = resolve(files[1] || '.');
@@ -492,16 +664,22 @@ if (flags.help) {
     naide <file.nx>              Run a NAIDE-X file (auto-detected)
     naide init [dir]             Create a new NAIDE project
     naide build [dir] [outdir]   Transpile all files to JavaScript
+    naide check <files...>       Type-check without running
     naide repl                   Start interactive REPL
     naide lsp                    Start language server (LSP)
     naide vscode                 Install VS Code extension
     naide deploy [dir]           Generate Dockerfile for deployment
     naide convert <files...>     Convert between .naide and .nx formats
     naide fmt <files...>         Format NAIDE files
+    naide pkg init               Create naide.pkg.json manifest
+    naide pkg install <name>     Install a NAIDE package
+    naide pkg publish            Publish package to npm
+    naide pkg list               List NAIDE dependencies
     naide --emit <file>          Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
     naide -x <file.naide>        Force NAIDE-X mode
     naide -w <file.naide>        Watch mode (auto-restart on changes)
+    naide -d <file>              Debug mode (Node.js inspector)
 
   Modes:
     .naide  Standard NAIDE (~40% fewer tokens than JS)
@@ -512,6 +690,8 @@ if (flags.help) {
     -o, --output   Write generated JavaScript to file
     -x             Force NAIDE-X mode
     -w, --watch    Watch mode: restart on file changes
+    -d, --debug    Start with Node.js debugger (--inspect-brk)
+    --check        Type-check files without running
     --mid          Show intermediate NAIDE v1 (X mode only)
     --ast          Print AST
     --tokens       Print tokens
@@ -592,7 +772,17 @@ for (const file of files) {
       continue;
     }
 
-    const result = compile(source, { mode, runtimePath, sourceFile: file });
+    const result = compile(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check });
+
+    if (flags.check) {
+      const { typeErrors } = result;
+      if (typeErrors) {
+        for (const e of typeErrors.errors) console.log(`  ${file}:${e.line} ERROR: ${e.message}`);
+        for (const w of typeErrors.warnings) console.log(`  ${file}:${w.line} WARN: ${w.message}`);
+        if (typeErrors.errors.length === 0 && typeErrors.warnings.length === 0) console.log(`  ${file}: OK`);
+      }
+      continue;
+    }
 
     if (flags.tokens) {
       console.log(JSON.stringify(result.tokens, null, 2));
@@ -618,6 +808,22 @@ for (const file of files) {
     // Run mode
     const tempFile = resolve(`.naide_tmp_${basename(file, ext)}.mjs`);
     writeFileSync(tempFile, result.js, 'utf-8');
+
+    if (flags.debug) {
+      console.log(`\n  [NAIDE] Debugger starting — ${file}`);
+      console.log('  Open Chrome → chrome://inspect to connect\n');
+      const debugChild = spawn(process.execPath, ['--inspect-brk', tempFile], { stdio: 'inherit' });
+      debugChild.on('close', (code) => {
+        try { unlinkSync(tempFile); } catch {}
+        process.exit(code || 0);
+      });
+      process.on('SIGINT', () => {
+        debugChild.kill();
+        try { unlinkSync(tempFile); } catch {}
+        process.exit(0);
+      });
+      await new Promise(() => {});
+    }
 
     try {
       await import('file:///' + tempFile.replace(/\\/g, '/'));

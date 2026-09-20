@@ -1350,4 +1350,79 @@ describe('Runtime unit tests', () => {
     const js3 = compile('bool flag = true\n').js;
     assert.ok(js3.includes('const flag = true'));
   });
+
+  // ===== Type checker =====
+  it('type checker detects type mismatch (int = string)', () => {
+    const result = compile('int x = "hello"\n', { typeCheck: true });
+    assert.ok(result.typeErrors);
+    assert.ok(result.typeErrors.errors.length > 0);
+    assert.ok(result.typeErrors.errors[0].message.includes('cannot assign'));
+  });
+
+  it('type checker accepts compatible types', () => {
+    const result = compile('int x = 42\nstr name = "hello"\nbool flag = true\n', { typeCheck: true });
+    assert.ok(result.typeErrors);
+    assert.strictEqual(result.typeErrors.errors.length, 0);
+  });
+
+  it('type checker allows num = int', () => {
+    const result = compile('num x = 42\n', { typeCheck: true });
+    assert.ok(result.typeErrors);
+    assert.strictEqual(result.typeErrors.errors.length, 0);
+  });
+
+  it('type checker detects str = number', () => {
+    const result = compile('str x = 42\n', { typeCheck: true });
+    assert.ok(result.typeErrors);
+    assert.ok(result.typeErrors.errors.length > 0);
+  });
+
+  it('type checker detects bool = string', () => {
+    const result = compile('bool x = "yes"\n', { typeCheck: true });
+    assert.ok(result.typeErrors);
+    assert.ok(result.typeErrors.errors.length > 0);
+  });
+
+  it('type checker returns null when disabled', () => {
+    const result = compile('int x = "hello"\n');
+    assert.strictEqual(result.typeErrors, null);
+  });
+
+  // ===== Async route error handling =====
+  it('async routes get auto try/catch', () => {
+    const src = 'server app port 3000:\n  post "/api/data" (req, res):\n    any data = await fetchData()\n    ret data\n';
+    const js = compile(src).js;
+    assert.ok(js.includes('try {'));
+    assert.ok(js.includes('catch (__err)'));
+    assert.ok(js.includes('res.status(500)'));
+  });
+
+  it('routes with manual try/catch skip auto-wrap', () => {
+    const src = 'server app port 3000:\n  post "/api/data" (req, res):\n    try:\n      any data = await fetchData()\n      ret data\n    fail e:\n      ret.status 500 {error: e.message}\n';
+    const js = compile(src).js;
+    const catchCount = (js.match(/catch/g) || []).length;
+    assert.strictEqual(catchCount, 1);
+  });
+
+  it('sync routes do not get auto try/catch', () => {
+    const src = 'server app port 3000:\n  get "/":\n    ret {ok: true}\n';
+    const js = compile(src).js;
+    assert.ok(!js.includes('catch (__err)'));
+  });
+
+  // ===== Unhandled rejection handler =====
+  it('server code includes unhandledRejection handler', () => {
+    const src = 'server app port 3000:\n  get "/":\n    ret {ok: true}\n';
+    const js = compile(src).js;
+    assert.ok(js.includes('unhandledRejection'));
+  });
+
+  // ===== Debug mode in help text =====
+  it('help text includes debug and check commands', async () => {
+    const { execSync } = await import('child_process');
+    const help = execSync('node bin/naide.js --help', { encoding: 'utf-8' });
+    assert.ok(help.includes('--debug'));
+    assert.ok(help.includes('--check'));
+    assert.ok(help.includes('naide pkg'));
+  });
 });

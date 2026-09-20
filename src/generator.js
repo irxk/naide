@@ -49,6 +49,11 @@ export class Generator {
       preamble.push('');
     }
 
+    if (this.usesExpress) {
+      this.output.push('');
+      this.output.push("process.on('unhandledRejection', (err) => { console.error('[NAIDE] Unhandled async error:', err.message || err); });");
+    }
+
     if (preamble.length > 0) {
       this.output.unshift(...preamble);
     }
@@ -334,6 +339,7 @@ export class Generator {
   }
 
   visitServer(node) {
+    this.usesExpress = true;
     const hasWs = node.routes.some(r => r.type === 'WsDecl');
 
     this.emit(`import express from 'express';`);
@@ -436,6 +442,12 @@ export class Generator {
     this.indent++;
 
     const hasRes = params.includes('res');
+    const hasTryCatch = route.body.some(s => s.type === 'Try');
+
+    if (needsAsync && !hasTryCatch) {
+      this.emit('try {');
+      this.indent++;
+    }
 
     for (let i = 0; i < route.body.length; i++) {
       const stmt = route.body[i];
@@ -448,6 +460,15 @@ export class Generator {
       } else {
         this.visitStatement(stmt);
       }
+    }
+
+    if (needsAsync && !hasTryCatch) {
+      this.indent--;
+      this.emit('} catch (__err) {');
+      this.indent++;
+      this.emit('if (!res.headersSent) res.status(500).json({ error: __err.message });');
+      this.indent--;
+      this.emit('}');
     }
 
     this.indent--;
