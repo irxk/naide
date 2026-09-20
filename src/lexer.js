@@ -18,6 +18,8 @@ export class Lexer {
     this.tokens = [];
     this.indentStack = [0];
     this.atLineStart = true;
+    this.indentUnit = 0;
+    this.tabSize = 4;
   }
 
   peek() {
@@ -125,7 +127,7 @@ export class Lexer {
         this.pos++;
         this.col++;
       } else if (ch === '\t') {
-        indent += 2;
+        indent += this.tabSize;
         this.pos++;
         this.col++;
       } else {
@@ -133,7 +135,6 @@ export class Lexer {
       }
     }
 
-    // Skip blank lines and comment-only lines
     if (this.pos >= this.source.length || this.source[this.pos] === '\n' || this.source[this.pos] === '#') {
       return;
     }
@@ -141,6 +142,10 @@ export class Lexer {
     const currentIndent = this.indentStack[this.indentStack.length - 1];
 
     if (indent > currentIndent) {
+      if (!this.indentUnit) {
+        this.indentUnit = indent - currentIndent;
+        this.tabSize = this.indentUnit;
+      }
       this.indentStack.push(indent);
       this.tokens.push(this.makeToken(T.INDENT, indent));
     } else if (indent < currentIndent) {

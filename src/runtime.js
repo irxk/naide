@@ -833,6 +833,7 @@ export function createSqliteStore(db, tableName, schema) {
   }).join(', ');
 
   db.exec(`CREATE TABLE IF NOT EXISTS "${tableName}" (${columns})`);
+  migrateSqliteSchema(db, tableName, schema);
 
   function toRow(data) {
     const row = { ...data };
@@ -950,6 +951,83 @@ export function createPrompt(template, defaults = {}) {
       return `{${key}}`;
     });
   };
+}
+
+// ===== Schema Migration (auto ALTER TABLE for SQLite) =====
+export function migrateSqliteSchema(db, tableName, schema) {
+  const fields = Object.entries(schema.fields);
+  const info = db.prepare(`PRAGMA table_info("${tableName}")`).all();
+  const existing = new Set(info.map(c => c.name));
+  let changed = 0;
+
+  for (const [name, rules] of fields) {
+    if (!existing.has(name)) {
+      let type = 'TEXT';
+      if (rules.type === 'integer') type = 'INTEGER';
+      if (rules.type === 'number') type = 'REAL';
+      if (rules.type === 'boolean') type = 'INTEGER';
+      let def = '';
+      if (rules.default !== undefined) {
+        const d = typeof rules.default === 'boolean' ? (rules.default ? 1 : 0) :
+                  typeof rules.default === 'string' ? `'${rules.default}'` : rules.default;
+        def = ` DEFAULT ${d}`;
+      }
+      db.exec(`ALTER TABLE "${tableName}" ADD COLUMN "${name}" ${type}${def}`);
+      changed++;
+    }
+  }
+  return changed;
+}
+
+// ===== Mock / Spy (test utilities) =====
+export function createMock(fn) {
+  const calls = [];
+  let impl = fn || (() => undefined);
+  const mock = function(...args) {
+    calls.push({ args, timestamp: Date.now() });
+    return impl.apply(this, args);
+  };
+  mock.calls = calls;
+  mock.callCount = () => calls.length;
+  mock.calledWith = (...expected) => calls.some(c =>
+    c.args.length === expected.length && c.args.every((a, i) => a === expected[i])
+  );
+  mock.returns = (val) => { impl = () => val; return mock; };
+  mock.impl = (f) => { impl = f; return mock; };
+  mock.reset = () => { calls.length = 0; return mock; };
+  return mock;
+}
+
+export function createSpy(obj, method) {
+  const original = obj[method];
+  const mock = createMock(original.bind(obj));
+  obj[method] = mock;
+  mock.restore = () => { obj[method] = original; };
+  return mock;
+}
+
+// ===== Plugin System =====
+const _plugins = new Map();
+
+export function registerPlugin(name, setup) {
+  _plugins.set(name, { name, setup, initialized: false, exports: {} });
+}
+
+export function usePlugin(name, options = {}) {
+  const plugin = _plugins.get(name);
+  if (!plugin) throw new Error(`Plugin not found: ${name}`);
+  if (!plugin.initialized) {
+    const result = plugin.setup(options);
+    if (result && typeof result === 'object') {
+      plugin.exports = result;
+    }
+    plugin.initialized = true;
+  }
+  return plugin.exports;
+}
+
+export function listPlugins() {
+  return [..._plugins.keys()];
 }
 
 // ===== Helpers =====

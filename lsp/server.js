@@ -89,7 +89,38 @@ function validateDocument(uri) {
   const diagnostics = [];
 
   try {
-    compile(text, { mode });
+    const result = compile(text, { mode });
+
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line || line.startsWith('#') || line.startsWith('--')) continue;
+
+      const typeMatch = line.match(/^(str|int|num|bool)\s+\w+\s*=\s*(.+)/);
+      if (typeMatch) {
+        const declType = typeMatch[1];
+        const val = typeMatch[2].trim();
+        if (declType === 'int' && /^["']/.test(val)) {
+          diagnostics.push({
+            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
+            severity: 2, source: 'naide',
+            message: `Type hint: assigning string to int variable`
+          });
+        } else if (declType === 'str' && /^\d+$/.test(val)) {
+          diagnostics.push({
+            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
+            severity: 2, source: 'naide',
+            message: `Type hint: assigning number to str variable`
+          });
+        } else if (declType === 'bool' && !['true', 'false'].includes(val) && !/\b(not|and|or|==|!=|>|<)\b/.test(val)) {
+          diagnostics.push({
+            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
+            severity: 2, source: 'naide',
+            message: `Type hint: value may not be boolean`
+          });
+        }
+      }
+    }
   } catch (e) {
     const lineMatch = e.message.match(/line (\d+):(\d+)/);
     const line = lineMatch ? parseInt(lineMatch[1]) - 1 : 0;
@@ -131,6 +162,10 @@ function getCompletions() {
     { label: 'api.get(url)', detail: 'HTTP GET', insertText: 'api.get(' },
     { label: 'api.post(url, body)', detail: 'HTTP POST', insertText: 'api.post(' },
     { label: 'prompt', detail: 'Reusable prompt template', insertText: 'prompt ' },
+    { label: 'createMock(fn)', detail: 'Create mock function', insertText: 'createMock(' },
+    { label: 'createSpy(obj, method)', detail: 'Spy on method', insertText: 'createSpy(' },
+    { label: 'registerPlugin(name, setup)', detail: 'Register plugin', insertText: 'registerPlugin(' },
+    { label: 'usePlugin(name)', detail: 'Use registered plugin', insertText: 'usePlugin(' },
   ];
 
   return [

@@ -5,6 +5,63 @@ import { resolve, basename, extname, join, relative } from 'path';
 import { compile } from '../src/index.js';
 import { spawn } from 'child_process';
 
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+
+function checkDependencies(jsCode) {
+  const depMap = {
+    "from 'express'": { pkg: 'express', reason: 'server' },
+    "from 'better-sqlite3'": { pkg: 'better-sqlite3', reason: 'db.sql "sqlite"' },
+    "from 'pg'": { pkg: 'pg', reason: 'db.sql "postgres"' },
+    "from 'ws'": { pkg: 'ws', reason: 'WebSocket (ws)' },
+  };
+  const missing = [];
+  for (const [pattern, info] of Object.entries(depMap)) {
+    if (jsCode.includes(pattern)) {
+      try { _require.resolve(info.pkg); } catch {
+        missing.push(info);
+      }
+    }
+  }
+  if (missing.length > 0) {
+    console.log('\n  [NAIDE] Missing dependencies detected:\n');
+    for (const m of missing) {
+      console.log(`    npm install ${m.pkg}    # required for: ${m.reason}`);
+    }
+    console.log(`\n  Run: npm install ${missing.map(m => m.pkg).join(' ')}\n`);
+  }
+}
+
+function remapError(err, sourceMap, sourceFile, sourceCode) {
+  if (!err.stack || !sourceMap || sourceMap.length === 0) return;
+  const lines = sourceCode.split('\n');
+  const tempPattern = /\.naide_tmp_[^:]+\.mjs:(\d+)/g;
+  let match;
+  const remapped = [];
+  while ((match = tempPattern.exec(err.stack)) !== null) {
+    const jsLine = parseInt(match[1]) - 1;
+    const srcLine = sourceMap[jsLine];
+    if (srcLine && srcLine > 0) {
+      remapped.push(srcLine);
+    }
+  }
+  if (remapped.length > 0) {
+    const srcLine = remapped[0];
+    const context = [];
+    const start = Math.max(0, srcLine - 3);
+    const end = Math.min(lines.length, srcLine + 2);
+    for (let i = start; i < end; i++) {
+      const marker = i + 1 === srcLine ? ' >> ' : '    ';
+      context.push(`${marker}${i + 1} | ${lines[i]}`);
+    }
+    console.error(`\n  [NAIDE Error] ${sourceFile}:${srcLine}\n`);
+    console.error(context.join('\n'));
+    console.error(`\n  ${err.message}\n`);
+    return true;
+  }
+  return false;
+}
+
 const args = process.argv.slice(2);
 
 const flags = {
@@ -90,7 +147,7 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
   const { transpile } = await import('../src/index.js');
 
-  console.log(`\n  NAIDE REPL v1.6.0 — type NAIDE code, see JavaScript output`);
+  console.log(`\n  NAIDE REPL v1.7.0 — type NAIDE code, see JavaScript output`);
   console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
 
   const rl = createInterface({
@@ -315,6 +372,64 @@ if (files[0] === 'build') {
   process.exit(errors > 0 ? 1 : 0);
 }
 
+// ── Convert (NX ↔ NAIDE) ──
+if (files[0] === 'convert') {
+  const targets = files.slice(1);
+  if (targets.length === 0) {
+    console.log('  Usage: naide convert <file.nx|file.naide>');
+    console.log('    .nx → .naide    Expand NX shorthand to readable NAIDE');
+    console.log('    .naide → .nx    Compress NAIDE to AI-optimized NX');
+    process.exit(0);
+  }
+
+  for (const file of targets) {
+    const filePath = resolve(file);
+    const ext = extname(file);
+    try {
+      const source = readFileSync(filePath, 'utf-8');
+
+      if (ext === '.nx') {
+        const { preprocess } = await import('../src/preprocess.js');
+        const naide = preprocess(source);
+        const outPath = filePath.replace(/\.nx$/, '.naide');
+        writeFileSync(outPath, naide);
+        console.log(`  ${file} → ${basename(outPath)}`);
+      } else if (ext === '.naide') {
+        const lines = source.split('\n');
+        const nxLines = [];
+        for (const line of lines) {
+          let nx = line;
+          nx = nx.replace(/^(\s*)#\s?(.*)/, '$1-- $2');
+          nx = nx.replace(/^(\s*)fn\.async\s+/, '$1~f ');
+          nx = nx.replace(/^(\s*)fn\s+/, '$1f ');
+          nx = nx.replace(/^(\s*)use\s+\{(.+?)\}\s+from\s+/, '$1<{$2}');
+          nx = nx.replace(/^(\s*)use\s+/, '$1<');
+          nx = nx.replace(/\bret\b/, '>');
+          nx = nx.replace(/\beach\s+(\w+)\s+in\s+/, '@$1<');
+          nx = nx.replace(/\bawait\s+/, '~');
+          nx = nx.replace(/\bstr\b/g, 's');
+          nx = nx.replace(/\bint\b/g, 'i');
+          nx = nx.replace(/\bnum\b/g, 'n');
+          nx = nx.replace(/\bbool\b/g, 'b');
+          nx = nx.replace(/\blist\b/g, 'l');
+          nx = nx.replace(/\bmap\b/g, 'm');
+          nx = nx.replace(/\bany\b/g, 'a');
+          nx = nx.replace(/\bconsole\.log\b/, 'log');
+          nxLines.push(nx);
+        }
+        const outPath = filePath.replace(/\.naide$/, '.nx');
+        writeFileSync(outPath, nxLines.join('\n'));
+        console.log(`  ${file} → ${basename(outPath)}`);
+      } else {
+        console.error(`  Unsupported: ${file} (use .naide or .nx)`);
+      }
+    } catch (e) {
+      console.error(`  Error: ${file} — ${e.message}`);
+    }
+  }
+  process.exit(0);
+}
+
 // ── Deploy ──
 if (files[0] === 'deploy') {
   const dir = resolve(files[1] || '.');
@@ -381,6 +496,7 @@ if (flags.help) {
     naide lsp                    Start language server (LSP)
     naide vscode                 Install VS Code extension
     naide deploy [dir]           Generate Dockerfile for deployment
+    naide convert <files...>     Convert between .naide and .nx formats
     naide fmt <files...>         Format NAIDE files
     naide --emit <file>          Output generated JavaScript
     naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
@@ -476,7 +592,7 @@ for (const file of files) {
       continue;
     }
 
-    const result = compile(source, { mode, runtimePath });
+    const result = compile(source, { mode, runtimePath, sourceFile: file });
 
     if (flags.tokens) {
       console.log(JSON.stringify(result.tokens, null, 2));
@@ -505,6 +621,11 @@ for (const file of files) {
 
     try {
       await import('file:///' + tempFile.replace(/\\/g, '/'));
+    } catch (runErr) {
+      if (!remapError(runErr, result.sourceMap, file, source)) {
+        console.error(`\n${runErr.message}`);
+      }
+      if (process.env.NAIDE_DEBUG) console.error(runErr.stack);
     } finally {
       try {
         const { unlinkSync } = await import('fs');

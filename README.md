@@ -50,6 +50,7 @@ naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
 naide vscode                  # Install VS Code extension
 naide deploy [dir]            # Generate Dockerfile for deployment
+naide convert <files...>       # Convert .nx ↔ .naide (bidirectional)
 naide -w <file>               # Watch mode (auto-restart on changes)
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
@@ -62,7 +63,7 @@ naide --tokens <file>         # Print token stream
 
 ```
 $ naide
-NAIDE REPL v1.6.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.7.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -72,7 +73,7 @@ const name = "hello";
 ...   ret a + b
 ...
 function add(a, b) {
-  return (a + b);
+  return a + b;
 }
 ```
 
@@ -497,6 +498,31 @@ test "math":
 
 `assert a == b` generates `assert.strictEqual` for better error messages. Run with `node --test`.
 
+### Mock / Spy (Test Utilities)
+
+```python
+fn.async main():
+  # Create a mock function
+  any mock = createMock()
+  mock(1, 2)
+  mock("hello")
+  log mock.callCount()        # 2
+  log mock.calledWith(1, 2)   # true
+
+  # Mock with return value
+  mock.returns(42)
+  log mock()                  # 42
+
+  # Spy on an existing method
+  any spy = createSpy(obj, "method")
+  obj.method("arg")
+  log spy.callCount()         # 1
+  spy.restore()               # restores original method
+```
+
+`createMock(fn?)` — create a mock function with `.calls`, `.callCount()`, `.calledWith(...)`, `.returns(val)`, `.impl(fn)`, `.reset()`.
+`createSpy(obj, method)` — wraps an existing method with a mock. `.restore()` reverts it.
+
 ## Job Queue
 
 In-memory async job queue for background processing:
@@ -661,6 +687,8 @@ server app port 3000:
 ```
 
 Schemas with `db.sql` auto-use SQL storage instead of JSON files. Same API: `getAll`, `getById`, `create`, `update`, `delete`, `where`, `count`, `clear`.
+
+Schema migration is automatic — when you add new fields to a schema, `ALTER TABLE ADD COLUMN` runs at startup. No manual migration needed.
 
 PostgreSQL:
 
@@ -868,6 +896,53 @@ Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `db.sql`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`, `ai`, `prompt`.
 
 NAIDE-X log shorthands: `log.e` = error, `log.w` = warn, `log.i` = info, `log.d` = debug.
+
+## Plugin System
+
+Register and use plugins for extensibility:
+
+```python
+registerPlugin("logger", (opts) =>
+  ret {log: (msg) => log "[{opts.prefix}] {msg}"}
+)
+
+any logger = usePlugin("logger", {prefix: "APP"})
+logger.log("started")
+
+list names = listPlugins()
+```
+
+`registerPlugin(name, setup)` — registers a plugin factory. `usePlugin(name, opts?)` — initializes on first call, returns cached exports. `listPlugins()` — returns registered plugin names.
+
+## Convert (NX ↔ NAIDE)
+
+Bidirectional conversion between `.nx` and `.naide`:
+
+```bash
+naide convert file.nx         # → file.naide (expand to readable syntax)
+naide convert file.naide      # → file.nx (compress to NX syntax)
+```
+
+## Source Maps & Error Remapping
+
+Runtime errors are automatically remapped to source file line numbers:
+
+```
+Error in app.naide:12
+  10 |   user = UserStore.getById(id)
+  11 |   if not user:
+>>12 |     throw "not found"
+```
+
+The CLI tracks source-to-output line mappings and shows context from your `.naide`/`.nx` file, not the generated JavaScript.
+
+## Native Dependency Detection
+
+When you run a `.naide` file, the CLI scans generated JavaScript for missing dependencies (`express`, `better-sqlite3`, `pg`, `ws`) and prints install hints:
+
+```
+[NAIDE] Missing: express — run: npm install express
+```
 
 ## Why NAIDE?
 

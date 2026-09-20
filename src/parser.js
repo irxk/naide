@@ -1,8 +1,9 @@
 import { T, TYPE_TOKENS } from './tokens.js';
 
 class ASTNode {
-  constructor(type, props = {}) {
+  constructor(type, props = {}, line = 0) {
     this.type = type;
+    this._line = line;
     Object.assign(this, props);
   }
 }
@@ -117,6 +118,10 @@ export class Parser {
       return tok.value;
     }
     throw this.error(`Expected property name but got ${tok.type} ('${tok.value}')`, tok);
+  }
+
+  node(type, props = {}) {
+    return new ASTNode(type, props, this.peek().line);
   }
 
   error(msg, tok) {

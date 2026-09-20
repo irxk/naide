@@ -16,6 +16,9 @@ export class Generator {
     this.hasAsserts = false;
     this.dbSql = false;
     this.sqlDriver = null;
+    this.sourceMap = [];
+    this.currentSourceLine = 0;
+    this.sourceFile = options.sourceFile || null;
   }
 
   generate(ast) {
@@ -55,10 +58,12 @@ export class Generator {
 
   emit(line) {
     this.output.push('  '.repeat(this.indent) + line);
+    this.sourceMap.push(this.currentSourceLine);
   }
 
   emitRaw(line) {
     this.output.push(line);
+    this.sourceMap.push(this.currentSourceLine);
   }
 
   visitProgram(node) {
@@ -67,7 +72,15 @@ export class Generator {
     }
   }
 
+  normalizeRoutePath(pathStr) {
+    return pathStr.replace(/(["'])(.+?)\1/g, (m, q, p) => {
+      const normalized = p.replace(/(?<!\()(?<!\.\*)\*(?!\))/g, '(.*)');
+      return q + normalized + q;
+    });
+  }
+
   visitStatement(node) {
+    if (node._line) this.currentSourceLine = node._line;
     switch (node.type) {
       case 'Use': return this.visitUse(node);
       case 'UseDestructured': return this.visitUseDestructured(node);
@@ -679,7 +692,7 @@ export class Generator {
     const optStr = options.length > 0 ? `, { ${options.join(', ')} }` : '';
 
     if (node.protectedPaths.length > 0) {
-      const path = this.stringValue(node.protectedPaths[0]);
+      const path = this.normalizeRoutePath(this.stringValue(node.protectedPaths[0]));
       this.emit(`${appName}.use(${path}, jwtAuth(${secret}${optStr}));`);
     } else {
       this.emit(`${appName}.use(jwtAuth(${secret}${optStr}));`);
@@ -710,7 +723,7 @@ export class Generator {
   visitLimit(appName, node) {
     this.runtimeImports.add('rateLimit');
 
-    const path = this.stringValue(node.path);
+    const path = this.normalizeRoutePath(this.stringValue(node.path));
     const max = this.expr(node.max);
     const window = this.expr(node.window);
     this.emit(`${appName}.use(${path}, rateLimit(${max}, ${window}));`);
@@ -901,7 +914,7 @@ export class Generator {
 
   visitCache(appName, node) {
     this.runtimeImports.add('cacheMiddleware');
-    const path = this.stringValue(node.path);
+    const path = this.normalizeRoutePath(this.stringValue(node.path));
     const duration = this.expr(node.duration);
     this.emit(`${appName}.use(${path}, cacheMiddleware(${duration}));`);
     this.emitRaw('');
@@ -940,7 +953,7 @@ export class Generator {
 
   visitValidate(appName, node) {
     this.runtimeImports.add('validateMiddleware');
-    const path = this.stringValue(node.path);
+    const path = this.normalizeRoutePath(this.stringValue(node.path));
     this.emit(`${appName}.use(${path}, validateMiddleware(${node.schemaName}Schema));`);
     this.emitRaw('');
   }
@@ -1092,8 +1105,12 @@ export class Generator {
       case 'Self': return 'this';
       case 'Identifier': return node.name;
 
-      case 'Binary':
-        return `(${this.expr(node.left)} ${node.op} ${this.expr(node.right)})`;
+      case 'Binary': {
+        const l = this.expr(node.left);
+        const r = this.expr(node.right);
+        const simple = node.left.type !== 'Binary' && node.right.type !== 'Binary';
+        return simple ? `${l} ${node.op} ${r}` : `(${l} ${node.op} ${r})`;
+      }
 
       case 'Unary':
         return `${node.op}${this.expr(node.expr)}`;
@@ -1174,7 +1191,9 @@ export class Generator {
   }
 
   generateCall(node) {
-    const AUTO_IMPORT = { 'hash': 'hash', 'verify': 'verify', 'uuid': 'uuid' };
+    const AUTO_IMPORT = { 'hash': 'hash', 'verify': 'verify', 'uuid': 'uuid',
+      'createMock': 'createMock', 'createSpy': 'createSpy',
+      'registerPlugin': 'registerPlugin', 'usePlugin': 'usePlugin' };
 
     if (node.callee.type === 'Identifier' && AUTO_IMPORT[node.callee.name]) {
       const runtimeFn = AUTO_IMPORT[node.callee.name];

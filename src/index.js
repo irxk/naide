@@ -3,7 +3,7 @@ import { Parser } from './parser.js';
 import { Generator } from './generator.js';
 import { preprocess } from './preprocess.js';
 
-export function compile(source, { mode = 'naide', runtimePath } = {}) {
+export function compile(source, { mode = 'naide', runtimePath, sourceFile } = {}) {
   let processedSource = source;
   if (mode === 'x') {
     processedSource = preprocess(source);
@@ -13,9 +13,9 @@ export function compile(source, { mode = 'naide', runtimePath } = {}) {
     const tokens = lexer.tokenize();
     const parser = new Parser(tokens);
     const ast = parser.parse();
-    const generator = new Generator({ runtimePath });
+    const generator = new Generator({ runtimePath, sourceFile });
     const js = generator.generate(ast);
-    return { js, ast, tokens, naide: mode === 'x' ? processedSource : null };
+    return { js, ast, tokens, sourceMap: generator.sourceMap, naide: mode === 'x' ? processedSource : null };
   } catch (e) {
     const lineMatch = e.message.match(/line (\d+)/);
     if (lineMatch) {

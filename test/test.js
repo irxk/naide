@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { compile, transpile, preprocess } from '../src/index.js';
+import * as lexerMod from '../src/lexer.js';
 
 describe('NAIDE v1', () => {
   it('compiles variables', () => {
@@ -16,7 +17,7 @@ describe('NAIDE v1', () => {
   it('compiles functions', () => {
     const js = transpile('fn add(int a, int b) -> int:\n  ret a + b');
     assert.ok(js.includes('function add(a, b)'));
-    assert.ok(js.includes('return (a + b)'));
+    assert.ok(js.includes('return a + b'));
   });
 
   it('compiles async functions', () => {
@@ -233,7 +234,7 @@ describe('NAIDE high-level features', () => {
     const js = transpile(src);
     assert.ok(js.includes('jwtAuth'));
     assert.ok(js.includes('SECRET'));
-    assert.ok(js.includes('"/api/*"'));
+    assert.ok(js.includes('"/api/(.*)"'));
     assert.ok(js.includes('public:'));
     assert.ok(js.includes('__authSecret'));
   });
@@ -444,7 +445,7 @@ describe('NAIDE high-level features', () => {
     const src = 'server app port 3000:\n  cache "/api/*" "5m"\n  get "/api/data":\n    ret {data: 1}';
     const js = transpile(src);
     assert.ok(js.includes('cacheMiddleware'));
-    assert.ok(js.includes('"/api/*"'));
+    assert.ok(js.includes('"/api/(.*)"'));
     assert.ok(js.includes('"5m"'));
   });
 
@@ -1234,5 +1235,119 @@ describe('Runtime unit tests', () => {
     assert.strictEqual(spec.components.schemas.User.properties.name.type, 'string');
     assert.strictEqual(spec.components.schemas.User.properties.age.type, 'integer');
     assert.ok(spec.components.schemas.User.required.includes('name'));
+  });
+
+  // ===== createMock tests =====
+  it('createMock tracks calls and supports returns/reset', async () => {
+    const { createMock } = await import('../src/runtime.js');
+    const mock = createMock();
+    assert.strictEqual(mock.callCount(), 0);
+    mock(1, 2);
+    mock('a');
+    assert.strictEqual(mock.callCount(), 2);
+    assert.ok(mock.calledWith(1, 2));
+    assert.ok(mock.calledWith('a'));
+    assert.ok(!mock.calledWith(99));
+    mock.returns(42);
+    assert.strictEqual(mock(), 42);
+    mock.reset();
+    assert.strictEqual(mock.callCount(), 0);
+  });
+
+  it('createMock wraps an existing function', async () => {
+    const { createMock } = await import('../src/runtime.js');
+    const mock = createMock((x) => x * 2);
+    assert.strictEqual(mock(5), 10);
+    assert.strictEqual(mock.callCount(), 1);
+    mock.impl((x) => x + 1);
+    assert.strictEqual(mock(5), 6);
+  });
+
+  // ===== createSpy tests =====
+  it('createSpy wraps and restores object methods', async () => {
+    const { createSpy } = await import('../src/runtime.js');
+    const obj = { greet(name) { return `hi ${name}`; } };
+    const spy = createSpy(obj, 'greet');
+    assert.strictEqual(obj.greet('world'), 'hi world');
+    assert.strictEqual(spy.callCount(), 1);
+    assert.ok(spy.calledWith('world'));
+    spy.restore();
+    assert.strictEqual(obj.greet('test'), 'hi test');
+  });
+
+  // ===== Plugin system tests =====
+  it('registerPlugin and usePlugin work', async () => {
+    const { registerPlugin, usePlugin, listPlugins } = await import('../src/runtime.js');
+    registerPlugin('test-logger', (opts) => ({
+      log: (msg) => `[${opts.prefix || 'LOG'}] ${msg}`,
+    }));
+    assert.ok(listPlugins().includes('test-logger'));
+    const logger = usePlugin('test-logger', { prefix: 'TEST' });
+    assert.strictEqual(logger.log('hello'), '[TEST] hello');
+    const same = usePlugin('test-logger');
+    assert.strictEqual(same, logger);
+  });
+
+  it('usePlugin throws for unknown plugin', async () => {
+    const { usePlugin } = await import('../src/runtime.js');
+    assert.throws(() => usePlugin('nonexistent-xyz'), /not found/);
+  });
+
+  // ===== Indent auto-detection tests =====
+  it('lexer auto-detects 2-space indent', () => {
+    const { Lexer } = lexerMod;
+    const lex = new Lexer('fn foo():\n  ret 1\n');
+    lex.tokenize();
+    assert.strictEqual(lex.indentUnit, 2);
+  });
+
+  it('lexer auto-detects 4-space indent', () => {
+    const { Lexer } = lexerMod;
+    const lex = new Lexer('fn foo():\n    ret 1\n');
+    lex.tokenize();
+    assert.strictEqual(lex.indentUnit, 4);
+  });
+
+  // ===== Source map tests =====
+  it('compile returns sourceMap array', () => {
+    const result = compile('fn add(a, b):\n  ret a + b\n');
+    assert.ok(Array.isArray(result.sourceMap));
+    assert.ok(result.sourceMap.length > 0);
+    assert.ok(typeof result.sourceMap[0] === 'number');
+  });
+
+  // ===== Path normalization tests =====
+  it('normalizes wildcard paths in auth routes', () => {
+    const result = compile('server app port 3000:\n  auth SECRET:\n    protect "/api/*"\n');
+    assert.ok(result.js.includes('"/api/(.*)"'));
+  });
+
+  it('normalizes wildcard paths in cache', () => {
+    const result = compile('server app port 3000:\n  cache "/api/*" "5m"\n');
+    assert.ok(result.js.includes('"/api/(.*)"'));
+  });
+
+  // ===== Reduced parens in transpiled JS =====
+  it('simple binary expressions have no outer parens', () => {
+    const result = compile('num x = 1 + 2\n');
+    assert.ok(result.js.includes('1 + 2'));
+    assert.ok(!result.js.includes('(1 + 2)'));
+  });
+
+  // ===== NX mode compile =====
+  it('compiles NX mode via preprocess', () => {
+    const result = compile('s:name="World"\nf greet(s:who)s\n  >"Hello, {who}!"', { mode: 'x' });
+    assert.ok(result.js.includes('function greet'));
+    assert.ok(result.naide);
+  });
+
+  // ===== Type-annotated variable compilation =====
+  it('compiles typed variables (str, int, num, bool)', () => {
+    const js1 = compile('str name = "hello"\n').js;
+    assert.ok(js1.includes('const name = "hello"'));
+    const js2 = compile('int count = 42\n').js;
+    assert.ok(js2.includes('const count = 42'));
+    const js3 = compile('bool flag = true\n').js;
+    assert.ok(js3.includes('const flag = true'));
   });
 });
