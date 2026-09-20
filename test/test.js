@@ -1485,6 +1485,45 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes('"/api/hello"'));
   });
 
+  // ===== Bun CRUD =====
+  it('compileAsync Bun generates CRUD routes', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'schema User:\n  id auto\n  name str required\n\nserver app port 3000:\n  crud "/api/users" User\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes('Bun.serve'));
+    assert.ok(result.code.includes('__userStore'));
+    assert.ok(result.code.includes("method === 'POST'"));
+    assert.ok(result.code.includes("method === 'DELETE'"));
+  });
+
+  // ===== Bun static =====
+  it('compileAsync Bun serves static files', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'server app port 3000:\n  static "public"\n  get "/":\n    ret {ok: true}\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes('Bun.file'));
+    assert.ok(result.code.includes('file.exists'));
+  });
+
+  // ===== Python CRUD =====
+  it('compileAsync Python generates CRUD routes', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'schema User:\n  id auto\n  name str required\n\nserver app port 3000:\n  crud "/api/users" User\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('Flask'));
+    assert.ok(result.code.includes('__user_store'));
+    assert.ok(result.code.includes("methods=['POST']"));
+    assert.ok(result.code.includes("methods=['DELETE']"));
+  });
+
+  // ===== Python static =====
+  it('compileAsync Python serves static files', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'server app port 3000:\n  static "public"\n  get "/":\n    ret {ok: true}\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('send_from_directory'));
+  });
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

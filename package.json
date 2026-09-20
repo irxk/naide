@@ -1,6 +1,6 @@
 {
   "name": "naider",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, SQL, AI/LLM, WebSocket, and more — transpiles to Node.js.",
   "main": "src/index.js",
   "exports": {

@@ -7,6 +7,11 @@ export class BunGenerator extends Generator {
     this.routes = [];
     this.corsOrigin = null;
     this.serverName = 'app';
+    this.bunAuthSecret = null;
+    this.bunAuthPaths = [];
+    this.staticDir = null;
+    this.wsHandlers = [];
+    this.crudEntries = [];
   }
 
   generate(ast) {
@@ -57,7 +62,15 @@ export class BunGenerator extends Generator {
       } else if (child.type === 'CorsDecl') {
         this.visitBunCors(child);
       } else if (child.type === 'AuthDecl') {
-        this.visitAuth(node.name, child);
+        this.visitBunAuth(child);
+      } else if (child.type === 'CrudDecl') {
+        this.visitBunCrud(child);
+      } else if (child.type === 'StaticDecl') {
+        this.visitBunStatic(child);
+      } else if (child.type === 'WsDecl') {
+        this.wsHandlers.push(child);
+      } else if (child.type === 'LimitDecl') {
+        // rate limiting handled at app level for Bun
       } else if (child.type === 'ErrorHandler') {
         errorHandlers.push(child);
       } else if (child.type === 'GroupDecl') {
@@ -98,14 +111,70 @@ export class BunGenerator extends Generator {
     return '';
   }
 
+  visitBunAuth(node) {
+    this.bunAuthSecret = this.expr(node.secret);
+    if (node.protectedPaths.length > 0) {
+      this.bunAuthPaths = node.protectedPaths.map(p => this.rawString(p));
+    }
+  }
+
+  visitBunCrud(node) {
+    const path = this.rawString(node.path);
+    this.crudEntries.push({ path, schema: node.schemaName });
+  }
+
+  visitBunStatic(node) {
+    let raw = node.path.raw || node.path.parts?.map(p => p.value).join('') || 'public';
+    if (raw.startsWith('/')) raw = raw.slice(1);
+    this.staticDir = raw;
+  }
+
   emitBunServe(node, errorHandlers) {
     const port = node.port ? this.expr(node.port) : '3000';
+    const ch = this.corsOrigin ? ', ...corsHeaders' : '';
+
+    if (this.bunAuthSecret) {
+      this.emitRaw('');
+      this.emit(`const __authSecret = ${this.bunAuthSecret};`);
+      this.emit(`function __verifyJwt(req) {`);
+      this.indent++;
+      this.emit(`const auth = req.headers.get('Authorization') || '';`);
+      this.emit(`const token = auth.replace('Bearer ', '');`);
+      this.emit(`if (!token) return null;`);
+      this.emit(`try {`);
+      this.indent++;
+      this.emit(`const [,payload] = token.split('.');`);
+      this.emit(`return JSON.parse(atob(payload));`);
+      this.indent--;
+      this.emit(`} catch { return null; }`);
+      this.indent--;
+      this.emit(`}`);
+    }
+
+    if (this.crudEntries.length > 0) {
+      this.emitRaw('');
+      for (const crud of this.crudEntries) {
+        this.emit(`const __${crud.schema.toLowerCase()}Store = [];`);
+        this.emit(`let __${crud.schema.toLowerCase()}Id = 1;`);
+      }
+    }
 
     this.emitRaw('');
     this.emit(`const server = Bun.serve({`);
     this.indent++;
     this.emit(`port: ${port},`);
-    this.emit(`async fetch(req) {`);
+
+    if (this.wsHandlers.length > 0) {
+      this.emit(`websocket: {`);
+      this.indent++;
+      for (const ws of this.wsHandlers) {
+        this.emitBunWsHandlers(ws);
+      }
+      this.indent--;
+      this.emit(`},`);
+    }
+
+    this.emit(`async fetch(req${this.wsHandlers.length > 0 ? ', server' : ''}) {`);
     this.indent++;
     this.emit(`const url = new URL(req.url);`);
     this.emit(`const path = url.pathname;`);
@@ -129,6 +198,41 @@ export class BunGenerator extends Generator {
       this.emitRaw('');
     }
 
+    if (this.bunAuthSecret && this.bunAuthPaths.length > 0) {
+      for (const p of this.bunAuthPaths) {
+        const pattern = p.replace(/\*/g, '');
+        this.emit(`if (path.startsWith(${JSON.stringify(pattern)})) {`);
+        this.indent++;
+        this.emit(`const user = __verifyJwt(req);`);
+        this.emit(`if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json'${ch} } });`);
+        this.indent--;
+        this.emit(`}`);
+        this.emitRaw('');
+      }
+    } else if (this.bunAuthSecret) {
+      this.emit(`const user = __verifyJwt(req);`);
+      this.emit(`if (!user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json'${ch} } });`);
+      this.emitRaw('');
+    }
+
+    if (this.wsHandlers.length > 0) {
+      for (const ws of this.wsHandlers) {
+        const wsPath = this.rawString(ws.path);
+        this.emit(`if (path === ${JSON.stringify(wsPath)} && server.upgrade(req)) return;`);
+      }
+      this.emitRaw('');
+    }
+
+    if (this.staticDir) {
+      this.emit(`const file = Bun.file(${JSON.stringify(this.staticDir)} + path);`);
+      this.emit(`if (await file.exists()) return new Response(file);`);
+      this.emitRaw('');
+    }
+
+    for (const crud of this.crudEntries) {
+      this.emitBunCrud(crud);
+    }
+
     for (const route of this.routes) {
       this.emitBunRoute(route);
     }
@@ -136,7 +240,7 @@ export class BunGenerator extends Generator {
     this.emit(`return new Response(JSON.stringify({ error: 'Not Found' }), {`);
     this.indent++;
     this.emit(`status: 404,`);
-    this.emit(`headers: { 'Content-Type': 'application/json'${this.corsOrigin ? ', ...corsHeaders' : ''} },`);
+    this.emit(`headers: { 'Content-Type': 'application/json'${ch} },`);
     this.indent--;
     this.emit(`});`);
 
@@ -160,6 +264,104 @@ export class BunGenerator extends Generator {
     this.emit(`});`);
     this.emitRaw('');
     this.emit(`console.log(\`Server running on port \${server.port}\`);`);
+  }
+
+  emitBunCrud(crud) {
+    const store = `__${crud.schema.toLowerCase()}Store`;
+    const idVar = `__${crud.schema.toLowerCase()}Id`;
+    const ch = this.corsOrigin ? ', ...corsHeaders' : '';
+    const jsonH = `{ 'Content-Type': 'application/json'${ch} }`;
+
+    this.emit(`if (method === 'GET' && path === ${JSON.stringify(crud.path)}) {`);
+    this.indent++;
+    this.emit(`return new Response(JSON.stringify(${store}), { headers: ${jsonH} });`);
+    this.indent--;
+    this.emit(`}`);
+
+    const idMatch = `path.match(/^${crud.path.replace(/\//g, '\\/')}\\/(\\w+)$/)`;
+    this.emit(`if (method === 'GET' && ${idMatch}) {`);
+    this.indent++;
+    this.emit(`const id = ${idMatch}[1];`);
+    this.emit(`const item = ${store}.find(i => String(i.id) === id);`);
+    this.emit(`if (!item) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: ${jsonH} });`);
+    this.emit(`return new Response(JSON.stringify(item), { headers: ${jsonH} });`);
+    this.indent--;
+    this.emit(`}`);
+
+    this.emit(`if (method === 'POST' && path === ${JSON.stringify(crud.path)}) {`);
+    this.indent++;
+    this.emit(`const body = await req.json();`);
+    this.emit(`const item = { id: ${idVar}++, ...body };`);
+    this.emit(`${store}.push(item);`);
+    this.emit(`return new Response(JSON.stringify(item), { status: 201, headers: ${jsonH} });`);
+    this.indent--;
+    this.emit(`}`);
+
+    this.emit(`if (method === 'PUT' && ${idMatch}) {`);
+    this.indent++;
+    this.emit(`const id = ${idMatch}[1];`);
+    this.emit(`const idx = ${store}.findIndex(i => String(i.id) === id);`);
+    this.emit(`if (idx === -1) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: ${jsonH} });`);
+    this.emit(`const body = await req.json();`);
+    this.emit(`${store}[idx] = { ...${store}[idx], ...body };`);
+    this.emit(`return new Response(JSON.stringify(${store}[idx]), { headers: ${jsonH} });`);
+    this.indent--;
+    this.emit(`}`);
+
+    this.emit(`if (method === 'DELETE' && ${idMatch}) {`);
+    this.indent++;
+    this.emit(`const id = ${idMatch}[1];`);
+    this.emit(`const idx = ${store}.findIndex(i => String(i.id) === id);`);
+    this.emit(`if (idx === -1) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: ${jsonH} });`);
+    this.emit(`${store}.splice(idx, 1);`);
+    this.emit(`return new Response(JSON.stringify({ deleted: true }), { headers: ${jsonH} });`);
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  emitBunWsHandlers(ws) {
+    const events = ws.events || [];
+
+    const messageEvt = events.find(e => {
+      const name = e.name.raw || e.name.parts?.map(p => p.value).join('');
+      return name === 'message';
+    });
+    const openEvt = events.find(e => {
+      const name = e.name.raw || e.name.parts?.map(p => p.value).join('');
+      return name === 'connect' || name === 'open';
+    });
+    const closeEvt = events.find(e => {
+      const name = e.name.raw || e.name.parts?.map(p => p.value).join('');
+      return name === 'close';
+    });
+
+    if (messageEvt) {
+      this.emit(`message(ws, message) {`);
+      this.indent++;
+      const dataParam = messageEvt.params[0] || 'data';
+      this.emit(`const ${dataParam} = JSON.parse(message);`);
+      this.emit(`const send = (d) => ws.send(typeof d === 'string' ? d : JSON.stringify(d));`);
+      for (const stmt of messageEvt.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`},`);
+    }
+
+    if (openEvt) {
+      this.emit(`open(ws) {`);
+      this.indent++;
+      for (const stmt of openEvt.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`},`);
+    }
+
+    if (closeEvt) {
+      this.emit(`close(ws) {`);
+      this.indent++;
+      for (const stmt of closeEvt.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`},`);
+    }
   }
 
   emitBunRoute(route) {

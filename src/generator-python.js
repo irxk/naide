@@ -134,6 +134,13 @@ export class PythonGenerator {
       case 'TestDecl': return this.visitTest(node);
       case 'AssertStmt': return this.visitAssert(node);
       case 'ErrorHandler': return this.visitErrorHandler('app', node);
+      case 'CrudDecl': return this.visitCrud('app', node);
+      case 'StaticDecl': return this.visitStatic('app', node);
+      case 'LimitDecl': return this.visitLimit('app', node);
+      case 'WsDecl': return this.visitWs(node);
+      case 'SessionDecl': return this.visitSession('app', node);
+      case 'CacheDecl': return this.visitCache('app', node);
+      case 'PromptDecl': return this.visitPrompt(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -427,6 +434,18 @@ export class PythonGenerator {
         this.visitSchema(child);
       } else if (child.type === 'GroupDecl') {
         this.visitGroup(node.name, child);
+      } else if (child.type === 'CrudDecl') {
+        this.visitCrud(node.name, child);
+      } else if (child.type === 'StaticDecl') {
+        this.visitStatic(node.name, child);
+      } else if (child.type === 'LimitDecl') {
+        this.visitLimit(node.name, child);
+      } else if (child.type === 'WsDecl') {
+        this.visitWs(child);
+      } else if (child.type === 'SessionDecl') {
+        this.visitSession(node.name, child);
+      } else if (child.type === 'CacheDecl') {
+        this.visitCache(node.name, child);
       } else {
         this.visitStatement(child);
       }
@@ -1250,5 +1269,181 @@ export class PythonGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  // ===== CRUD =====
+
+  visitCrud(appName, node) {
+    const path = this.rawString(node.path);
+    const schema = node.schemaName;
+    const store = `__${schema.toLowerCase()}_store`;
+    const idVar = `__${schema.toLowerCase()}_id`;
+
+    this.emitRaw('');
+    this.emit(`${store} = []`);
+    this.emit(`${idVar} = 1`);
+    this.emitRaw('');
+
+    // List all
+    this.emit(`@${appName}.route(${JSON.stringify(path)}, methods=['GET'])`);
+    this.emit(`def ${schema.toLowerCase()}_list():`);
+    this.indent++;
+    this.emit(`return jsonify(${store})`);
+    this.indent--;
+    this.emitRaw('');
+
+    // Get by id
+    this.emit(`@${appName}.route(${JSON.stringify(path + '/<id>')}, methods=['GET'])`);
+    this.emit(`def ${schema.toLowerCase()}_get(id):`);
+    this.indent++;
+    this.emit(`item = next((i for i in ${store} if str(i['id']) == str(id)), None)`);
+    this.emit(`if not item:`);
+    this.indent++;
+    this.emit(`return jsonify({'error': 'Not found'}), 404`);
+    this.indent--;
+    this.emit(`return jsonify(item)`);
+    this.indent--;
+    this.emitRaw('');
+
+    // Create
+    this.emit(`@${appName}.route(${JSON.stringify(path)}, methods=['POST'])`);
+    this.emit(`def ${schema.toLowerCase()}_create():`);
+    this.indent++;
+    this.emit(`global ${idVar}`);
+    this.emit(`body = request.get_json()`);
+    this.emit(`body['id'] = ${idVar}`);
+    this.emit(`${idVar} += 1`);
+    this.emit(`${store}.append(body)`);
+    this.emit(`return jsonify(body), 201`);
+    this.indent--;
+    this.emitRaw('');
+
+    // Update
+    this.emit(`@${appName}.route(${JSON.stringify(path + '/<id>')}, methods=['PUT'])`);
+    this.emit(`def ${schema.toLowerCase()}_update(id):`);
+    this.indent++;
+    this.emit(`body = request.get_json()`);
+    this.emit(`for i, item in enumerate(${store}):`);
+    this.indent++;
+    this.emit(`if str(item['id']) == str(id):`);
+    this.indent++;
+    this.emit(`${store}[i] = {**item, **body}`);
+    this.emit(`return jsonify(${store}[i])`);
+    this.indent--;
+    this.indent--;
+    this.emit(`return jsonify({'error': 'Not found'}), 404`);
+    this.indent--;
+    this.emitRaw('');
+
+    // Delete
+    this.emit(`@${appName}.route(${JSON.stringify(path + '/<id>')}, methods=['DELETE'])`);
+    this.emit(`def ${schema.toLowerCase()}_delete(id):`);
+    this.indent++;
+    this.emit(`global ${store}`);
+    this.emit(`${store} = [i for i in ${store} if str(i['id']) != str(id)]`);
+    this.emit(`return jsonify({'deleted': True})`);
+    this.indent--;
+    this.emitRaw('');
+  }
+
+  // ===== Static files =====
+
+  visitStatic(appName, node) {
+    let raw = node.path.raw || node.path.parts?.map(p => p.value).join('') || 'public';
+    if (raw.startsWith('/')) raw = raw.slice(1);
+    this.addFromImport('flask', 'send_from_directory');
+    this.emitRaw('');
+    this.emit(`@${appName}.route('/<path:filename>')`);
+    this.emit(`def serve_static(filename):`);
+    this.indent++;
+    this.emit(`return send_from_directory(${JSON.stringify(raw)}, filename)`);
+    this.indent--;
+    this.emitRaw('');
+  }
+
+  // ===== Rate limiting =====
+
+  visitLimit(appName, node) {
+    const path = this.rawString(node.path);
+    const max = this.expr(node.max);
+    const window = this.expr(node.window);
+    this.emit(`# rate limit: ${max} requests per ${window} on ${path}`);
+  }
+
+  // ===== WebSocket =====
+
+  visitWs(node) {
+    this.addImport('flask_socketio');
+    this.addFromImport('flask_socketio', 'SocketIO');
+    this.addFromImport('flask_socketio', 'emit');
+    const events = node.events || [];
+
+    this.emitRaw('');
+    this.emit(`socketio = SocketIO(app, cors_allowed_origins='*')`);
+    this.emitRaw('');
+
+    for (const evt of events) {
+      const evtName = evt.name.raw || evt.name.parts?.map(p => p.value).join('');
+      if (evtName === 'connect' || evtName === 'open') {
+        this.emit(`@socketio.on('connect')`);
+        this.emit(`def handle_connect():`);
+      } else if (evtName === 'message') {
+        const param = evt.params[0] || 'data';
+        this.emit(`@socketio.on('message')`);
+        this.emit(`def handle_message(${param}):`);
+      } else if (evtName === 'close') {
+        this.emit(`@socketio.on('disconnect')`);
+        this.emit(`def handle_disconnect():`);
+      } else {
+        this.emit(`@socketio.on(${JSON.stringify(evtName)})`);
+        const params = evt.params.length > 0 ? evt.params.join(', ') : 'data';
+        this.emit(`def handle_${evtName}(${params}):`);
+      }
+      this.indent++;
+      if (evt.body.length === 0) {
+        this.emit('pass');
+      } else {
+        for (const stmt of evt.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emitRaw('');
+    }
+  }
+
+  // ===== Session =====
+
+  visitSession(appName, node) {
+    this.emit(`${appName}.secret_key = 'naide-session-secret'`);
+    this.emit(`# Flask sessions enabled via app.secret_key`);
+    this.emitRaw('');
+  }
+
+  // ===== Cache =====
+
+  visitCache(appName, node) {
+    const path = this.rawString(node.path);
+    const ttl = this.rawString(node.ttl);
+    this.emit(`# cache: ${path} for ${ttl}`);
+  }
+
+  // ===== Prompt template =====
+
+  visitPrompt(node) {
+    const name = node.name;
+    const parts = node.parts.map(p => this.generateString(p)).join(' + "\\n" + ');
+    const defaults = node.defaults ? this.expr(node.defaults) : '{}';
+    this.emitRaw('');
+    this.emit(`def ${name}(vars={}):`);
+    this.indent++;
+    this.emit(`defaults = ${defaults}`);
+    this.emit(`merged = {**defaults, **vars}`);
+    this.emit(`template = ${parts}`);
+    this.emit(`for k, v in merged.items():`);
+    this.indent++;
+    this.emit(`template = template.replace('{' + k + '}', str(v))`);
+    this.indent--;
+    this.emit(`return template`);
+    this.indent--;
+    this.emitRaw('');
   }
 }
