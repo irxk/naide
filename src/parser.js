@@ -111,7 +111,9 @@ export class Parser {
       type === T.TYPEOF || type === T.INSTANCEOF || type === T.ENSURE ||
       type === T.MODEL || type === T.PROMPT ||
       type === T.PAGE || type === T.CLI_APP || type === T.MAIL ||
-      type === T.GRAPHQL || type === T.DESKTOP || type === T.SCREEN;
+      type === T.GRAPHQL || type === T.DESKTOP || type === T.SCREEN ||
+      type === T.OAUTH || type === T.PAY || type === T.STORAGE ||
+      type === T.PDF || type === T.I18N;
   }
 
   expectPropertyName() {
@@ -173,6 +175,11 @@ export class Parser {
       case T.MAIL: return this.parseMail();
       case T.DESKTOP: return this.parseDesktop();
       case T.SCREEN: return this.parseScreen();
+      case T.OAUTH: return this.parseOauth();
+      case T.PAY: return this.parsePay();
+      case T.STORAGE: return this.parseStorage();
+      case T.PDF: return this.parsePdf();
+      case T.I18N: return this.parseI18n();
       case T.MODEL: return this.parseModel();
       case T.ON: return this.parseOn();
       case T.LOG: return this.parseLog();
@@ -1148,6 +1155,7 @@ export class Parser {
       case T.PROMPT:
       case T.PAGE: case T.CLI_APP: case T.MAIL:
       case T.GRAPHQL: case T.DESKTOP: case T.SCREEN:
+      case T.OAUTH: case T.PAY: case T.STORAGE: case T.PDF: case T.I18N:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1934,5 +1942,130 @@ export class Parser {
       body = this.parseBlock();
     }
     return new ASTNode('ScreenElement', { tag, args, body });
+  }
+
+  // oauth "google" clientId clientSecret:
+  //   callback "/auth/callback"
+  //   scope "email profile"
+  parseOauth() {
+    this.expect(T.OAUTH);
+    const provider = this.parseString();
+    const clientId = this.parseExpression();
+    const clientSecret = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let callback = null, scope = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'callback') { this.advance(); callback = this.parseString(); }
+      else if (kw === 'scope') { this.advance(); scope = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('OauthDecl', { provider, clientId, clientSecret, callback, scope });
+  }
+
+  // pay "stripe" secretKey:
+  //   webhook "/webhook"
+  parsePay() {
+    this.expect(T.PAY);
+    const provider = this.parseString();
+    const secretKey = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let webhook = null, successUrl = null, cancelUrl = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'webhook') { this.advance(); webhook = this.parseString(); }
+      else if (kw === 'success') { this.advance(); successUrl = this.parseString(); }
+      else if (kw === 'cancel') { this.advance(); cancelUrl = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('PayDecl', { provider, secretKey, webhook, successUrl, cancelUrl });
+  }
+
+  // storage "s3" bucket accessKey secretKey:
+  //   region "ap-northeast-1"
+  parseStorage() {
+    this.expect(T.STORAGE);
+    const provider = this.parseString();
+    const bucket = this.parseExpression();
+    const accessKey = this.parseExpression();
+    const secretKey = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let region = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'region') { this.advance(); region = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('StorageDecl', { provider, bucket, accessKey, secretKey, region });
+  }
+
+  // pdf "output.pdf":
+  //   title "My Document"
+  //   text "Hello World"
+  //   table data
+  parsePdf() {
+    this.expect(T.PDF);
+    const filename = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const elements = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const tag = this.advance().value;
+      const args = [];
+      while (this.at(T.STRING)) args.push(this.parseString());
+      if (args.length === 0 && !this.at(T.NEWLINE) && !this.at(T.DEDENT) && !this.at(T.EOF)) {
+        args.push(this.parseExpression());
+      }
+      elements.push({ tag, args });
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('PdfDecl', { filename, elements });
+  }
+
+  // i18n "locales/":
+  //   default "en"
+  //   lang "ja" "jp.json"
+  //   lang "en" "en.json"
+  parseI18n() {
+    this.expect(T.I18N);
+    const dir = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let defaultLang = null;
+    const langs = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'default') { this.advance(); defaultLang = this.parseString(); }
+      else if (kw === 'lang') { this.advance(); const code = this.parseString(); const file = this.parseString(); langs.push({ code, file }); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('I18nDecl', { dir, defaultLang, langs });
   }
 }

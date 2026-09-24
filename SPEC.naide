@@ -520,3 +520,47 @@ screen Home:
   button "Click Me"
   input "Enter your name"
   image "logo.png"
+
+
+# ---- OAuth (ソーシャルログイン) ----
+oauth "google" env.CLIENT_ID env.CLIENT_SECRET:
+  callback "/auth/callback"
+  scope "email profile"
+
+oauth "github" env.GH_ID env.GH_SECRET:
+  callback "/auth/github/callback"
+  scope "user:email"
+
+
+# ---- 決済 (Stripe) ----
+pay "stripe" env.STRIPE_KEY:
+  webhook "/webhook"
+  success "/thanks"
+  cancel "/cancel"
+# usage: pay.checkout([{name: "Item", price: 1000, qty: 1}])
+
+
+# ---- ファイルストレージ (S3/GCS) ----
+storage "s3" env.BUCKET env.AWS_KEY env.AWS_SECRET:
+  region "ap-northeast-1"
+# usage: storage.upload("key", data)
+# usage: storage.download("key")
+# usage: storage.remove("key")
+
+
+# ---- PDF生成 ----
+pdf "report.pdf":
+  title "Monthly Report"
+  h1 "Summary"
+  text "This is the report content."
+  line
+  image "chart.png"
+
+
+# ---- i18n (多言語) ----
+i18n "locales/":
+  default "en"
+  lang "en" "en.json"
+  lang "ja" "ja.json"
+# usage: i18n.t("greeting.hello")
+# usage: i18n.setLang("ja")

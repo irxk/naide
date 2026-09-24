@@ -289,6 +289,7 @@ function getCompletions() {
     'cors', 'auth', 'crud', 'limit', 'cookie', 'session', 'static', 'ws', 'sse',
     'cache', 'view', 'upload', 'group', 'validate', 'openapi', 'error', 'mid', 'prompt',
     'page', 'cli', 'mail', 'graphql', 'desktop', 'screen',
+    'oauth', 'pay', 'storage', 'pdf', 'i18n',
   ];
   const builtins = [
     { label: 'uuid()', detail: 'Generate UUID v4', insertText: 'uuid()' },
@@ -345,6 +346,11 @@ const HOVER_DOCS = {
   'desktop': '**desktop** — Desktop app (Electron/pywebview)\n```naide\ndesktop myApp:\n  title "My App"\n  size 1024 768\n  load "index.html"\n```',
   'screen': '**screen** — Mobile screen (React Native/Kivy)\n```naide\nscreen Home:\n  text "Hello World"\n  button "Click Me"\n  input "Enter name"\n```',
   'every': '**every** — Scheduled task / cron\n```naide\nevery "5s":\n  log "tick"\nevery "*/5 * * * *":\n  log "cron"\n```',
+  'oauth': '**oauth** — Social login (Google/GitHub)\n```naide\noauth "google" env.CLIENT_ID env.CLIENT_SECRET:\n  callback "/auth/callback"\n  scope "email profile"\n```',
+  'pay': '**pay** — Payment (Stripe)\n```naide\npay "stripe" env.STRIPE_KEY:\n  webhook "/webhook"\n```\nUsage: `pay.checkout(items, successUrl, cancelUrl)`',
+  'storage': '**storage** — Cloud storage (S3/GCS)\n```naide\nstorage "s3" env.BUCKET env.KEY env.SECRET:\n  region "ap-northeast-1"\n```\nUsage: `storage.upload(key, body)`, `storage.download(key)`',
+  'pdf': '**pdf** — PDF generation\n```naide\npdf "report.pdf":\n  title "Report"\n  text "Hello"\n```',
+  'i18n': '**i18n** — Internationalization\n```naide\ni18n "locales/":\n  default "en"\n  lang "en" "en.json"\n  lang "ja" "ja.json"\n```\nUsage: `i18n.t("key")`, `i18n.setLang("ja")`',
 };
 
 function getHover(params) {

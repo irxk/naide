@@ -148,6 +148,11 @@ export class PythonGenerator {
       case 'MailConfig': return this.visitMail(node);
       case 'DesktopApp': return this.visitDesktop(node);
       case 'Screen': return this.visitScreen(node);
+      case 'OauthDecl': return this.visitOauth(node);
+      case 'PayDecl': return this.visitPay(node);
+      case 'StorageDecl': return this.visitStorage(node);
+      case 'PdfDecl': return this.visitPdf(node);
+      case 'I18nDecl': return this.visitI18n(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -1953,6 +1958,192 @@ export class PythonGenerator {
     this.indent--;
     this.emit(`return template`);
     this.indent--;
+    this.emitRaw('');
+  }
+
+  // ===== OAuth =====
+  visitOauth(node) {
+    const provider = this.rawString(node.provider);
+    const clientId = this.expr(node.clientId);
+    const clientSecret = this.expr(node.clientSecret);
+    const callback = node.callback ? this.rawString(node.callback) : '/auth/callback';
+    const scope = node.scope ? this.rawString(node.scope) : 'email profile';
+
+    if (provider === 'google') {
+      this.addFromImport('authlib.integrations.flask_client', 'OAuth');
+    } else if (provider === 'github') {
+      this.addFromImport('authlib.integrations.flask_client', 'OAuth');
+    }
+    this.emitRaw('');
+    this.emit(`oauth = OAuth()`);
+    this.emit(`oauth.register(`);
+    this.indent++;
+    this.emit(`name=${JSON.stringify(provider)},`);
+    this.emit(`client_id=${clientId},`);
+    this.emit(`client_secret=${clientSecret},`);
+    if (provider === 'google') {
+      this.emit(`server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',`);
+      this.emit(`client_kwargs={'scope': ${JSON.stringify(scope)}},`);
+    } else if (provider === 'github') {
+      this.emit(`access_token_url='https://github.com/login/oauth/access_token',`);
+      this.emit(`authorize_url='https://github.com/login/oauth/authorize',`);
+      this.emit(`client_kwargs={'scope': ${JSON.stringify(scope)}},`);
+    }
+    this.indent--;
+    this.emit(`)`);
+    this.emitRaw('');
+  }
+
+  // ===== Pay =====
+  visitPay(node) {
+    const provider = this.rawString(node.provider);
+    const secretKey = this.expr(node.secretKey);
+
+    if (provider === 'stripe') {
+      this.addImport('stripe');
+      this.emitRaw('');
+      this.emit(`stripe.api_key = ${secretKey}`);
+      this.emitRaw('');
+      this.emit(`class Pay:`);
+      this.indent++;
+      this.emit(`@staticmethod`);
+      this.emit(`def checkout(items, success_url=None, cancel_url=None):`);
+      this.indent++;
+      this.emit(`line_items = [{'price_data': {'currency': 'usd', 'product_data': {'name': i['name']}, 'unit_amount': i['price']}, 'quantity': i.get('qty', 1)} for i in items]`);
+      this.emit(`return stripe.checkout.Session.create(line_items=line_items, mode='payment', success_url=success_url or 'http://localhost:3000/success', cancel_url=cancel_url or 'http://localhost:3000/cancel')`);
+      this.indent--;
+      this.indent--;
+      this.emit(`pay = Pay()`);
+    } else {
+      this.emit(`# ${provider} payment integration`);
+      this.emit(`pay = None`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== Storage =====
+  visitStorage(node) {
+    const provider = this.rawString(node.provider);
+    const bucket = this.expr(node.bucket);
+    const accessKey = this.expr(node.accessKey);
+    const secretKey = this.expr(node.secretKey);
+    const region = node.region ? this.rawString(node.region) : 'us-east-1';
+
+    if (provider === 's3') {
+      this.addImport('boto3');
+      this.emitRaw('');
+      this.emit(`__s3 = boto3.client('s3', region_name=${JSON.stringify(region)}, aws_access_key_id=${accessKey}, aws_secret_access_key=${secretKey})`);
+      this.emitRaw('');
+      this.emit(`class Storage:`);
+      this.indent++;
+      this.emit(`@staticmethod`);
+      this.emit(`def upload(key, body):`);
+      this.indent++;
+      this.emit(`__s3.put_object(Bucket=${bucket}, Key=key, Body=body)`);
+      this.indent--;
+      this.emit(`@staticmethod`);
+      this.emit(`def download(key):`);
+      this.indent++;
+      this.emit(`return __s3.get_object(Bucket=${bucket}, Key=key)['Body'].read()`);
+      this.indent--;
+      this.emit(`@staticmethod`);
+      this.emit(`def remove(key):`);
+      this.indent++;
+      this.emit(`__s3.delete_object(Bucket=${bucket}, Key=key)`);
+      this.indent--;
+      this.indent--;
+      this.emit(`storage = Storage()`);
+    } else if (provider === 'gcs') {
+      this.addFromImport('google.cloud', 'storage as gcs_storage');
+      this.emit(`__gcs = gcs_storage.Client()`);
+      this.emit(`__bucket = __gcs.bucket(${bucket})`);
+      this.emit(`class Storage:`);
+      this.indent++;
+      this.emit(`@staticmethod`);
+      this.emit(`def upload(key, body): __bucket.blob(key).upload_from_string(body)`);
+      this.emit(`@staticmethod`);
+      this.emit(`def download(key): return __bucket.blob(key).download_as_bytes()`);
+      this.emit(`@staticmethod`);
+      this.emit(`def remove(key): __bucket.blob(key).delete()`);
+      this.indent--;
+      this.emit(`storage = Storage()`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== PDF =====
+  visitPdf(node) {
+    const filename = this.rawString(node.filename);
+    this.addFromImport('fpdf', 'FPDF');
+    this.emitRaw('');
+    this.emit(`__pdf = FPDF()`);
+    this.emit(`__pdf.add_page()`);
+    this.emit(`__pdf.set_auto_page_break(auto=True, margin=15)`);
+
+    for (const el of node.elements) {
+      const tag = el.tag;
+      const arg0 = el.args[0] ? this.rawString(el.args[0]) : '';
+      if (tag === 'title') {
+        this.emit(`__pdf.set_font('Helvetica', 'B', 24)`);
+        this.emit(`__pdf.cell(0, 15, ${JSON.stringify(arg0)}, ln=True)`);
+      } else if (tag === 'h1' || tag === 'h2' || tag === 'heading') {
+        const size = tag === 'h1' ? 20 : 16;
+        this.emit(`__pdf.set_font('Helvetica', 'B', ${size})`);
+        this.emit(`__pdf.cell(0, 12, ${JSON.stringify(arg0)}, ln=True)`);
+      } else if (tag === 'text' || tag === 'p') {
+        this.emit(`__pdf.set_font('Helvetica', '', 12)`);
+        this.emit(`__pdf.multi_cell(0, 8, ${JSON.stringify(arg0)})`);
+      } else if (tag === 'image') {
+        this.emit(`__pdf.image(${JSON.stringify(arg0)}, w=100)`);
+      } else if (tag === 'line') {
+        this.emit(`__pdf.line(10, __pdf.get_y(), 200, __pdf.get_y())`);
+      } else {
+        this.emit(`__pdf.set_font('Helvetica', '', 12)`);
+        this.emit(`__pdf.cell(0, 8, ${JSON.stringify(arg0)}, ln=True)`);
+      }
+    }
+
+    this.emit(`__pdf.output(${JSON.stringify(filename)})`);
+    this.emit(`print(f"Generated: ${filename}")`);
+    this.emitRaw('');
+  }
+
+  // ===== i18n =====
+  visitI18n(node) {
+    const dir = this.rawString(node.dir);
+    const defaultLang = node.defaultLang ? this.rawString(node.defaultLang) : 'en';
+
+    this.addImport('json');
+    this.addImport('os');
+    this.emitRaw('');
+    this.emit(`__i18n_data = {}`);
+    for (const lang of node.langs) {
+      const code = this.rawString(lang.code);
+      const file = this.rawString(lang.file);
+      this.emit(`with open(os.path.join(${JSON.stringify(dir)}, ${JSON.stringify(file)})) as f:`);
+      this.indent++;
+      this.emit(`__i18n_data[${JSON.stringify(code)}] = json.load(f)`);
+      this.indent--;
+    }
+    this.emit(`__i18n_lang = ${JSON.stringify(defaultLang)}`);
+    this.emitRaw('');
+    this.emit(`class I18n:`);
+    this.indent++;
+    this.emit(`@staticmethod`);
+    this.emit(`def t(key, **params):`);
+    this.indent++;
+    this.emit(`data = __i18n_data.get(__i18n_lang, {})`);
+    this.emit(`for k in key.split('.'): data = data.get(k, key) if isinstance(data, dict) else key`);
+    this.emit(`text = str(data)`);
+    this.emit(`for k, v in params.items(): text = text.replace('{' + k + '}', str(v))`);
+    this.emit(`return text`);
+    this.indent--;
+    this.emit(`@staticmethod`);
+    this.emit(`def set_lang(code): global __i18n_lang; __i18n_lang = code`);
+    this.emit(`@staticmethod`);
+    this.emit(`def get_lang(): return __i18n_lang`);
+    this.indent--;
+    this.emit(`i18n = I18n()`);
     this.emitRaw('');
   }
 }

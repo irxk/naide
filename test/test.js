@@ -1789,6 +1789,92 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes('HomeApp'));
   });
 
+  // ===== OAuth =====
+  it('compiles OAuth (Google)', () => {
+    const src = 'oauth "google" env.CLIENT_ID env.CLIENT_SECRET:\n  callback "/auth/callback"\n  scope "email profile"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('passport'));
+    assert.ok(js.includes('GoogleStrategy'));
+    assert.ok(js.includes('/auth/callback'));
+  });
+
+  it('compileAsync Python OAuth', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'oauth "google" env.CLIENT_ID env.CLIENT_SECRET:\n  callback "/auth/cb"\n  scope "email"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('OAuth'));
+    assert.ok(result.code.includes('google'));
+  });
+
+  // ===== Payment =====
+  it('compiles Stripe payment', () => {
+    const src = 'pay "stripe" env.STRIPE_KEY:\n  webhook "/webhook"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('Stripe'));
+    assert.ok(js.includes('checkout'));
+  });
+
+  it('compileAsync Python Stripe', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'pay "stripe" env.STRIPE_KEY:\n  webhook "/webhook"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('stripe'));
+    assert.ok(result.code.includes('checkout'));
+  });
+
+  // ===== Storage =====
+  it('compiles S3 storage', () => {
+    const src = 'storage "s3" env.BUCKET env.AWS_KEY env.AWS_SECRET:\n  region "ap-northeast-1"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('S3Client'));
+    assert.ok(js.includes('PutObjectCommand'));
+    assert.ok(js.includes('ap-northeast-1'));
+  });
+
+  it('compileAsync Python S3', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'storage "s3" env.BUCKET env.AWS_KEY env.AWS_SECRET:\n  region "us-west-2"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('boto3'));
+    assert.ok(result.code.includes('us-west-2'));
+  });
+
+  // ===== PDF =====
+  it('compiles PDF generation', () => {
+    const src = 'pdf "report.pdf":\n  title "Monthly Report"\n  text "Hello World"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('PDFDocument'));
+    assert.ok(js.includes('report.pdf'));
+    assert.ok(js.includes('Monthly Report'));
+  });
+
+  it('compileAsync Python PDF', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'pdf "report.pdf":\n  title "Report"\n  text "Content"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('FPDF'));
+    assert.ok(result.code.includes('report.pdf'));
+  });
+
+  // ===== i18n =====
+  it('compiles i18n', () => {
+    const src = 'i18n "locales/":\n  default "en"\n  lang "en" "en.json"\n  lang "ja" "ja.json"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('__i18nData'));
+    assert.ok(js.includes('en.json'));
+    assert.ok(js.includes('ja.json'));
+    assert.ok(js.includes('i18n'));
+  });
+
+  it('compileAsync Python i18n', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'i18n "locales/":\n  default "ja"\n  lang "ja" "ja.json"\n  lang "en" "en.json"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('__i18n_data'));
+    assert.ok(result.code.includes('ja.json'));
+    assert.ok(result.code.includes('I18n'));
+  });
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

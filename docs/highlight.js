@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'cache', 'ws', 'sse', 'cookie', 'session', 'limit', 'upload', 'group',
     'validate', 'openapi', 'error', 'mid', 'prompt', 'bot', 'slash',
     'page', 'cli', 'mail', 'graphql', 'desktop', 'screen', 'every', 'watch',
+    'oauth', 'pay', 'storage', 'pdf', 'i18n',
     'import', 'from', 'export',
     'const', 'let', 'var', 'function', 'async', 'return', 'class', 'extends',
     'try', 'catch', 'finally', 'if', 'else', 'for', 'while', 'switch', 'case',

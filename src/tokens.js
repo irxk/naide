@@ -93,6 +93,11 @@ export const T = {
   GRAPHQL: 'GRAPHQL',
   DESKTOP: 'DESKTOP',
   SCREEN: 'SCREEN',
+  OAUTH: 'OAUTH',
+  PAY: 'PAY',
+  STORAGE: 'STORAGE',
+  PDF: 'PDF',
+  I18N: 'I18N',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -214,6 +219,11 @@ export const KEYWORDS = {
   'graphql': T.GRAPHQL,
   'desktop': T.DESKTOP,
   'screen': T.SCREEN,
+  'oauth': T.OAUTH,
+  'pay': T.PAY,
+  'storage': T.STORAGE,
+  'pdf': T.PDF,
+  'i18n': T.I18N,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

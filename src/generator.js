@@ -148,6 +148,11 @@ export class Generator {
       case 'MailConfig': return this.visitMail(node);
       case 'DesktopApp': return this.visitDesktop(node);
       case 'Screen': return this.visitScreen(node);
+      case 'OauthDecl': return this.visitOauth(node);
+      case 'PayDecl': return this.visitPay(node);
+      case 'StorageDecl': return this.visitStorage(node);
+      case 'PdfDecl': return this.visitPdf(node);
+      case 'I18nDecl': return this.visitI18n(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1847,5 +1852,214 @@ export class Generator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  // ===== OAuth =====
+
+  visitOauth(node) {
+    const provider = this.rawPageString(node.provider);
+    const clientId = this.expr(node.clientId);
+    const clientSecret = this.expr(node.clientSecret);
+    const callback = node.callback ? this.rawPageString(node.callback) : '/auth/callback';
+    const scope = node.scope ? this.rawPageString(node.scope) : 'email profile';
+
+    if (provider === 'google') {
+      this.emit(`import passport from 'passport';`);
+      this.emit(`import { Strategy as GoogleStrategy } from 'passport-google-oauth20';`);
+      this.emitRaw('');
+      this.emit(`passport.use(new GoogleStrategy({`);
+      this.indent++;
+      this.emit(`clientID: ${clientId},`);
+      this.emit(`clientSecret: ${clientSecret},`);
+      this.emit(`callbackURL: ${JSON.stringify(callback)},`);
+      this.indent--;
+      this.emit(`}, (accessToken, refreshToken, profile, done) => done(null, profile)));`);
+    } else if (provider === 'github') {
+      this.emit(`import passport from 'passport';`);
+      this.emit(`import { Strategy as GitHubStrategy } from 'passport-github2';`);
+      this.emitRaw('');
+      this.emit(`passport.use(new GitHubStrategy({`);
+      this.indent++;
+      this.emit(`clientID: ${clientId},`);
+      this.emit(`clientSecret: ${clientSecret},`);
+      this.emit(`callbackURL: ${JSON.stringify(callback)},`);
+      this.indent--;
+      this.emit(`}, (accessToken, refreshToken, profile, done) => done(null, profile)));`);
+    } else {
+      this.emit(`import passport from 'passport';`);
+      this.emit(`// Configure ${provider} OAuth strategy`);
+    }
+
+    this.emit(`passport.serializeUser((user, done) => done(null, user));`);
+    this.emit(`passport.deserializeUser((user, done) => done(null, user));`);
+    this.emitRaw('');
+  }
+
+  // ===== Pay (Stripe) =====
+
+  visitPay(node) {
+    const provider = this.rawPageString(node.provider);
+    const secretKey = this.expr(node.secretKey);
+    const webhook = node.webhook ? this.rawPageString(node.webhook) : '/webhook';
+
+    if (provider === 'stripe') {
+      this.emit(`import Stripe from 'stripe';`);
+      this.emit(`const stripe = new Stripe(${secretKey});`);
+      this.emitRaw('');
+      this.emit(`const pay = {`);
+      this.indent++;
+      this.emit(`async checkout(items, successUrl, cancelUrl) {`);
+      this.indent++;
+      this.emit(`return stripe.checkout.sessions.create({`);
+      this.indent++;
+      this.emit(`line_items: items.map(i => ({ price_data: { currency: 'usd', product_data: { name: i.name }, unit_amount: i.price }, quantity: i.qty || 1 })),`);
+      this.emit(`mode: 'payment',`);
+      this.emit(`success_url: successUrl || ${node.successUrl ? this.expr(node.successUrl) : "'http://localhost:3000/success'"},`);
+      this.emit(`cancel_url: cancelUrl || ${node.cancelUrl ? this.expr(node.cancelUrl) : "'http://localhost:3000/cancel'"},`);
+      this.indent--;
+      this.emit(`});`);
+      this.indent--;
+      this.emit(`},`);
+      this.emit(`async verify(body, sig) {`);
+      this.indent++;
+      this.emit(`return stripe.webhooks.constructEvent(body, sig, ${secretKey});`);
+      this.indent--;
+      this.emit(`},`);
+      this.indent--;
+      this.emit(`};`);
+    } else {
+      this.emit(`// ${provider} payment integration`);
+      this.emit(`const pay = {};`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== Storage (S3) =====
+
+  visitStorage(node) {
+    const provider = this.rawPageString(node.provider);
+    const bucket = this.expr(node.bucket);
+    const accessKey = this.expr(node.accessKey);
+    const secretKey = this.expr(node.secretKey);
+    const region = node.region ? this.rawPageString(node.region) : 'us-east-1';
+
+    if (provider === 's3') {
+      this.emit(`import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';`);
+      this.emitRaw('');
+      this.emit(`const __s3 = new S3Client({`);
+      this.indent++;
+      this.emit(`region: ${JSON.stringify(region)},`);
+      this.emit(`credentials: { accessKeyId: ${accessKey}, secretAccessKey: ${secretKey} },`);
+      this.indent--;
+      this.emit(`});`);
+      this.emitRaw('');
+      this.emit(`const storage = {`);
+      this.indent++;
+      this.emit(`async upload(key, body, contentType = 'application/octet-stream') {`);
+      this.indent++;
+      this.emit(`return __s3.send(new PutObjectCommand({ Bucket: ${bucket}, Key: key, Body: body, ContentType: contentType }));`);
+      this.indent--;
+      this.emit(`},`);
+      this.emit(`async download(key) {`);
+      this.indent++;
+      this.emit(`const res = await __s3.send(new GetObjectCommand({ Bucket: ${bucket}, Key: key }));`);
+      this.emit(`return res.Body;`);
+      this.indent--;
+      this.emit(`},`);
+      this.emit(`async remove(key) {`);
+      this.indent++;
+      this.emit(`return __s3.send(new DeleteObjectCommand({ Bucket: ${bucket}, Key: key }));`);
+      this.indent--;
+      this.emit(`},`);
+      this.indent--;
+      this.emit(`};`);
+    } else if (provider === 'gcs') {
+      this.emit(`import { Storage } from '@google-cloud/storage';`);
+      this.emit(`const __gcs = new Storage();`);
+      this.emit(`const __bucket = __gcs.bucket(${bucket});`);
+      this.emit(`const storage = {`);
+      this.indent++;
+      this.emit(`async upload(key, body) { await __bucket.file(key).save(body); },`);
+      this.emit(`async download(key) { const [buf] = await __bucket.file(key).download(); return buf; },`);
+      this.emit(`async remove(key) { await __bucket.file(key).delete(); },`);
+      this.indent--;
+      this.emit(`};`);
+    } else {
+      this.emit(`// ${provider} storage integration`);
+      this.emit(`const storage = {};`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== PDF =====
+
+  visitPdf(node) {
+    const filename = this.rawPageString(node.filename);
+    this.emit(`import PDFDocument from 'pdfkit';`);
+    this.emit(`import { createWriteStream } from 'fs';`);
+    this.emitRaw('');
+    this.emit(`const __pdf = new PDFDocument();`);
+    this.emit(`__pdf.pipe(createWriteStream(${JSON.stringify(filename)}));`);
+
+    for (const el of node.elements) {
+      const tag = el.tag;
+      const arg0 = el.args[0] ? (el.args[0].raw !== undefined ? JSON.stringify(el.args[0].raw || el.args[0].parts?.map(p => p.value).join('')) : this.expr(el.args[0])) : '""';
+      if (tag === 'title') {
+        this.emit(`__pdf.fontSize(24).text(${arg0});`);
+        this.emit(`__pdf.moveDown();`);
+      } else if (tag === 'heading' || tag === 'h1' || tag === 'h2') {
+        const size = tag === 'h1' ? 20 : 16;
+        this.emit(`__pdf.fontSize(${size}).text(${arg0});`);
+        this.emit(`__pdf.moveDown();`);
+      } else if (tag === 'text' || tag === 'p') {
+        this.emit(`__pdf.fontSize(12).text(${arg0});`);
+      } else if (tag === 'image') {
+        this.emit(`__pdf.image(${arg0}, { width: 300 });`);
+      } else if (tag === 'line') {
+        this.emit(`__pdf.moveTo(50, __pdf.y).lineTo(550, __pdf.y).stroke();`);
+        this.emit(`__pdf.moveDown();`);
+      } else if (tag === 'table') {
+        this.emit(`// table: ${arg0}`);
+      } else {
+        this.emit(`__pdf.text(${arg0});`);
+      }
+    }
+
+    this.emit(`__pdf.end();`);
+    this.emit(`console.log('Generated: ${filename}');`);
+    this.emitRaw('');
+  }
+
+  // ===== i18n =====
+
+  visitI18n(node) {
+    const dir = this.rawPageString(node.dir);
+    const defaultLang = node.defaultLang ? this.rawPageString(node.defaultLang) : 'en';
+
+    this.emit(`import { readFileSync } from 'fs';`);
+    this.emit(`import { join } from 'path';`);
+    this.emitRaw('');
+    this.emit(`const __i18nData = {};`);
+    for (const lang of node.langs) {
+      const code = this.rawPageString(lang.code);
+      const file = this.rawPageString(lang.file);
+      this.emit(`__i18nData[${JSON.stringify(code)}] = JSON.parse(readFileSync(join(${JSON.stringify(dir)}, ${JSON.stringify(file)}), 'utf-8'));`);
+    }
+    this.emit(`let __i18nLang = ${JSON.stringify(defaultLang)};`);
+    this.emitRaw('');
+    this.emit(`const i18n = {`);
+    this.indent++;
+    this.emit(`t(key, params = {}) {`);
+    this.indent++;
+    this.emit(`let text = key.split('.').reduce((o, k) => o?.[k], __i18nData[__i18nLang]) || key;`);
+    this.emit(`for (const [k, v] of Object.entries(params)) text = text.replace(new RegExp(\`{$\{k}}\`, 'g'), v);`);
+    this.emit(`return text;`);
+    this.indent--;
+    this.emit(`},`);
+    this.emit(`setLang(code) { __i18nLang = code; },`);
+    this.emit(`getLang() { return __i18nLang; },`);
+    this.indent--;
+    this.emit(`};`);
+    this.emitRaw('');
   }
 }

@@ -676,6 +676,57 @@ watch User.create (event):
 Intervals: `"30s"`, `"5m"`, `"1h"`, `"1d"`. Cron expressions auto-detected.
 `watch` connects to `crud` events automatically.
 
+## OAuth (Social Login)
+
+```python
+oauth "google" env.CLIENT_ID env.CLIENT_SECRET:
+  callback "/auth/callback"
+  scope "email profile"
+```
+
+Supports Google, GitHub. Compiles to passport.js (Node.js) or authlib (Python).
+
+## Payment (Stripe)
+
+```python
+pay "stripe" env.STRIPE_KEY:
+  webhook "/webhook"
+```
+
+Usage: `pay.checkout([{name: "Item", price: 1000, qty: 1}])`. Compiles to Stripe SDK.
+
+## Cloud Storage (S3/GCS)
+
+```python
+storage "s3" env.BUCKET env.AWS_KEY env.AWS_SECRET:
+  region "ap-northeast-1"
+```
+
+Usage: `storage.upload("key", data)`, `storage.download("key")`, `storage.remove("key")`. Compiles to AWS SDK (Node.js) or boto3 (Python).
+
+## PDF Generation
+
+```python
+pdf "report.pdf":
+  title "Monthly Report"
+  h1 "Summary"
+  text "This is the content."
+  image "chart.png"
+```
+
+Compiles to pdfkit (Node.js) or FPDF (Python).
+
+## i18n (Internationalization)
+
+```python
+i18n "locales/":
+  default "en"
+  lang "en" "en.json"
+  lang "ja" "ja.json"
+```
+
+Usage: `i18n.t("greeting.hello")`, `i18n.setLang("ja")`.
+
 ## Environment Variables
 
 ```python
