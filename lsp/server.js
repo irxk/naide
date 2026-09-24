@@ -324,6 +324,7 @@ const HOVER_DOCS = {
   'crud': '**crud** — Auto REST CRUD routes\n```naide\ncrud "/api/users" User\n```',
   'ai': '**ai** — Built-in AI/LLM integration\n```naide\nstr answer = await ai.ask("question")\nmap data = await ai.json("extract", {name: "str"})\nstr reply = await ai.chat(messages)\nfor await chunk of ai.stream("prompt"): ...\nlist vec = await ai.embed("text")\n```',
   'prompt': '**prompt** — Reusable prompt template\n```naide\nprompt summarize {lang: "en"}:\n  "Summarize in {lang}:"\n  "{text}"\n```\nUsage: `str p = summarize({text: "hello"})`',
+  'bot': '**bot** — Discord bot\n```naide\nbot myBot token "TOKEN":\n  on "ready":\n    log "Bot is online!"\n  on "message" (msg):\n    msg.reply("Pong!")\n  slash "hello" "Says hello":\n    interaction.reply("Hi!")\n```',
   'db': '**db** — Database\n```naide\ndb "data/"              # JSON files\ndb.sql "sqlite" "app.db"  # SQLite\n```',
   'typeof': '**typeof** — Get type of expression\n```naide\nif typeof x == "string": log "str"\n```',
   'instanceof': '**instanceof** — Check instance type\n```naide\nif err instanceof TypeError: log "type error"\n```',

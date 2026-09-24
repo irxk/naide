@@ -85,6 +85,8 @@ export const T = {
   INSTANCEOF: 'INSTANCEOF',
   ENSURE: 'ENSURE',
   PROMPT: 'PROMPT',
+  BOT: 'BOT',
+  SLASH_CMD: 'SLASH_CMD',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -198,6 +200,8 @@ export const KEYWORDS = {
   'instanceof': T.INSTANCEOF,
   'ensure': T.ENSURE,
   'prompt': T.PROMPT,
+  'bot': T.BOT,
+  'slash': T.SLASH_CMD,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

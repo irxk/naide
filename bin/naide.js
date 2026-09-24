@@ -153,7 +153,7 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
   const { transpile } = await import('../src/index.js');
 
-  console.log(`\n  NAIDE REPL v1.10.0 — type NAIDE code, see JavaScript output`);
+  console.log(`\n  NAIDE REPL v1.11.0 — type NAIDE code, see JavaScript output`);
   console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
 
   const rl = createInterface({

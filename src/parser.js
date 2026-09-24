@@ -165,6 +165,7 @@ export class Parser {
       case T.MATCH: return this.parseMatch();
       case T.TRY: return this.parseTry();
       case T.SERVER: return this.parseServer();
+      case T.BOT: return this.parseBot();
       case T.MODEL: return this.parseModel();
       case T.ON: return this.parseOn();
       case T.LOG: return this.parseLog();
@@ -640,6 +641,69 @@ export class Parser {
     this.match(T.DEDENT);
 
     return new ASTNode('Server', { name, port, routes, middleware });
+  }
+
+  parseBot() {
+    this.advance(); // bot
+    const name = this.expect(T.IDENT).value;
+
+    let token = null;
+    if (this.at(T.IDENT) && this.peek().value === 'token') {
+      this.advance();
+      token = this.parseExpression();
+    }
+
+    let prefix = null;
+    if (this.at(T.IDENT) && this.peek().value === 'prefix') {
+      this.advance();
+      prefix = this.parseExpression();
+    }
+
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+
+    const handlers = [];
+    this.skipNewlines();
+
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.ON)) {
+        this.advance(); // on
+        const event = this.parseString();
+        let params = [];
+        if (this.match(T.LPAREN)) {
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.expect(T.IDENT).value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        handlers.push(new ASTNode('BotEvent', { event, params, body }));
+      } else if (this.at(T.SLASH_CMD)) {
+        this.advance(); // slash
+        const cmdName = this.parseString();
+        const description = this.parseString();
+        let params = [];
+        if (this.match(T.LPAREN)) {
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.expect(T.IDENT).value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        handlers.push(new ASTNode('BotSlashCmd', { name: cmdName, description, params, body }));
+      } else {
+        handlers.push(this.parseStatement());
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+
+    return new ASTNode('Bot', { name, token, prefix, handlers });
   }
 
   parseRoute() {

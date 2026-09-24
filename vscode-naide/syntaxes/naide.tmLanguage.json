@@ -87,7 +87,7 @@
       "name": "keyword.control.naide"
     },
     "keywords-server": {
-      "match": "\\b(server|get|post|put|del|patch|mid|cors|limit|auth|crud|static|ws|sse|group|upload|cookie|session|view|cache|validate|openapi|error|on)\\b",
+      "match": "\\b(server|bot|slash|get|post|put|del|patch|mid|cors|limit|auth|crud|static|ws|sse|group|upload|cookie|session|view|cache|validate|openapi|error|on)\\b",
       "name": "keyword.other.naide"
     },
     "keywords-declaration": {

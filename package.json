@@ -1,7 +1,7 @@
 {
   "name": "naider",
-  "version": "1.10.1",
-  "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, SQL, AI/LLM, WebSocket, and more — transpiles to Node.js.",
+  "version": "1.11.0",
+  "description": "NAIDE - Node AI Development Environment. AI-specialized language with built-in server, auth, DB, SQL, AI/LLM, WebSocket, Discord Bot, and more — transpiles to Node.js.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -41,7 +41,9 @@
     "express",
     "api",
     "backend",
-    "server"
+    "server",
+    "discord",
+    "discord-bot"
   ],
   "author": "pirikari.sena@gmail.com",
   "license": "MIT",

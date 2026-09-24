@@ -114,6 +114,7 @@ export class PythonGenerator {
       case 'Match': return this.visitMatch(node);
       case 'Try': return this.visitTry(node);
       case 'Server': return this.visitServer(node);
+      case 'Bot': return this.visitBot(node);
       case 'Model': return this.visitModel(node);
       case 'On': return this.visitOn(node);
       case 'Log': return this.visitLog(node);
@@ -1424,6 +1425,75 @@ export class PythonGenerator {
     const path = this.rawString(node.path);
     const ttl = this.rawString(node.ttl);
     this.emit(`# cache: ${path} for ${ttl}`);
+  }
+
+  // ===== Discord Bot (discord.py) =====
+
+  visitBot(node) {
+    const tokenExpr = node.token ? this.expr(node.token) : "os.environ.get('DISCORD_TOKEN')";
+
+    this.addImport('discord');
+    this.addFromImport('discord.ext', 'commands');
+    this.emitRaw('');
+    this.emit('intents = discord.Intents.default()');
+    this.emit('intents.message_content = True');
+
+    const prefix = node.prefix ? this.expr(node.prefix) : '"!"';
+    this.emit(`${node.name} = commands.Bot(command_prefix=${prefix}, intents=intents)`);
+    this.emitRaw('');
+
+    const events = node.handlers.filter(h => h.type === 'BotEvent');
+    const slashCmds = node.handlers.filter(h => h.type === 'BotSlashCmd');
+
+    for (const evt of events) {
+      const evtName = evt.event.raw || evt.event.parts?.map(p => p.value).join('');
+      const discordEvent = evtName === 'message' ? 'on_message' : (evtName === 'ready' ? 'on_ready' : `on_${evtName}`);
+      const params = evt.params.length > 0 ? evt.params.join(', ') : '';
+
+      this.emit(`@${node.name}.event`);
+      this.emit(`async def ${discordEvent}(${params}):`);
+      this.indent++;
+      if (evt.body.length === 0) {
+        this.emit('pass');
+      } else {
+        for (const stmt of evt.body) this.visitStatement(stmt);
+      }
+      if (evtName === 'message') {
+        this.emit(`await ${node.name}.process_commands(${params || 'message'})`);
+      }
+      this.indent--;
+      this.emitRaw('');
+    }
+
+    for (const cmd of slashCmds) {
+      const cmdName = cmd.name.raw || cmd.name.parts?.map(p => p.value).join('');
+      const desc = cmd.description.raw || cmd.description.parts?.map(p => p.value).join('');
+      const param = cmd.params.length > 0 ? cmd.params[0] : 'interaction';
+
+      this.emit(`@${node.name}.tree.command(name=${JSON.stringify(cmdName)}, description=${JSON.stringify(desc)})`);
+      this.emit(`async def slash_${cmdName.replace(/[^a-zA-Z0-9]/g, '_')}(${param}: discord.Interaction):`);
+      this.indent++;
+      if (cmd.body.length === 0) {
+        this.emit('pass');
+      } else {
+        for (const stmt of cmd.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emitRaw('');
+    }
+
+    if (slashCmds.length > 0) {
+      this.emit(`@${node.name}.event`);
+      this.emit(`async def on_ready():`);
+      this.indent++;
+      this.emit(`await ${node.name}.tree.sync()`);
+      this.emit(`print(f'{${node.name}.user} is ready!')`);
+      this.indent--;
+      this.emitRaw('');
+    }
+
+    this.emit(`${node.name}.run(${tokenExpr})`);
+    this.emitRaw('');
   }
 
   // ===== Prompt template =====

@@ -1524,6 +1524,57 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes('send_from_directory'));
   });
 
+  // ===== Discord Bot =====
+  it('compiles bot with events', () => {
+    const src = 'bot myBot token "TEST_TOKEN":\n  on "ready":\n    log "Bot is online!"\n  on "message" (msg):\n    log msg.content\n';
+    const js = transpile(src);
+    assert.ok(js.includes("import { Client, GatewayIntentBits"));
+    assert.ok(js.includes("new Client("));
+    assert.ok(js.includes("myBot.on('ready'"));
+    assert.ok(js.includes("myBot.on('messageCreate'"));
+    assert.ok(js.includes('myBot.login("TEST_TOKEN")'));
+  });
+
+  it('compiles bot with slash commands', () => {
+    const src = 'bot myBot token "TEST_TOKEN":\n  slash "hello" "Says hello":\n    interaction.reply("Hi!")\n';
+    const js = transpile(src);
+    assert.ok(js.includes("interactionCreate"));
+    assert.ok(js.includes("isChatInputCommand"));
+    assert.ok(js.includes('commandName === "hello"'));
+    assert.ok(js.includes("SlashCommandBuilder"));
+    assert.ok(js.includes('setName("hello")'));
+    assert.ok(js.includes('setDescription("Says hello")'));
+  });
+
+  it('compileAsync Bun bot with events', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot token "TEST_TOKEN":\n  on "ready":\n    log "Bot is online!"\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes("new Client("));
+    assert.ok(result.code.includes("myBot.on('ready'"));
+    assert.ok(result.code.includes('myBot.login("TEST_TOKEN")'));
+  });
+
+  it('compileAsync Python bot with events', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot token "TEST_TOKEN":\n  on "ready":\n    log "Bot is online!"\n  on "message" (msg):\n    log msg.content\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("import discord"));
+    assert.ok(result.code.includes("commands.Bot("));
+    assert.ok(result.code.includes("async def on_ready"));
+    assert.ok(result.code.includes("async def on_message(msg)"));
+    assert.ok(result.code.includes('.run("TEST_TOKEN")'));
+  });
+
+  it('compileAsync Python bot with slash commands', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot token "TEST_TOKEN":\n  slash "greet" "Greets user":\n    interaction.reply("Hello!")\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("@myBot.tree.command"));
+    assert.ok(result.code.includes("discord.Interaction"));
+    assert.ok(result.code.includes("tree.sync()"));
+  });
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

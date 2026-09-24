@@ -385,6 +385,23 @@ prompt summarize {lang: "en"}:
 # str answer = await ai.ask(p)
 
 
+# ---- Discord Bot ----
+# bot構文でDiscord Botを簡単に作成
+bot myBot token "YOUR_TOKEN":
+  on "ready":
+    log "Bot is online!"
+  on "message" (msg):
+    if msg.content == "!ping":
+      msg.reply("Pong!")
+  slash "hello" "挨拶します":
+    interaction.reply("こんにちは！")
+  slash "ask" "AIに質問":
+    str answer = await ai.ask(interaction.options.getString("question"))
+    interaction.reply(answer)
+
+# Node.js → discord.js, Python → discord.py, Bun → discord.js
+
+
 # ---- スケジュールタスク ----
 every "5m":
   log "cleanup running"

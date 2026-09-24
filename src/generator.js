@@ -101,6 +101,7 @@ export class Generator {
       case 'Match': return this.visitMatch(node);
       case 'Try': return this.visitTry(node);
       case 'Server': return this.visitServer(node);
+      case 'Bot': return this.visitBot(node);
       case 'Model': return this.visitModel(node);
       case 'On': return this.visitOn(node);
       case 'Log': return this.visitLog(node);
@@ -424,6 +425,82 @@ export class Generator {
       this.emitRaw('');
       this.visitWs(wsNode);
     }
+  }
+
+  visitBot(node) {
+    const tokenExpr = node.token ? this.expr(node.token) : 'process.env.DISCORD_TOKEN';
+
+    this.emit(`import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';`);
+    this.emitRaw('');
+    this.emit(`const ${node.name} = new Client({`);
+    this.indent++;
+    this.emit(`intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+
+    const events = node.handlers.filter(h => h.type === 'BotEvent');
+    const slashCmds = node.handlers.filter(h => h.type === 'BotSlashCmd');
+
+    for (const evt of events) {
+      const evtName = evt.event.raw || evt.event.parts?.map(p => p.value).join('');
+      const discordEvent = evtName === 'message' ? 'messageCreate' : evtName;
+      const params = evt.params.length > 0 ? evt.params.join(', ') : '';
+      const needsAsync = this.bodyUsesAwait(evt.body);
+      const asyncPrefix = needsAsync ? 'async ' : '';
+
+      this.emit(`${node.name}.on('${discordEvent}', ${asyncPrefix}(${params}) => {`);
+      this.indent++;
+      for (const stmt of evt.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`});`);
+      this.emitRaw('');
+    }
+
+    if (slashCmds.length > 0) {
+      this.emit(`${node.name}.on('interactionCreate', async (interaction) => {`);
+      this.indent++;
+      this.emit(`if (!interaction.isChatInputCommand()) return;`);
+      this.emitRaw('');
+
+      for (const cmd of slashCmds) {
+        const cmdName = cmd.name.raw || cmd.name.parts?.map(p => p.value).join('');
+        const param = cmd.params.length > 0 ? cmd.params[0] : 'interaction';
+
+        this.emit(`if (interaction.commandName === ${JSON.stringify(cmdName)}) {`);
+        this.indent++;
+        if (param !== 'interaction') {
+          this.emit(`const ${param} = interaction;`);
+        }
+        for (const stmt of cmd.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`}`);
+      }
+
+      this.indent--;
+      this.emit(`});`);
+      this.emitRaw('');
+
+      this.emit(`${node.name}.once('ready', async () => {`);
+      this.indent++;
+      this.emit(`const commands = [`);
+      this.indent++;
+      for (const cmd of slashCmds) {
+        const cmdName = cmd.name.raw || cmd.name.parts?.map(p => p.value).join('');
+        const desc = cmd.description.raw || cmd.description.parts?.map(p => p.value).join('');
+        this.emit(`new SlashCommandBuilder().setName(${JSON.stringify(cmdName)}).setDescription(${JSON.stringify(desc)}),`);
+      }
+      this.indent--;
+      this.emit(`];`);
+      this.emit(`const rest = new REST().setToken(${tokenExpr});`);
+      this.emit(`await rest.put(Routes.applicationCommands(${node.name}.user.id), { body: commands });`);
+      this.indent--;
+      this.emit(`});`);
+      this.emitRaw('');
+    }
+
+    this.emit(`${node.name}.login(${tokenExpr});`);
+    this.emitRaw('');
   }
 
   visitRoute(appName, route) {

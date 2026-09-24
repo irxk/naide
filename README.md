@@ -2,7 +2,7 @@
 
 **Node AI Development Environment** — A programming language designed for AI-speed code generation that transpiles to Node.js.
 
-NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). It includes built-in declarations for servers, databases, authentication, file uploads, WebSockets, job queues, testing, and more — all with zero external dependencies.
+NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). It includes built-in declarations for servers, databases, authentication, file uploads, WebSockets, Discord bots, job queues, testing, and more — all with zero external dependencies.
 
 Two syntax modes:
 
@@ -68,7 +68,7 @@ naide --tokens <file>         # Print token stream
 
 ```
 $ naide
-NAIDE REPL v1.9.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.11.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -545,6 +545,37 @@ server app port 3000:
     ret {queued: true}
 ```
 
+## Discord Bot
+
+Built-in `bot` syntax for Discord bots — events, message handling, and slash commands with zero boilerplate:
+
+```python
+bot myBot token DISCORD_TOKEN:
+  on "ready":
+    log "Bot is online!"
+
+  on "message" (msg):
+    if msg.content == "!ping":
+      msg.reply("Pong!")
+
+  slash "hello" "Says hello":
+    interaction.reply("Hello!")
+
+  slash "ask" "Ask the AI":
+    str answer = await ai.ask(interaction.options.getString("question"))
+    interaction.reply(answer)
+```
+
+Compiles to **discord.js** (Node.js/Bun) or **discord.py** (Python). Multi-target:
+
+```bash
+naide bot.naide                        # Node.js (discord.js)
+naide bot.naide --target bun           # Bun (discord.js)
+naide bot.naide --target python        # Python (discord.py)
+```
+
+The `on "message"` event maps to `messageCreate` (discord.js) / `on_message` (discord.py). Slash commands are auto-registered on bot startup.
+
 ## Scheduled Tasks & Events
 
 ```python
@@ -898,7 +929,7 @@ $app:3000                   -- server app port 3000:
 
 Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
 
-High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `db.sql`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`, `ai`, `prompt`.
+High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `db.sql`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`, `ai`, `prompt`, `bot`, `slash`.
 
 NAIDE-X log shorthands: `log.e` = error, `log.w` = warn, `log.i` = info, `log.d` = debug.
 
