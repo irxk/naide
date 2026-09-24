@@ -153,6 +153,9 @@ export class Generator {
       case 'StorageDecl': return this.visitStorage(node);
       case 'PdfDecl': return this.visitPdf(node);
       case 'I18nDecl': return this.visitI18n(node);
+      case 'PushDecl': return this.visitPush(node);
+      case 'SearchDecl': return this.visitSearch(node);
+      case 'ImageDecl': return this.visitImage(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -2060,6 +2063,112 @@ export class Generator {
     this.emit(`getLang() { return __i18nLang; },`);
     this.indent--;
     this.emit(`};`);
+    this.emitRaw('');
+  }
+
+  // ===== Push Notifications =====
+
+  visitPush(node) {
+    const publicKey = this.expr(node.publicKey);
+    const privateKey = this.expr(node.privateKey);
+    const endpoint = node.endpoint ? this.rawPageString(node.endpoint) : '/subscribe';
+
+    this.emit(`import webpush from 'web-push';`);
+    this.emitRaw('');
+    this.emit(`webpush.setVapidDetails('mailto:noreply@example.com', ${publicKey}, ${privateKey});`);
+    this.emitRaw('');
+    this.emit(`const push = {`);
+    this.indent++;
+    this.emit(`async send(subscription, title, body, data = {}) {`);
+    this.indent++;
+    this.emit(`return webpush.sendNotification(subscription, JSON.stringify({ title, body, data }));`);
+    this.indent--;
+    this.emit(`},`);
+    this.emit(`async sendAll(subscriptions, title, body, data = {}) {`);
+    this.indent++;
+    this.emit(`return Promise.allSettled(subscriptions.map(sub => push.send(sub, title, body, data)));`);
+    this.indent--;
+    this.emit(`},`);
+    this.indent--;
+    this.emit(`};`);
+    this.emitRaw('');
+  }
+
+  // ===== Search =====
+
+  visitSearch(node) {
+    const engine = this.rawPageString(node.engine);
+    const host = this.expr(node.host);
+    const apiKey = this.expr(node.apiKey);
+    const index = node.index ? this.rawPageString(node.index) : 'default';
+
+    if (engine === 'meilisearch') {
+      this.emit(`import { MeiliSearch } from 'meilisearch';`);
+      this.emitRaw('');
+      this.emit(`const __searchClient = new MeiliSearch({ host: ${host}, apiKey: ${apiKey} });`);
+      this.emit(`const __searchIndex = __searchClient.index(${JSON.stringify(index)});`);
+      this.emitRaw('');
+      this.emit(`const search = {`);
+      this.indent++;
+      this.emit(`async query(q, opts = {}) { return __searchIndex.search(q, opts); },`);
+      this.emit(`async add(docs) { return __searchIndex.addDocuments(docs); },`);
+      this.emit(`async remove(id) { return __searchIndex.deleteDocument(id); },`);
+      this.emit(`async update(docs) { return __searchIndex.updateDocuments(docs); },`);
+      this.indent--;
+      this.emit(`};`);
+    } else {
+      this.emit(`import { Client } from '@elastic/elasticsearch';`);
+      this.emitRaw('');
+      this.emit(`const __esClient = new Client({ node: ${host}, auth: { apiKey: ${apiKey} } });`);
+      this.emitRaw('');
+      this.emit(`const search = {`);
+      this.indent++;
+      this.emit(`async query(q, opts = {}) { return __esClient.search({ index: ${JSON.stringify(index)}, query: { match: { _all: q } }, ...opts }); },`);
+      this.emit(`async add(doc) { return __esClient.index({ index: ${JSON.stringify(index)}, body: doc }); },`);
+      this.emit(`async remove(id) { return __esClient.delete({ index: ${JSON.stringify(index)}, id }); },`);
+      this.indent--;
+      this.emit(`};`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== Image Processing =====
+
+  visitImage(node) {
+    const input = this.expr(node.input);
+    const output = node.output ? this.expr(node.output) : input;
+
+    this.emit(`import sharp from 'sharp';`);
+    this.emitRaw('');
+    this.emit(`let __img = sharp(${input});`);
+
+    for (const op of node.operations) {
+      if (op.op === 'resize') {
+        const w = op.args[0] || 800;
+        const h = op.args[1] || null;
+        this.emit(`__img = __img.resize(${w}${h ? ', ' + h : ''});`);
+      } else if (op.op === 'crop') {
+        const l = op.args[0] || 0, t = op.args[1] || 0, w = op.args[2] || 100, h = op.args[3] || 100;
+        this.emit(`__img = __img.extract({ left: ${l}, top: ${t}, width: ${w}, height: ${h} });`);
+      } else if (op.op === 'watermark') {
+        const wm = op.args[0] ? (typeof op.args[0] === 'object' ? this.rawPageString(op.args[0]) : op.args[0]) : 'watermark.png';
+        this.emit(`__img = __img.composite([{ input: ${JSON.stringify(wm)}, gravity: 'southeast' }]);`);
+      } else if (op.op === 'rotate') {
+        this.emit(`__img = __img.rotate(${op.args[0] || 90});`);
+      } else if (op.op === 'blur') {
+        this.emit(`__img = __img.blur(${op.args[0] || 5});`);
+      } else if (op.op === 'grayscale' || op.op === 'greyscale') {
+        this.emit(`__img = __img.grayscale();`);
+      } else if (op.op === 'flip') {
+        this.emit(`__img = __img.flip();`);
+      } else if (op.op === 'format') {
+        const fmt = op.args[0] ? (typeof op.args[0] === 'object' ? this.rawPageString(op.args[0]) : op.args[0]) : 'png';
+        this.emit(`__img = __img.toFormat(${JSON.stringify(fmt)});`);
+      }
+    }
+
+    this.emit(`await __img.toFile(${output});`);
+    this.emit(`console.log('Processed:', ${output});`);
     this.emitRaw('');
   }
 }

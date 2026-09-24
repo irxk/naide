@@ -98,6 +98,9 @@ export const T = {
   STORAGE: 'STORAGE',
   PDF: 'PDF',
   I18N: 'I18N',
+  PUSH: 'PUSH',
+  SEARCH: 'SEARCH',
+  IMAGE: 'IMAGE',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -224,6 +227,9 @@ export const KEYWORDS = {
   'storage': T.STORAGE,
   'pdf': T.PDF,
   'i18n': T.I18N,
+  'push': T.PUSH,
+  'search': T.SEARCH,
+  'image': T.IMAGE,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,

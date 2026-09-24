@@ -289,7 +289,7 @@ function getCompletions() {
     'cors', 'auth', 'crud', 'limit', 'cookie', 'session', 'static', 'ws', 'sse',
     'cache', 'view', 'upload', 'group', 'validate', 'openapi', 'error', 'mid', 'prompt',
     'page', 'cli', 'mail', 'graphql', 'desktop', 'screen',
-    'oauth', 'pay', 'storage', 'pdf', 'i18n',
+    'oauth', 'pay', 'storage', 'pdf', 'i18n', 'push', 'search', 'image',
   ];
   const builtins = [
     { label: 'uuid()', detail: 'Generate UUID v4', insertText: 'uuid()' },
@@ -351,6 +351,9 @@ const HOVER_DOCS = {
   'storage': '**storage** — Cloud storage (S3/GCS)\n```naide\nstorage "s3" env.BUCKET env.KEY env.SECRET:\n  region "ap-northeast-1"\n```\nUsage: `storage.upload(key, body)`, `storage.download(key)`',
   'pdf': '**pdf** — PDF generation\n```naide\npdf "report.pdf":\n  title "Report"\n  text "Hello"\n```',
   'i18n': '**i18n** — Internationalization\n```naide\ni18n "locales/":\n  default "en"\n  lang "en" "en.json"\n  lang "ja" "ja.json"\n```\nUsage: `i18n.t("key")`, `i18n.setLang("ja")`',
+  'push': '**push** — Push notifications\n```naide\npush env.VAPID_PUBLIC env.VAPID_PRIVATE:\n  endpoint "/subscribe"\n```\nUsage: `push.send(subscription, title, body)`',
+  'search': '**search** — Full-text search\n```naide\nsearch "meilisearch" "http://localhost:7700" env.KEY:\n  index "products"\n```\nUsage: `search.query("keyword")`, `search.add(docs)`',
+  'image': '**image** — Image processing\n```naide\nimage "input.jpg" -> "output.jpg":\n  resize 800 600\n  grayscale\n  watermark "logo.png"\n```',
 };
 
 function getHover(params) {

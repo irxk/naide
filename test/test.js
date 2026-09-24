@@ -1875,6 +1875,57 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes('I18n'));
   });
 
+  // ===== Push Notifications =====
+  it('compiles push notifications', () => {
+    const src = 'push env.VAPID_PUBLIC env.VAPID_PRIVATE:\n  endpoint "/subscribe"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('web-push'));
+    assert.ok(js.includes('webpush'));
+    assert.ok(js.includes('sendNotification'));
+  });
+
+  it('compileAsync Python push', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'push env.VAPID_PUBLIC env.VAPID_PRIVATE:\n  endpoint "/subscribe"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('pywebpush') || result.code.includes('webpush'));
+  });
+
+  // ===== Search =====
+  it('compiles Meilisearch', () => {
+    const src = 'search "meilisearch" "http://localhost:7700" env.MEILI_KEY:\n  index "products"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('MeiliSearch'));
+    assert.ok(js.includes('products'));
+    assert.ok(js.includes('search'));
+  });
+
+  it('compileAsync Python Meilisearch', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'search "meilisearch" "http://localhost:7700" env.MEILI_KEY:\n  index "products"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('meilisearch'));
+    assert.ok(result.code.includes('products'));
+  });
+
+  // ===== Image Processing =====
+  it('compiles image processing', () => {
+    const src = 'image "photo.jpg" -> "out.jpg":\n  resize 800 600\n  grayscale\n';
+    const js = transpile(src);
+    assert.ok(js.includes('sharp'));
+    assert.ok(js.includes('resize(800, 600)'));
+    assert.ok(js.includes('grayscale()'));
+  });
+
+  it('compileAsync Python image processing', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'image "photo.jpg" -> "out.jpg":\n  resize 800 600\n  rotate 90\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('PILImage'));
+    assert.ok(result.code.includes('resize'));
+    assert.ok(result.code.includes('rotate'));
+  });
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

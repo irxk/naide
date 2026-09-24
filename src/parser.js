@@ -113,7 +113,8 @@ export class Parser {
       type === T.PAGE || type === T.CLI_APP || type === T.MAIL ||
       type === T.GRAPHQL || type === T.DESKTOP || type === T.SCREEN ||
       type === T.OAUTH || type === T.PAY || type === T.STORAGE ||
-      type === T.PDF || type === T.I18N;
+      type === T.PDF || type === T.I18N ||
+      type === T.PUSH || type === T.SEARCH || type === T.IMAGE;
   }
 
   expectPropertyName() {
@@ -180,6 +181,9 @@ export class Parser {
       case T.STORAGE: return this.parseStorage();
       case T.PDF: return this.parsePdf();
       case T.I18N: return this.parseI18n();
+      case T.PUSH: return this.parsePush();
+      case T.SEARCH: return this.parseSearch();
+      case T.IMAGE: return this.parseImage();
       case T.MODEL: return this.parseModel();
       case T.ON: return this.parseOn();
       case T.LOG: return this.parseLog();
@@ -1156,6 +1160,7 @@ export class Parser {
       case T.PAGE: case T.CLI_APP: case T.MAIL:
       case T.GRAPHQL: case T.DESKTOP: case T.SCREEN:
       case T.OAUTH: case T.PAY: case T.STORAGE: case T.PDF: case T.I18N:
+      case T.PUSH: case T.SEARCH: case T.IMAGE:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -2067,5 +2072,80 @@ export class Parser {
     }
     if (this.at(T.DEDENT)) this.advance();
     return new ASTNode('I18nDecl', { dir, defaultLang, langs });
+  }
+
+  // push "vapid_public" "vapid_private":
+  //   endpoint "/subscribe"
+  parsePush() {
+    this.expect(T.PUSH);
+    const publicKey = this.parseExpression();
+    const privateKey = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let endpoint = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'endpoint') { this.advance(); endpoint = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('PushDecl', { publicKey, privateKey, endpoint });
+  }
+
+  // search "meilisearch" "http://localhost:7700" apiKey:
+  //   index "products"
+  parseSearch() {
+    this.expect(T.SEARCH);
+    const engine = this.parseString();
+    const host = this.parseExpression();
+    const apiKey = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let index = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'index') { this.advance(); index = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('SearchDecl', { engine, host, apiKey, index });
+  }
+
+  // image "input.jpg" -> "output.jpg":
+  //   resize 800 600
+  //   crop 100 100 400 300
+  //   watermark "logo.png"
+  parseImage() {
+    this.expect(T.IMAGE);
+    const input = this.parseExpression();
+    let output = null;
+    if (this.at(T.ARROW)) { this.advance(); output = this.parseExpression(); }
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const operations = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const op = this.advance().value;
+      const args = [];
+      while (!this.at(T.NEWLINE) && !this.at(T.DEDENT) && !this.at(T.EOF)) {
+        if (this.at(T.STRING)) { args.push(this.parseString()); }
+        else if (this.at(T.NUMBER)) { args.push(this.advance().value); }
+        else { args.push(this.parseExpression()); break; }
+      }
+      operations.push({ op, args });
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('ImageDecl', { input, output, operations });
   }
 }

@@ -564,3 +564,23 @@ i18n "locales/":
   lang "ja" "ja.json"
 # usage: i18n.t("greeting.hello")
 # usage: i18n.setLang("ja")
+
+
+# ---- Push通知 ----
+push env.VAPID_PUBLIC env.VAPID_PRIVATE:
+  endpoint "/subscribe"
+# usage: push.send(subscription, "Title", "Body")
+
+
+# ---- 全文検索 ----
+search "meilisearch" "http://localhost:7700" env.MEILI_KEY:
+  index "products"
+# usage: search.query("keyword")
+# usage: search.add([{id: 1, name: "Item"}])
+
+
+# ---- 画像処理 ----
+image "photo.jpg" -> "output.jpg":
+  resize 800 600
+  grayscale
+  watermark "logo.png"

@@ -153,6 +153,9 @@ export class PythonGenerator {
       case 'StorageDecl': return this.visitStorage(node);
       case 'PdfDecl': return this.visitPdf(node);
       case 'I18nDecl': return this.visitI18n(node);
+      case 'PushDecl': return this.visitPush(node);
+      case 'SearchDecl': return this.visitSearch(node);
+      case 'ImageDecl': return this.visitImage(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -2144,6 +2147,105 @@ export class PythonGenerator {
     this.emit(`def get_lang(): return __i18n_lang`);
     this.indent--;
     this.emit(`i18n = I18n()`);
+    this.emitRaw('');
+  }
+
+  // ===== Push =====
+  visitPush(node) {
+    const publicKey = this.expr(node.publicKey);
+    const privateKey = this.expr(node.privateKey);
+    this.addFromImport('pywebpush', 'webpush');
+    this.emitRaw('');
+    this.emit(`class Push:`);
+    this.indent++;
+    this.emit(`VAPID_PUBLIC = ${publicKey}`);
+    this.emit(`VAPID_PRIVATE = ${privateKey}`);
+    this.emit(`@staticmethod`);
+    this.emit(`def send(subscription, title, body):`);
+    this.indent++;
+    this.emit(`import json`);
+    this.emit(`webpush(subscription_info=subscription, data=json.dumps({'title': title, 'body': body}), vapid_private_key=Push.VAPID_PRIVATE, vapid_claims={'sub': 'mailto:noreply@example.com'})`);
+    this.indent--;
+    this.indent--;
+    this.emit(`push = Push()`);
+    this.emitRaw('');
+  }
+
+  // ===== Search =====
+  visitSearch(node) {
+    const engine = this.rawString(node.engine);
+    const host = this.expr(node.host);
+    const apiKey = this.expr(node.apiKey);
+    const index = node.index ? this.rawString(node.index) : 'default';
+
+    if (engine === 'meilisearch') {
+      this.addImport('meilisearch');
+      this.emitRaw('');
+      this.emit(`__search_client = meilisearch.Client(${host}, ${apiKey})`);
+      this.emit(`__search_index = __search_client.index(${JSON.stringify(index)})`);
+      this.emitRaw('');
+      this.emit(`class Search:`);
+      this.indent++;
+      this.emit(`@staticmethod`);
+      this.emit(`def query(q, **opts): return __search_index.search(q, opts)`);
+      this.emit(`@staticmethod`);
+      this.emit(`def add(docs): return __search_index.add_documents(docs)`);
+      this.emit(`@staticmethod`);
+      this.emit(`def remove(doc_id): return __search_index.delete_document(doc_id)`);
+      this.indent--;
+    } else {
+      this.addFromImport('elasticsearch', 'Elasticsearch');
+      this.emitRaw('');
+      this.emit(`__es = Elasticsearch(${host}, api_key=${apiKey})`);
+      this.emitRaw('');
+      this.emit(`class Search:`);
+      this.indent++;
+      this.emit(`@staticmethod`);
+      this.emit(`def query(q, **opts): return __es.search(index=${JSON.stringify(index)}, query={'match': {'_all': q}}, **opts)`);
+      this.emit(`@staticmethod`);
+      this.emit(`def add(doc): return __es.index(index=${JSON.stringify(index)}, body=doc)`);
+      this.emit(`@staticmethod`);
+      this.emit(`def remove(doc_id): return __es.delete(index=${JSON.stringify(index)}, id=doc_id)`);
+      this.indent--;
+    }
+    this.emit(`search = Search()`);
+    this.emitRaw('');
+  }
+
+  // ===== Image =====
+  visitImage(node) {
+    const input = this.expr(node.input);
+    const output = node.output ? this.expr(node.output) : input;
+    this.addFromImport('PIL', 'Image as PILImage');
+    this.emitRaw('');
+    this.emit(`__img = PILImage.open(${input})`);
+
+    for (const op of node.operations) {
+      if (op.op === 'resize') {
+        const w = op.args[0] || 800;
+        const h = op.args[1] || 600;
+        this.emit(`__img = __img.resize((${w}, ${h}))`);
+      } else if (op.op === 'crop') {
+        const l = op.args[0] || 0, t = op.args[1] || 0, r = op.args[2] || 100, b = op.args[3] || 100;
+        this.emit(`__img = __img.crop((${l}, ${t}, ${r}, ${b}))`);
+      } else if (op.op === 'rotate') {
+        this.emit(`__img = __img.rotate(${op.args[0] || 90})`);
+      } else if (op.op === 'blur') {
+        this.addFromImport('PIL.ImageFilter', 'GaussianBlur');
+        this.emit(`__img = __img.filter(GaussianBlur(radius=${op.args[0] || 5}))`);
+      } else if (op.op === 'grayscale' || op.op === 'greyscale') {
+        this.emit(`__img = __img.convert('L')`);
+      } else if (op.op === 'flip') {
+        this.emit(`__img = __img.transpose(PILImage.FLIP_TOP_BOTTOM)`);
+      } else if (op.op === 'watermark') {
+        const wm = op.args[0] ? this.rawString(op.args[0]) : 'watermark.png';
+        this.emit(`__wm = PILImage.open(${JSON.stringify(wm)})`);
+        this.emit(`__img.paste(__wm, (0, 0), __wm)`);
+      }
+    }
+
+    this.emit(`__img.save(${output})`);
+    this.emit(`print(f"Processed: {${output}}")`);
     this.emitRaw('');
   }
 }

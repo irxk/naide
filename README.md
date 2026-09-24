@@ -727,6 +727,35 @@ i18n "locales/":
 
 Usage: `i18n.t("greeting.hello")`, `i18n.setLang("ja")`.
 
+## Push Notifications
+
+```python
+push env.VAPID_PUBLIC env.VAPID_PRIVATE:
+  endpoint "/subscribe"
+```
+
+Usage: `push.send(subscription, "Title", "Body")`. Compiles to web-push (Node.js) or pywebpush (Python).
+
+## Full-Text Search
+
+```python
+search "meilisearch" "http://localhost:7700" env.MEILI_KEY:
+  index "products"
+```
+
+Usage: `search.query("keyword")`, `search.add(docs)`. Supports Meilisearch and Elasticsearch.
+
+## Image Processing
+
+```python
+image "photo.jpg" -> "output.jpg":
+  resize 800 600
+  grayscale
+  watermark "logo.png"
+```
+
+Operations: `resize`, `crop`, `rotate`, `blur`, `grayscale`, `flip`, `watermark`, `format`. Compiles to sharp (Node.js) or Pillow (Python).
+
 ## Environment Variables
 
 ```python
