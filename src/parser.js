@@ -109,7 +109,9 @@ export class Parser {
       type === T.VALIDATE || type === T.TEST || type === T.ASSERT ||
       type === T.QUEUE || type === T.JOB || type === T.OPENAPI ||
       type === T.TYPEOF || type === T.INSTANCEOF || type === T.ENSURE ||
-      type === T.MODEL || type === T.PROMPT;
+      type === T.MODEL || type === T.PROMPT ||
+      type === T.PAGE || type === T.CLI_APP || type === T.MAIL ||
+      type === T.GRAPHQL || type === T.DESKTOP || type === T.SCREEN;
   }
 
   expectPropertyName() {
@@ -166,6 +168,11 @@ export class Parser {
       case T.TRY: return this.parseTry();
       case T.SERVER: return this.parseServer();
       case T.BOT: return this.parseBot();
+      case T.PAGE: return this.parsePage();
+      case T.CLI_APP: return this.parseCli();
+      case T.MAIL: return this.parseMail();
+      case T.DESKTOP: return this.parseDesktop();
+      case T.SCREEN: return this.parseScreen();
       case T.MODEL: return this.parseModel();
       case T.ON: return this.parseOn();
       case T.LOG: return this.parseLog();
@@ -631,6 +638,8 @@ export class Parser {
         routes.push(this.parseOpenapi());
       } else if (this.at(T.QUEUE)) {
         routes.push(this.parseQueue());
+      } else if (this.at(T.GRAPHQL)) {
+        routes.push(this.parseGraphql());
       } else if (this.at(T.IDENT) && this.peek().value === 'error') {
         routes.push(this.parseErrorHandler());
       } else {
@@ -646,6 +655,12 @@ export class Parser {
   parseBot() {
     this.advance(); // bot
     const name = this.expect(T.IDENT).value;
+
+    let botType = null;
+    if (this.at(T.IDENT) && this.peek().value === 'type') {
+      this.advance();
+      botType = this.parseString();
+    }
 
     let token = null;
     if (this.at(T.IDENT) && this.peek().value === 'token') {
@@ -703,7 +718,7 @@ export class Parser {
     }
     this.match(T.DEDENT);
 
-    return new ASTNode('Bot', { name, token, prefix, handlers });
+    return new ASTNode('Bot', { name, token, prefix, botType, handlers });
   }
 
   parseRoute() {
@@ -1131,6 +1146,8 @@ export class Parser {
       case T.QUEUE: case T.JOB: case T.OPENAPI:
       case T.TYPEOF: case T.INSTANCEOF: case T.ENSURE:
       case T.PROMPT:
+      case T.PAGE: case T.CLI_APP: case T.MAIL:
+      case T.GRAPHQL: case T.DESKTOP: case T.SCREEN:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1736,5 +1753,186 @@ export class Parser {
     }
     this.match(T.DEDENT);
     return new ASTNode('PromptDecl', { name, defaults, lines });
+  }
+
+  parsePage() {
+    this.advance(); // page
+    const filename = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const elements = [];
+    this.skipNewlines();
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      elements.push(this.parsePageElement());
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('Page', { filename, elements });
+  }
+
+  parsePageElement() {
+    const tag = this.advance().value;
+    const args = [];
+    while (this.at(T.STRING)) {
+      args.push(this.parseString());
+    }
+    let children = [];
+    if (this.at(T.COLON)) {
+      this.advance();
+      this.skipNewlines();
+      this.expect(T.INDENT);
+      this.skipNewlines();
+      while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+        children.push(this.parsePageElement());
+        this.skipNewlines();
+      }
+      this.match(T.DEDENT);
+    }
+    return new ASTNode('PageElement', { tag, args, children });
+  }
+
+  parseCli() {
+    this.advance(); // cli
+    const name = this.expect(T.IDENT).value;
+    let description = null;
+    if (this.at(T.STRING)) {
+      description = this.parseString();
+    }
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const args = [];
+    const flags = [];
+    let run = null;
+    this.skipNewlines();
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.IDENT) && this.peek().value === 'arg') {
+        this.advance();
+        const argName = this.parseString();
+        let argType = 'str';
+        if (TYPE_TOKENS.has(this.peek().type)) {
+          argType = this.advance().value;
+        } else if (this.at(T.IDENT) && ['str', 'int', 'num', 'bool'].includes(this.peek().value)) {
+          argType = this.advance().value;
+        }
+        let desc = null;
+        if (this.at(T.STRING)) desc = this.parseString();
+        args.push({ name: argName, type: argType, description: desc });
+      } else if (this.at(T.IDENT) && this.peek().value === 'flag') {
+        this.advance();
+        const short = this.parseString();
+        const long = this.parseString();
+        let desc = null;
+        if (this.at(T.STRING)) desc = this.parseString();
+        flags.push({ short, long, description: desc });
+      } else if (this.at(T.IDENT) && this.peek().value === 'run') {
+        this.advance();
+        let params = [];
+        if (this.match(T.LPAREN)) {
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.expect(T.IDENT).value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        run = { params, body: this.parseBlock() };
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('CliApp', { name, description, args, flags, run });
+  }
+
+  parseMail() {
+    this.advance(); // mail
+    const host = this.parseString();
+    const port = this.parseExpression();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let user = null, pass = null;
+    this.skipNewlines();
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.IDENT) && this.peek().value === 'user') {
+        this.advance();
+        user = this.parseExpression();
+      } else if (this.at(T.IDENT) && this.peek().value === 'pass') {
+        this.advance();
+        pass = this.parseExpression();
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('MailConfig', { host, port, user, pass });
+  }
+
+  parseGraphql() {
+    this.advance(); // graphql
+    const path = this.parseString();
+    return new ASTNode('GraphqlDecl', { path });
+  }
+
+  parseDesktop() {
+    this.advance(); // desktop
+    const name = this.expect(T.IDENT).value;
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let title = null, width = null, height = null, load = null;
+    this.skipNewlines();
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      if (this.at(T.IDENT) && this.peek().value === 'title') {
+        this.advance();
+        title = this.parseString();
+      } else if (this.at(T.IDENT) && this.peek().value === 'size') {
+        this.advance();
+        width = this.parseExpression();
+        height = this.parseExpression();
+      } else if (this.at(T.IDENT) && this.peek().value === 'load') {
+        this.advance();
+        load = this.parseExpression();
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('DesktopApp', { name, title, width, height, load });
+  }
+
+  parseScreen() {
+    this.advance(); // screen
+    const name = this.expect(T.IDENT).value;
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const elements = [];
+    this.skipNewlines();
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      elements.push(this.parseScreenElement());
+      this.skipNewlines();
+    }
+    this.match(T.DEDENT);
+    return new ASTNode('Screen', { name, elements });
+  }
+
+  parseScreenElement() {
+    const tag = this.advance().value;
+    const args = [];
+    while (this.at(T.STRING)) {
+      args.push(this.parseString());
+    }
+    let body = [];
+    if (this.at(T.COLON)) {
+      this.advance();
+      body = this.parseBlock();
+    }
+    return new ASTNode('ScreenElement', { tag, args, body });
   }
 }

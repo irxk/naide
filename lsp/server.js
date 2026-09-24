@@ -282,12 +282,13 @@ function getCompletions() {
     'try', 'fail', 'ensure', 'server', 'model', 'schema', 'use', 'pub', 'mut',
     'log', 'typeof', 'instanceof', 'not', 'and', 'or', 'break', 'continue',
     'throw', 'new', 'await', 'test', 'assert', 'queue', 'job', 'db', 'env',
-    'get', 'post', 'put', 'del', 'patch',
+    'get', 'post', 'put', 'del', 'patch', 'every', 'watch',
   ];
   const types = ['str', 'int', 'num', 'bool', 'list', 'map', 'any', 'json', 'void'];
   const features = [
     'cors', 'auth', 'crud', 'limit', 'cookie', 'session', 'static', 'ws', 'sse',
     'cache', 'view', 'upload', 'group', 'validate', 'openapi', 'error', 'mid', 'prompt',
+    'page', 'cli', 'mail', 'graphql', 'desktop', 'screen',
   ];
   const builtins = [
     { label: 'uuid()', detail: 'Generate UUID v4', insertText: 'uuid()' },
@@ -306,6 +307,12 @@ function getCompletions() {
     { label: 'createSpy(obj, method)', detail: 'Spy on method', insertText: 'createSpy(' },
     { label: 'registerPlugin(name, setup)', detail: 'Register plugin', insertText: 'registerPlugin(' },
     { label: 'usePlugin(name)', detail: 'Use registered plugin', insertText: 'usePlugin(' },
+    { label: 'page "file.html":', detail: 'Generate HTML page', insertText: 'page ' },
+    { label: 'cli name "desc":', detail: 'CLI application', insertText: 'cli ' },
+    { label: 'mail "host" port:', detail: 'Email config', insertText: 'mail ' },
+    { label: 'graphql "/path"', detail: 'GraphQL endpoint', insertText: 'graphql ' },
+    { label: 'desktop name:', detail: 'Desktop app', insertText: 'desktop ' },
+    { label: 'screen Name:', detail: 'Mobile screen', insertText: 'screen ' },
   ];
 
   return [
@@ -331,6 +338,13 @@ const HOVER_DOCS = {
   'ensure': '**ensure** — Finally block (always runs)\n```naide\ntry:\n  risky()\nensure:\n  cleanup()\n```',
   'test': '**test** — Test case\n```naide\ntest "math": assert 1 + 1 == 2\n```',
   'queue': '**queue** — Async job queue\n```naide\nqueue tasks:\n  job "send" (data): log data\n```',
+  'page': '**page** — Generate HTML page\n```naide\npage "index.html":\n  title "My App"\n  h1 "Hello"\n  div "container":\n    p "Welcome"\n```',
+  'cli': '**cli** — CLI application\n```naide\ncli myTool "description":\n  arg "name" str "Your name"\n  flag "v" "verbose" "Verbose output"\n  run (args):\n    log args.name\n```',
+  'mail': '**mail** — Email sending\n```naide\nmail "smtp.gmail.com" 587:\n  user "me@gmail.com"\n  pass env.MAIL_PASS\n```',
+  'graphql': '**graphql** — GraphQL endpoint (inside server)\n```naide\nserver app port 3000:\n  graphql "/graphql"\n```',
+  'desktop': '**desktop** — Desktop app (Electron/pywebview)\n```naide\ndesktop myApp:\n  title "My App"\n  size 1024 768\n  load "index.html"\n```',
+  'screen': '**screen** — Mobile screen (React Native/Kivy)\n```naide\nscreen Home:\n  text "Hello World"\n  button "Click Me"\n  input "Enter name"\n```',
+  'every': '**every** — Scheduled task / cron\n```naide\nevery "5s":\n  log "tick"\nevery "*/5 * * * *":\n  log "cron"\n```',
 };
 
 function getHover(params) {

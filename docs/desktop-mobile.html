@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Desktop &amp; Mobile — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.12.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="page.html">Page Generation</a>
+      <a href="mail.html">Email</a>
+      <a href="graphql.html">GraphQL</a>
+      <a href="desktop-mobile.html" class="active">Desktop &amp; Mobile</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>Desktop &amp; Mobile</h1>
+      <p>NAIDE can generate desktop and mobile applications from simple declarative syntax.</p>
+
+      <h2>Desktop Apps</h2>
+      <p>The <code>desktop</code> keyword creates a native desktop window that loads a web page:</p>
+      <pre><code>desktop myApp:
+  title "My Desktop App"
+  size 1024 768
+  load "index.html"</code></pre>
+
+      <h3>Syntax</h3>
+      <pre><code>desktop name:
+  title "Window Title"     # Window title
+  size width height        # Window dimensions
+  load "file.html"         # HTML file to load</code></pre>
+
+      <h3>Combine with Page</h3>
+      <p>Generate the HTML and load it in a desktop window:</p>
+      <pre><code>page "app.html":
+  title "My App"
+  style "styles.css"
+  div "app":
+    h1 "Hello Desktop"
+    p "Running natively!"
+
+desktop myApp:
+  title "My App"
+  size 800 600
+  load "app.html"</code></pre>
+
+      <h3>Multi-Target</h3>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Target</th>
+          <th style="text-align:left; padding:8px;">Framework</th>
+          <th style="text-align:left; padding:8px;">Install</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Node.js / Bun</td>
+          <td style="padding:8px;"><a href="https://www.electronjs.org/">Electron</a></td>
+          <td style="padding:8px;"><code>npm install electron</code></td>
+        </tr>
+        <tr>
+          <td style="padding:8px;">Python</td>
+          <td style="padding:8px;"><a href="https://pywebview.flowrl.com/">pywebview</a></td>
+          <td style="padding:8px;"><code>pip install pywebview</code></td>
+        </tr>
+      </table>
+
+      <hr style="margin: 2em 0; border: none; border-top: 1px solid var(--border);">
+
+      <h2>Mobile Screens</h2>
+      <p>The <code>screen</code> keyword defines a mobile app screen with UI elements:</p>
+      <pre><code>screen Home:
+  text "Hello World"
+  button "Click Me"
+  input "Enter your name"
+  image "logo.png"</code></pre>
+
+      <h3>Supported Elements</h3>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Element</th>
+          <th style="text-align:left; padding:8px;">Node.js (React Native)</th>
+          <th style="text-align:left; padding:8px;">Python (Kivy)</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>text "..."</code></td>
+          <td style="padding:8px;"><code>&lt;Text&gt;</code></td>
+          <td style="padding:8px;"><code>Label</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>button "..."</code></td>
+          <td style="padding:8px;"><code>&lt;TouchableOpacity&gt;</code></td>
+          <td style="padding:8px;"><code>Button</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>input "..."</code></td>
+          <td style="padding:8px;"><code>&lt;TextInput&gt;</code></td>
+          <td style="padding:8px;"><code>TextInput</code></td>
+        </tr>
+        <tr>
+          <td style="padding:8px;"><code>image "..."</code></td>
+          <td style="padding:8px;"><code>&lt;Image&gt;</code></td>
+          <td style="padding:8px;">-</td>
+        </tr>
+      </table>
+
+      <h3>Button with Action</h3>
+      <p>Buttons can have a body block for tap handlers:</p>
+      <pre><code>screen Settings:
+  text "Settings"
+  button "Save":
+    log "Saved!"
+  button "Reset":
+    log "Reset!"</code></pre>
+
+      <h3>Multi-Target</h3>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Target</th>
+          <th style="text-align:left; padding:8px;">Framework</th>
+          <th style="text-align:left; padding:8px;">Install</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Node.js / Bun</td>
+          <td style="padding:8px;"><a href="https://reactnative.dev/">React Native</a></td>
+          <td style="padding:8px;"><code>npx react-native init</code></td>
+        </tr>
+        <tr>
+          <td style="padding:8px;">Python</td>
+          <td style="padding:8px;"><a href="https://kivy.org/">Kivy</a></td>
+          <td style="padding:8px;"><code>pip install kivy</code></td>
+        </tr>
+      </table>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+<script src="highlight.js"></script>
+</body>
+</html>

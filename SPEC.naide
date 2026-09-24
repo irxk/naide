@@ -446,3 +446,77 @@ any val = data?.nested?.value ?? "default"
 # ---- スプレッド ----
 list combined = [...items, 4, 5, 6]
 map merged = {...config, debug: true}
+
+
+# ---- ページ生成 (HTML) ----
+page "index.html":
+  title "My App"
+  style "styles.css"
+  div "container":
+    h1 "Hello World"
+    p "Welcome to NAIDE"
+    a "https://example.com" "Click here"
+  script "app.js"
+
+
+# ---- CLI アプリ ----
+cli myTool "A useful tool":
+  arg "name" str "Your name"
+  arg "count" int "Number of times"
+  flag "v" "verbose" "Verbose output"
+  run (args):
+    log "Hello {args.name}"
+
+
+# ---- メール送信 ----
+mail "smtp.gmail.com" 587:
+  user env.MAIL_USER
+  pass env.MAIL_PASS
+# usage: mail.send("to@email.com", "Subject", "Body")
+
+
+# ---- Cron / スケジュール ----
+every "5s":
+  log "every 5 seconds"
+
+every "*/5 * * * *":
+  log "cron: every 5 minutes"
+
+
+# ---- GraphQL (サーバー内) ----
+server app port 3000:
+  graphql "/graphql"
+# schema定義からGraphQLスキーマを自動生成
+
+
+# ---- マルチプラットフォーム Bot ----
+bot myBot token "TOKEN":
+  on "message" (msg):
+    msg.reply("Hello!")
+
+bot slackBot type "slack" token "xoxb-xxx":
+  on "message" (msg):
+    msg.reply("Hi from Slack!")
+
+bot tgBot type "telegram" token "123:ABC":
+  on "message" (msg):
+    msg.reply("Hi from Telegram!")
+
+bot lineBot type "line" token "LINE_TOKEN":
+  on "message" (event):
+    log event
+
+
+# ---- デスクトップアプリ ----
+desktop myApp:
+  title "My Desktop App"
+  size 1024 768
+  load "index.html"
+
+
+# ---- モバイル / スクリーン ----
+screen Home:
+  text "Hello World"
+  button "Click Me"
+  input "Enter your name"
+  image "logo.png"

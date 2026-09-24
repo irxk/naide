@@ -2,7 +2,7 @@
 
 **Node AI Development Environment** — A programming language designed for AI-speed code generation that transpiles to Node.js.
 
-NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). It includes built-in declarations for servers, databases, authentication, file uploads, WebSockets, Discord bots, job queues, testing, and more — all with zero external dependencies.
+NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). It includes built-in declarations for servers, databases, authentication, file uploads, WebSockets, bots (Discord/Slack/Telegram/LINE), CLI apps, HTML pages, email, GraphQL, desktop apps, mobile screens, cron jobs, job queues, testing, and more — all with zero external dependencies.
 
 Two syntax modes:
 
@@ -545,36 +545,120 @@ server app port 3000:
     ret {queued: true}
 ```
 
-## Discord Bot
+## Bots (Discord / Slack / Telegram / LINE)
 
-Built-in `bot` syntax for Discord bots — events, message handling, and slash commands with zero boilerplate:
+Built-in `bot` syntax with multi-platform support — events, message handling, and slash commands with zero boilerplate:
 
 ```python
+# Discord (default)
 bot myBot token DISCORD_TOKEN:
   on "ready":
     log "Bot is online!"
-
   on "message" (msg):
     if msg.content == "!ping":
       msg.reply("Pong!")
-
   slash "hello" "Says hello":
     interaction.reply("Hello!")
 
-  slash "ask" "Ask the AI":
-    str answer = await ai.ask(interaction.options.getString("question"))
-    interaction.reply(answer)
+# Slack
+bot slackBot type "slack" token SLACK_TOKEN:
+  on "message" (msg):
+    msg.reply("Hi from Slack!")
+
+# Telegram
+bot tgBot type "telegram" token TG_TOKEN:
+  on "message" (msg):
+    msg.reply("Hi from Telegram!")
+
+# LINE
+bot lineBot type "line" token LINE_TOKEN:
+  on "message" (event):
+    log event
 ```
 
-Compiles to **discord.js** (Node.js/Bun) or **discord.py** (Python). Multi-target:
+Compiles to the right SDK per platform and per target:
 
-```bash
-naide bot.naide                        # Node.js (discord.js)
-naide bot.naide --target bun           # Bun (discord.js)
-naide bot.naide --target python        # Python (discord.py)
+| Platform | Node.js / Bun | Python |
+|----------|---------------|--------|
+| Discord  | discord.js    | discord.py |
+| Slack    | @slack/bolt   | slack_bolt |
+| Telegram | node-telegram-bot-api | python-telegram-bot |
+| LINE     | @line/bot-sdk | linebot |
+
+## Page Generation (HTML)
+
+```python
+page "index.html":
+  title "My App"
+  style "styles.css"
+  div "container":
+    h1 "Hello World"
+    p "Welcome"
+    a "https://example.com" "Click here"
+  script "app.js"
 ```
 
-The `on "message"` event maps to `messageCreate` (discord.js) / `on_message` (discord.py). Slash commands are auto-registered on bot startup.
+Generates a complete HTML file with proper head/body structure.
+
+## CLI Apps
+
+```python
+cli myTool "A useful tool":
+  arg "name" str "Your name"
+  arg "count" int "How many times"
+  flag "v" "verbose" "Verbose output"
+  run (args):
+    log "Hello {args.name}"
+```
+
+Compiles to `process.argv` parser (Node.js/Bun) or `argparse` (Python).
+
+## Email
+
+```python
+mail "smtp.gmail.com" 587:
+  user env.MAIL_USER
+  pass env.MAIL_PASS
+# Usage: mail.send("to@email.com", "Subject", "Body")
+```
+
+Compiles to `nodemailer` (Node.js/Bun) or `smtplib` (Python).
+
+## GraphQL
+
+Add GraphQL inside any server block — auto-generates schema from `schema` declarations:
+
+```python
+server app port 3000:
+  schema User:
+    id auto
+    name str
+    email str
+  graphql "/graphql"
+```
+
+## Desktop Apps
+
+```python
+desktop myApp:
+  title "My Desktop App"
+  size 1024 768
+  load "index.html"
+```
+
+Compiles to Electron (Node.js/Bun) or pywebview (Python).
+
+## Mobile Screens
+
+```python
+screen Home:
+  text "Hello World"
+  button "Click Me"
+  input "Enter your name"
+  image "logo.png"
+```
+
+Compiles to React Native (Node.js/Bun) or Kivy (Python).
 
 ## Scheduled Tasks & Events
 
@@ -582,11 +666,14 @@ The `on "message"` event maps to `messageCreate` (discord.js) / `on_message` (di
 every "5m":
   log "cleanup running"
 
+every "*/5 * * * *":
+  log "cron every 5 minutes"
+
 watch User.create (event):
   log "new user: {event.data.name}"
 ```
 
-Intervals: `"30s"`, `"5m"`, `"1h"`, `"1d"`.
+Intervals: `"30s"`, `"5m"`, `"1h"`, `"1d"`. Cron expressions auto-detected.
 `watch` connects to `crud` events automatically.
 
 ## Environment Variables

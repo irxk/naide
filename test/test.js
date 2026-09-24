@@ -1575,6 +1575,220 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes("tree.sync()"));
   });
 
+  // ===== Page (HTML generation) =====
+  it('compiles page with elements', () => {
+    const src = 'page "index.html":\n  title "My Page"\n  h1 "Hello"\n  p "Welcome"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('writeFileSync'));
+    assert.ok(js.includes('index.html'));
+    assert.ok(js.includes('My Page'));
+    assert.ok(js.includes('<h1>'));
+    assert.ok(js.includes('<p>'));
+  });
+
+  it('compileAsync Python page generation', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'page "index.html":\n  title "Test"\n  h1 "Hello"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("open("));
+    assert.ok(result.code.includes('Test'));
+    assert.ok(result.code.includes('<h1>'));
+  });
+
+  it('compileAsync Bun page generation', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'page "index.html":\n  title "Test"\n  h1 "Hello"\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes('Bun.write'));
+    assert.ok(result.code.includes('<title>Test</title>'));
+  });
+
+  it('compiles page with nested elements', () => {
+    const src = 'page "app.html":\n  title "App"\n  div "container":\n    h1 "Title"\n    p "Text"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('<div class="container">'));
+    assert.ok(js.includes('</div>'));
+  });
+
+  // ===== CLI App =====
+  it('compiles CLI app', () => {
+    const src = 'cli myTool "A useful tool":\n  arg "name" str "Your name"\n  flag "v" "verbose" "Verbose output"\n  run (args):\n    log args.name\n';
+    const js = transpile(src);
+    assert.ok(js.includes('process.argv'));
+    assert.ok(js.includes('--name'));
+    assert.ok(js.includes('--verbose'));
+    assert.ok(js.includes('--help'));
+  });
+
+  it('compileAsync Python CLI app', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'cli myTool "A useful tool":\n  arg "name" str "Your name"\n  flag "v" "verbose" "Verbose"\n  run (args):\n    log args.name\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('argparse'));
+    assert.ok(result.code.includes('add_argument'));
+    assert.ok(result.code.includes("'--name'"));
+    assert.ok(result.code.includes("'--verbose'"));
+  });
+
+  // ===== Mail =====
+  it('compiles mail config', () => {
+    const src = 'mail "smtp.gmail.com" 587:\n  user "me@gmail.com"\n  pass "secret"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('nodemailer'));
+    assert.ok(js.includes('createTransport'));
+    assert.ok(js.includes('smtp.gmail.com'));
+    assert.ok(js.includes('587'));
+  });
+
+  it('compileAsync Python mail config', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'mail "smtp.gmail.com" 587:\n  user "me@gmail.com"\n  pass "secret"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('smtplib'));
+    assert.ok(result.code.includes('MIMEText'));
+    assert.ok(result.code.includes('smtp.gmail.com'));
+  });
+
+  // ===== Cron (enhanced every) =====
+  it('compiles cron expression in every', () => {
+    const src = 'every "*/5 * * * *":\n  log "tick"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('node-cron'));
+    assert.ok(js.includes('cron.schedule'));
+  });
+
+  it('compiles regular interval in every', () => {
+    const src = 'every "5s":\n  log "tick"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('scheduleEvery'));
+    assert.ok(!js.includes('node-cron'));
+  });
+
+  it('compileAsync Python cron expression', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'every "*/5 * * * *":\n  log "tick"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('apscheduler') || result.code.includes('BlockingScheduler'));
+  });
+
+  // ===== GraphQL =====
+  it('compiles GraphQL in server', () => {
+    const src = 'server app port 3000:\n  graphql "/graphql"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('graphql'));
+    assert.ok(js.includes('/graphql'));
+  });
+
+  it('compileAsync Bun GraphQL', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'server app port 3000:\n  graphql "/graphql"\n';
+    const result = await compileAsync(src, { target: 'bun' });
+    assert.ok(result.code.includes('graphql'));
+    assert.ok(result.code.includes('/graphql'));
+  });
+
+  it('compileAsync Python GraphQL', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'server app port 3000:\n  graphql "/graphql"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('GraphQLView') || result.code.includes('graphql'));
+  });
+
+  // ===== Multi-platform Bots =====
+  it('compiles Slack bot', () => {
+    const src = 'bot myBot type "slack" token "xoxb-test":\n  on "message" (msg):\n    msg.reply("Hi")\n';
+    const js = transpile(src);
+    assert.ok(js.includes("@slack/bolt"));
+    assert.ok(js.includes("App({"));
+  });
+
+  it('compiles Telegram bot', () => {
+    const src = 'bot myBot type "telegram" token "123:ABC":\n  on "message" (msg):\n    msg.reply("Hi")\n';
+    const js = transpile(src);
+    assert.ok(js.includes("node-telegram-bot-api"));
+    assert.ok(js.includes("TelegramBot("));
+  });
+
+  it('compiles LINE bot', () => {
+    const src = 'bot myBot type "line" token "test-token":\n  on "message" (event):\n    log event\n';
+    const js = transpile(src);
+    assert.ok(js.includes("@line/bot-sdk"));
+    assert.ok(js.includes("Client("));
+  });
+
+  it('compiles Discord bot (default type)', () => {
+    const src = 'bot myBot token "TEST":\n  on "ready":\n    log "online"\n';
+    const js = transpile(src);
+    assert.ok(js.includes("discord.js"));
+    assert.ok(js.includes("Client("));
+  });
+
+  it('compileAsync Python Slack bot', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot type "slack" token "xoxb-test":\n  on "message" (msg):\n    msg.reply("Hi")\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("slack_bolt"));
+    assert.ok(result.code.includes("App("));
+  });
+
+  it('compileAsync Python Telegram bot', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot type "telegram" token "123:ABC":\n  on "message" (msg):\n    msg.reply("Hi")\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("ApplicationBuilder"));
+    assert.ok(result.code.includes("MessageHandler"));
+  });
+
+  it('compileAsync Python LINE bot', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'bot myBot type "line" token "test-token":\n  on "message" (event):\n    log event\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes("LineBotApi"));
+    assert.ok(result.code.includes("WebhookHandler"));
+  });
+
+  // ===== Desktop App =====
+  it('compiles desktop app', () => {
+    const src = 'desktop myApp:\n  title "My App"\n  size 1024 768\n  load "index.html"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('electron'));
+    assert.ok(js.includes('BrowserWindow'));
+    assert.ok(js.includes('1024'));
+    assert.ok(js.includes('768'));
+  });
+
+  it('compileAsync Python desktop app', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'desktop myApp:\n  title "My App"\n  size 1024 768\n  load "index.html"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('webview'));
+    assert.ok(result.code.includes('create_window'));
+    assert.ok(result.code.includes('1024'));
+    assert.ok(result.code.includes('768'));
+  });
+
+  // ===== Mobile/Screen =====
+  it('compiles screen (React Native)', () => {
+    const src = 'screen Home:\n  text "Hello World"\n  button "Click Me"\n  input "Enter name"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('react-native'));
+    assert.ok(js.includes('View'));
+    assert.ok(js.includes('Text'));
+    assert.ok(js.includes('Button') || js.includes('TouchableOpacity'));
+    assert.ok(js.includes('TextInput'));
+  });
+
+  it('compileAsync Python screen (Kivy)', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'screen Home:\n  text "Hello World"\n  button "Click Me"\n  input "Enter name"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('kivy'));
+    assert.ok(result.code.includes('Label'));
+    assert.ok(result.code.includes('Button'));
+    assert.ok(result.code.includes('TextInput'));
+    assert.ok(result.code.includes('HomeApp'));
+  });
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

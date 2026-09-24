@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Page Generation — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.12.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="page.html" class="active">Page Generation</a>
+      <a href="mail.html">Email</a>
+      <a href="graphql.html">GraphQL</a>
+      <a href="desktop-mobile.html">Desktop &amp; Mobile</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>Page Generation</h1>
+      <p>The <code>page</code> keyword generates complete HTML files from a declarative element tree. Elements are automatically classified into <code>&lt;head&gt;</code> and <code>&lt;body&gt;</code>.</p>
+
+      <h2>Basic Page</h2>
+      <pre><code>page "index.html":
+  title "My App"
+  h1 "Hello World"
+  p "Welcome to my site"</code></pre>
+
+      <p>This generates a full HTML5 document with proper <code>&lt;!DOCTYPE&gt;</code>, <code>&lt;meta charset&gt;</code>, and viewport tags.</p>
+
+      <h2>Nested Elements</h2>
+      <p>Use indentation to nest elements. The first argument becomes the CSS class:</p>
+      <pre><code>page "app.html":
+  title "Dashboard"
+  style "styles.css"
+  div "container":
+    h1 "Dashboard"
+    div "cards":
+      div "card":
+        h3 "Users"
+        p "1,234"
+      div "card":
+        h3 "Revenue"
+        p "$5,678"
+  script "app.js"</code></pre>
+
+      <h2>Head vs Body Elements</h2>
+      <p>Elements are automatically placed in the correct section:</p>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Element</th>
+          <th style="text-align:left; padding:8px;">Placement</th>
+          <th style="text-align:left; padding:8px;">Output</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>title "text"</code></td>
+          <td style="padding:8px;">&lt;head&gt;</td>
+          <td style="padding:8px;"><code>&lt;title&gt;text&lt;/title&gt;</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>style "file.css"</code></td>
+          <td style="padding:8px;">&lt;head&gt;</td>
+          <td style="padding:8px;"><code>&lt;link rel="stylesheet" href="file.css"&gt;</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>meta "name" "content"</code></td>
+          <td style="padding:8px;">&lt;head&gt;</td>
+          <td style="padding:8px;"><code>&lt;meta name="name" content="content"&gt;</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>script "file.js"</code></td>
+          <td style="padding:8px;">&lt;body&gt;</td>
+          <td style="padding:8px;"><code>&lt;script src="file.js"&gt;&lt;/script&gt;</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>img "src" "alt"</code></td>
+          <td style="padding:8px;">&lt;body&gt;</td>
+          <td style="padding:8px;"><code>&lt;img src="src" alt="alt"&gt;</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;"><code>a "url" "text"</code></td>
+          <td style="padding:8px;">&lt;body&gt;</td>
+          <td style="padding:8px;"><code>&lt;a href="url"&gt;text&lt;/a&gt;</code></td>
+        </tr>
+        <tr>
+          <td style="padding:8px;"><code>input "type" "name"</code></td>
+          <td style="padding:8px;">&lt;body&gt;</td>
+          <td style="padding:8px;"><code>&lt;input type="type" name="name"&gt;</code></td>
+        </tr>
+      </table>
+      <p>Any other tag (h1, h2, p, div, span, form, etc.) goes to <code>&lt;body&gt;</code>.</p>
+
+      <h2>Multi-Target</h2>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Target</th>
+          <th style="text-align:left; padding:8px;">Output</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Node.js</td>
+          <td style="padding:8px;"><code>fs.writeFileSync()</code></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Bun</td>
+          <td style="padding:8px;"><code>Bun.write()</code></td>
+        </tr>
+        <tr>
+          <td style="padding:8px;">Python</td>
+          <td style="padding:8px;"><code>open().write()</code></td>
+        </tr>
+      </table>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+<script src="highlight.js"></script>
+</body>
+</html>

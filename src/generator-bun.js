@@ -77,6 +77,8 @@ export class BunGenerator extends Generator {
         this.visitBunGroup(child);
       } else if (child.type === 'SchemaDecl') {
         this.visitSchema(child);
+      } else if (child.type === 'GraphqlDecl') {
+        this.visitBunGraphql(child);
       } else {
         this.visitStatement(child);
       }
@@ -234,6 +236,18 @@ export class BunGenerator extends Generator {
     }
 
     for (const route of this.routes) {
+      if (route.__graphql) {
+        const gqlPath = JSON.stringify(route.__graphqlPath);
+        this.emit(`if (method === 'POST' && path === ${gqlPath}) {`);
+        this.indent++;
+        this.emit(`const { query, variables } = await req.json();`);
+        this.emit(`const result = await graphql({ schema: __graphqlSchema, source: query, rootValue: __graphqlRoot, variableValues: variables });`);
+        this.emit(`return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });`);
+        this.indent--;
+        this.emit(`}`);
+        this.emitRaw('');
+        continue;
+      }
       this.emitBunRoute(route);
     }
 
@@ -496,6 +510,81 @@ export class BunGenerator extends Generator {
         this.visitStatement(stmt);
       }
     }
+  }
+
+  visitBunGraphql(node) {
+    const path = this.stringValue(node.path);
+    this.emit(`import { buildSchema, graphql } from 'graphql';`);
+    this.emitRaw('');
+
+    const schemaNames = [...this.schemas.keys()];
+    if (schemaNames.length > 0) {
+      let schemaDef = '';
+      for (const name of schemaNames) {
+        const schema = this.schemas.get(name);
+        const fields = schema.fields.map(f => {
+          const gqlType = this.toGraphqlType(f.type);
+          return `  ${f.name}: ${gqlType}`;
+        }).join('\\n');
+        schemaDef += `type ${name} {\\n${fields}\\n}\\n`;
+      }
+      schemaDef += `type Query {\\n`;
+      for (const name of schemaNames) {
+        schemaDef += `  ${name.toLowerCase()}s: [${name}]\\n`;
+        schemaDef += `  ${name.toLowerCase()}(id: ID): ${name}\\n`;
+      }
+      schemaDef += `}`;
+
+      this.emit(`const __graphqlSchema = buildSchema(\`${schemaDef}\`);`);
+      this.emit(`const __graphqlRoot = {`);
+      this.indent++;
+      for (const name of schemaNames) {
+        this.emit(`${name.toLowerCase()}s: () => ${name}Store.getAll(),`);
+        this.emit(`${name.toLowerCase()}: ({ id }) => ${name}Store.getById(id),`);
+      }
+      this.indent--;
+      this.emit(`};`);
+    } else {
+      this.emit(`const __graphqlSchema = buildSchema(\`type Query { hello: String }\`);`);
+      this.emit(`const __graphqlRoot = { hello: () => 'Hello from NAIDE GraphQL' };`);
+    }
+    this.emitRaw('');
+
+    const rawPath = this.rawString(node.path);
+    this.routes.push({
+      type: 'Route', method: 'post', path: node.path, prefix: '',
+      body: [], __graphql: true, __graphqlPath: rawPath,
+    });
+  }
+
+  visitPage(node) {
+    const filename = this.rawString(node.filename);
+    const headParts = [];
+    const bodyParts = [];
+    let pageTitle = 'NAIDE Page';
+
+    for (const el of node.elements) {
+      this.classifyPageElement(el, headParts, bodyParts, (t) => { pageTitle = t; });
+    }
+
+    const htmlLines = [
+      '<!DOCTYPE html>',
+      '<html lang="en">',
+      '<head>',
+      '<meta charset="UTF-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      `<title>${pageTitle}</title>`,
+      ...headParts,
+      '</head>',
+      '<body>',
+      ...bodyParts,
+      '</body>',
+      '</html>',
+    ];
+    const html = htmlLines.join('\\n');
+    this.emit(`await Bun.write(${JSON.stringify(filename)}, \`${html}\`);`);
+    this.emit(`console.log('Generated: ${filename}');`);
+    this.emitRaw('');
   }
 
   visitTest(node) {

@@ -143,6 +143,11 @@ export class Generator {
       case 'ReturnRedirect': return this.visitReturnRedirect(node);
       case 'ReturnDownload': return this.visitReturnDownload(node);
       case 'PromptDecl': return this.visitPrompt(node);
+      case 'Page': return this.visitPage(node);
+      case 'CliApp': return this.visitCli(node);
+      case 'MailConfig': return this.visitMail(node);
+      case 'DesktopApp': return this.visitDesktop(node);
+      case 'Screen': return this.visitScreen(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -400,6 +405,8 @@ export class Generator {
         this.visitOpenapi(node.name, child);
       } else if (child.type === 'QueueDecl') {
         this.visitQueue(child);
+      } else if (child.type === 'GraphqlDecl') {
+        this.visitGraphql(node.name, child);
       } else {
         this.visitStatement(child);
       }
@@ -428,8 +435,21 @@ export class Generator {
   }
 
   visitBot(node) {
-    const tokenExpr = node.token ? this.expr(node.token) : 'process.env.DISCORD_TOKEN';
+    const tokenExpr = node.token ? this.expr(node.token) : 'process.env.BOT_TOKEN';
+    const botType = this.rawBotType(node.botType);
 
+    if (botType === 'slack') return this.visitSlackBot(node, tokenExpr);
+    if (botType === 'telegram') return this.visitTelegramBot(node, tokenExpr);
+    if (botType === 'line') return this.visitLineBot(node, tokenExpr);
+    return this.visitDiscordBot(node, tokenExpr);
+  }
+
+  rawBotType(bt) {
+    if (!bt) return 'discord';
+    return bt.raw || bt.parts?.map(p => p.value).join('') || 'discord';
+  }
+
+  visitDiscordBot(node, tokenExpr) {
     this.emit(`import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';`);
     this.emitRaw('');
     this.emit(`const ${node.name} = new Client({`);
@@ -500,6 +520,120 @@ export class Generator {
     }
 
     this.emit(`${node.name}.login(${tokenExpr});`);
+    this.emitRaw('');
+  }
+
+  visitSlackBot(node, tokenExpr) {
+    this.emit(`import pkg from '@slack/bolt';`);
+    this.emit(`const { App: SlackApp } = pkg;`);
+    this.emitRaw('');
+    this.emit(`const ${node.name} = new SlackApp({`);
+    this.indent++;
+    this.emit(`token: ${tokenExpr},`);
+    this.emit(`signingSecret: process.env.SLACK_SIGNING_SECRET,`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+
+    for (const handler of node.handlers) {
+      if (handler.type === 'BotEvent') {
+        const evtName = handler.event.raw || handler.event.parts?.map(p => p.value).join('');
+        const params = handler.params.length > 0 ? handler.params.join(', ') : '';
+        const needsAsync = this.bodyUsesAwait(handler.body);
+        const asyncPrefix = needsAsync ? 'async ' : '';
+        if (evtName === 'message') {
+          this.emit(`${node.name}.message(${asyncPrefix}({ message, say${params ? ', ' + params : ''} }) => {`);
+        } else {
+          this.emit(`${node.name}.event('${evtName}', ${asyncPrefix}({ event${params ? ', ' + params : ''} }) => {`);
+        }
+        this.indent++;
+        for (const stmt of handler.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`});`);
+        this.emitRaw('');
+      } else if (handler.type === 'BotSlashCmd') {
+        const cmdName = handler.name.raw || handler.name.parts?.map(p => p.value).join('');
+        this.emit(`${node.name}.command('/${cmdName}', async ({ command, ack, respond }) => {`);
+        this.indent++;
+        this.emit(`await ack();`);
+        for (const stmt of handler.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`});`);
+        this.emitRaw('');
+      }
+    }
+
+    this.emit(`(async () => { await ${node.name}.start(3000); console.log('Slack bot running'); })();`);
+    this.emitRaw('');
+  }
+
+  visitTelegramBot(node, tokenExpr) {
+    this.emit(`import TelegramBot from 'node-telegram-bot-api';`);
+    this.emitRaw('');
+    this.emit(`const ${node.name} = new TelegramBot(${tokenExpr}, { polling: true });`);
+    this.emitRaw('');
+
+    for (const handler of node.handlers) {
+      if (handler.type === 'BotEvent') {
+        const evtName = handler.event.raw || handler.event.parts?.map(p => p.value).join('');
+        const params = handler.params.length > 0 ? handler.params.join(', ') : 'msg';
+        const needsAsync = this.bodyUsesAwait(handler.body);
+        const asyncPrefix = needsAsync ? 'async ' : '';
+        this.emit(`${node.name}.on('${evtName}', ${asyncPrefix}(${params}) => {`);
+        this.indent++;
+        for (const stmt of handler.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`});`);
+        this.emitRaw('');
+      } else if (handler.type === 'BotSlashCmd') {
+        const cmdName = handler.name.raw || handler.name.parts?.map(p => p.value).join('');
+        const param = handler.params.length > 0 ? handler.params[0] : 'msg';
+        this.emit(`${node.name}.onText(/\\/${cmdName}/, async (${param}) => {`);
+        this.indent++;
+        for (const stmt of handler.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`});`);
+        this.emitRaw('');
+      }
+    }
+  }
+
+  visitLineBot(node, tokenExpr) {
+    this.emit(`import line from '@line/bot-sdk';`);
+    this.emit(`import express from 'express';`);
+    this.emitRaw('');
+    this.emit(`const __lineConfig = { channelAccessToken: ${tokenExpr}, channelSecret: process.env.LINE_CHANNEL_SECRET };`);
+    this.emit(`const ${node.name} = new line.messagingApi.MessagingApiClient({ channelAccessToken: ${tokenExpr} });`);
+    this.emit(`const __lineApp = express();`);
+    this.emitRaw('');
+
+    this.emit(`__lineApp.post('/webhook', line.middleware(__lineConfig), (req, res) => {`);
+    this.indent++;
+    this.emit(`Promise.all(req.body.events.map(__handleLineEvent)).then(r => res.json(r));`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+
+    this.emit(`async function __handleLineEvent(event) {`);
+    this.indent++;
+    for (const handler of node.handlers) {
+      if (handler.type === 'BotEvent') {
+        const evtName = handler.event.raw || handler.event.parts?.map(p => p.value).join('');
+        if (evtName === 'message') {
+          this.emit(`if (event.type === 'message') {`);
+        } else {
+          this.emit(`if (event.type === '${evtName}') {`);
+        }
+        this.indent++;
+        for (const stmt of handler.body) this.visitStatement(stmt);
+        this.indent--;
+        this.emit(`}`);
+      }
+    }
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+    this.emit(`__lineApp.listen(3000, () => console.log('LINE bot running on port 3000'));`);
     this.emitRaw('');
   }
 
@@ -1161,13 +1295,24 @@ export class Generator {
   }
 
   visitEvery(node) {
-    this.runtimeImports.add('scheduleEvery');
-
     const interval = this.expr(node.interval);
     const needsAsync = this.bodyUsesAwait(node.body);
     const asyncPrefix = needsAsync ? 'async ' : '';
 
-    this.emit(`scheduleEvery(${interval}, ${asyncPrefix}() => {`);
+    let raw = '';
+    if (node.interval.type === 'String' && node.interval.value) {
+      raw = node.interval.value.raw || node.interval.value.parts?.map(p => p.value).join('') || '';
+    }
+    const isCron = /^[\d*\/,-]+\s+[\d*\/,-]+\s+[\d*\/,-]+\s+[\d*\/,-]+\s+[\d*\/,-]+/.test(raw.trim());
+
+    if (isCron) {
+      this.emit(`import cron from 'node-cron';`);
+      this.emitRaw('');
+      this.emit(`cron.schedule(${interval}, ${asyncPrefix}() => {`);
+    } else {
+      this.runtimeImports.add('scheduleEvery');
+      this.emit(`scheduleEvery(${interval}, ${asyncPrefix}() => {`);
+    }
     this.indent++;
     for (const stmt of node.body) this.visitStatement(stmt);
     this.indent--;
@@ -1188,6 +1333,282 @@ export class Generator {
     this.indent--;
     this.emit('});');
     this.emitRaw('');
+  }
+
+  // ===== Page (Frontend HTML) =====
+
+  visitPage(node) {
+    const filename = this.rawPageString(node.filename);
+    this.emit(`import { writeFileSync } from 'fs';`);
+    this.emitRaw('');
+
+    const headParts = [];
+    const bodyParts = [];
+    let pageTitle = 'NAIDE Page';
+
+    for (const el of node.elements) {
+      this.classifyPageElement(el, headParts, bodyParts, (t) => { pageTitle = t; });
+    }
+
+    this.emit(`writeFileSync(${JSON.stringify(filename)}, \`<!DOCTYPE html>`);
+    this.emit(`<html lang="en">`);
+    this.emit(`<head>`);
+    this.emit(`<meta charset="UTF-8">`);
+    this.emit(`<meta name="viewport" content="width=device-width, initial-scale=1.0">`);
+    this.emit(`<title>\${${JSON.stringify(pageTitle)}}</title>`);
+    for (const h of headParts) this.emit(h);
+    this.emit(`</head>`);
+    this.emit(`<body>`);
+    for (const b of bodyParts) this.emit(b);
+    this.emit(`</body>`);
+    this.emit(`</html>\`);`);
+    this.emitRaw('');
+  }
+
+  classifyPageElement(el, head, body, setTitle) {
+    const tag = el.tag;
+    const arg0 = el.args[0] ? this.rawPageString(el.args[0]) : '';
+    const arg1 = el.args[1] ? this.rawPageString(el.args[1]) : '';
+
+    if (tag === 'title') { setTitle(arg0); return; }
+    if (tag === 'style') { head.push(`<link rel="stylesheet" href="${arg0}">`); return; }
+    if (tag === 'meta') { head.push(`<meta name="${arg0}" content="${arg1}">`); return; }
+    if (tag === 'script') { body.push(`<script src="${arg0}"></script>`); return; }
+    if (tag === 'link') { head.push(`<link rel="stylesheet" href="${arg0}">`); return; }
+    if (tag === 'img') { body.push(`<img src="${arg0}" alt="${arg1}">`); return; }
+    if (tag === 'a') { body.push(`<a href="${arg0}">${arg1}</a>`); return; }
+    if (tag === 'input') { body.push(`<input type="${arg0}" name="${arg1}" placeholder="${arg1}">`); return; }
+
+    if (el.children && el.children.length > 0) {
+      const cls = arg0 ? ` class="${arg0}"` : '';
+      body.push(`<${tag}${cls}>`);
+      for (const child of el.children) this.classifyPageElement(child, head, body, setTitle);
+      body.push(`</${tag}>`);
+    } else {
+      body.push(`<${tag}>${arg0}</${tag}>`);
+    }
+  }
+
+  rawPageString(strData) {
+    if (!strData) return '';
+    if (strData.raw !== null && strData.raw !== undefined) return strData.raw;
+    if (strData.parts) return strData.parts.map(p => p.value).join('');
+    return '';
+  }
+
+  // ===== CLI App =====
+
+  visitCli(node) {
+    const name = node.name;
+    const desc = node.description ? this.rawPageString(node.description) : name;
+
+    this.emit(`const __argv = process.argv.slice(2);`);
+    this.emit(`const args = {};`);
+    this.emitRaw('');
+
+    this.emit(`if (__argv.includes('--help') || __argv.includes('-h')) {`);
+    this.indent++;
+    this.emit(`console.log(${JSON.stringify(desc)});`);
+    this.emit(`console.log('Options:');`);
+    for (const arg of node.args) {
+      const argName = this.rawPageString(arg.name);
+      const argDesc = arg.description ? this.rawPageString(arg.description) : '';
+      this.emit(`console.log('  --${argName} <${arg.type}>  ${argDesc}');`);
+    }
+    for (const flag of node.flags) {
+      const s = this.rawPageString(flag.short);
+      const l = this.rawPageString(flag.long);
+      const d = flag.description ? this.rawPageString(flag.description) : '';
+      this.emit(`console.log('  -${s}, --${l}  ${d}');`);
+    }
+    this.emit(`process.exit(0);`);
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+
+    this.emit(`for (let __i = 0; __i < __argv.length; __i++) {`);
+    this.indent++;
+    for (const arg of node.args) {
+      const argName = this.rawPageString(arg.name);
+      const coerce = arg.type === 'int' ? 'parseInt(__argv[++__i])' :
+                     arg.type === 'num' ? 'parseFloat(__argv[++__i])' :
+                     arg.type === 'bool' ? 'true' : '__argv[++__i]';
+      this.emit(`if (__argv[__i] === '--${argName}') { args.${argName} = ${coerce}; continue; }`);
+    }
+    for (const flag of node.flags) {
+      const s = this.rawPageString(flag.short);
+      const l = this.rawPageString(flag.long);
+      this.emit(`if (__argv[__i] === '-${s}' || __argv[__i] === '--${l}') { args.${l} = true; continue; }`);
+    }
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+
+    if (node.run) {
+      const runParam = node.run.params.length > 0 ? node.run.params[0] : 'args';
+      if (runParam !== 'args') {
+        this.emit(`const ${runParam} = args;`);
+      }
+      for (const stmt of node.run.body) this.visitStatement(stmt);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== Mail =====
+
+  visitMail(node) {
+    const host = this.generateString(node.host);
+    const port = this.expr(node.port);
+    const user = node.user ? this.expr(node.user) : 'process.env.MAIL_USER';
+    const pass = node.pass ? this.expr(node.pass) : 'process.env.MAIL_PASS';
+
+    this.emit(`import nodemailer from 'nodemailer';`);
+    this.emitRaw('');
+    this.emit(`const mail = nodemailer.createTransport({`);
+    this.indent++;
+    this.emit(`host: ${host},`);
+    this.emit(`port: ${port},`);
+    this.emit(`secure: ${port} === 465,`);
+    this.emit(`auth: { user: ${user}, pass: ${pass} },`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+  }
+
+  // ===== GraphQL =====
+
+  visitGraphql(appName, node) {
+    const path = this.stringValue(node.path);
+
+    this.emit(`import { buildSchema } from 'graphql';`);
+    this.emit(`import { createHandler } from 'graphql-http/lib/use/express';`);
+    this.emitRaw('');
+
+    const schemaNames = [...this.schemas.keys()];
+    if (schemaNames.length > 0) {
+      let schemaDef = '';
+      for (const name of schemaNames) {
+        const schema = this.schemas.get(name);
+        const fields = schema.fields.map(f => {
+          const gqlType = this.toGraphqlType(f.type);
+          return `  ${f.name}: ${gqlType}`;
+        }).join('\\n');
+        schemaDef += `type ${name} {\\n${fields}\\n}\\n`;
+      }
+      schemaDef += `type Query {\\n`;
+      for (const name of schemaNames) {
+        schemaDef += `  ${name.toLowerCase()}s: [${name}]\\n`;
+        schemaDef += `  ${name.toLowerCase()}(id: ID): ${name}\\n`;
+      }
+      schemaDef += `}`;
+
+      this.emit(`const __graphqlSchema = buildSchema(\`${schemaDef}\`);`);
+      this.emit(`const __graphqlRoot = {`);
+      this.indent++;
+      for (const name of schemaNames) {
+        this.emit(`${name.toLowerCase()}s: () => ${name}Store.getAll(),`);
+        this.emit(`${name.toLowerCase()}: ({ id }) => ${name}Store.getById(id),`);
+      }
+      this.indent--;
+      this.emit(`};`);
+    } else {
+      this.emit(`const __graphqlSchema = buildSchema(\`type Query { hello: String }\`);`);
+      this.emit(`const __graphqlRoot = { hello: () => 'Hello from NAIDE GraphQL' };`);
+    }
+
+    this.emit(`${appName}.all(${path}, createHandler({ schema: __graphqlSchema, rootValue: __graphqlRoot }));`);
+    this.emitRaw('');
+  }
+
+  toGraphqlType(naideType) {
+    const map = { 'str': 'String', 'int': 'Int', 'num': 'Float', 'bool': 'Boolean', 'auto': 'ID', 'timestamp': 'String', 'enum': 'String' };
+    return map[naideType] || 'String';
+  }
+
+  // ===== Desktop (Electron) =====
+
+  visitDesktop(node) {
+    const title = node.title ? this.rawPageString(node.title) : node.name;
+    const width = node.width ? this.expr(node.width) : '800';
+    const height = node.height ? this.expr(node.height) : '600';
+    const load = node.load ? this.expr(node.load) : '"index.html"';
+
+    this.emit(`import { app, BrowserWindow } from 'electron';`);
+    this.emitRaw('');
+    this.emit(`function createWindow() {`);
+    this.indent++;
+    this.emit(`const ${node.name} = new BrowserWindow({`);
+    this.indent++;
+    this.emit(`width: ${width},`);
+    this.emit(`height: ${height},`);
+    this.emit(`title: ${JSON.stringify(title)},`);
+    this.emit(`webPreferences: { nodeIntegration: true, contextIsolation: false },`);
+    this.indent--;
+    this.emit(`});`);
+    this.emit(`${node.name}.loadFile(${load});`);
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+    this.emit(`app.whenReady().then(createWindow);`);
+    this.emit(`app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });`);
+    this.emit(`app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });`);
+    this.emitRaw('');
+  }
+
+  // ===== Screen (React Native) =====
+
+  visitScreen(node) {
+    const imports = new Set(['View', 'StyleSheet']);
+    const elements = [];
+
+    for (const el of node.elements) {
+      const tag = el.tag;
+      const arg0 = el.args[0] ? this.rawPageString(el.args[0]) : '';
+      if (tag === 'text') { imports.add('Text'); elements.push({ jsx: `<Text>${arg0}</Text>` }); }
+      else if (tag === 'button') { imports.add('Button'); elements.push({ jsx: `<Button title="${arg0}" onPress={() => { ${this.screenBodyToJs(el.body)} }} />` }); }
+      else if (tag === 'input') { imports.add('TextInput'); elements.push({ jsx: `<TextInput placeholder="${arg0}" style={styles.input} />` }); }
+      else if (tag === 'image') { imports.add('Image'); elements.push({ jsx: `<Image source={require('${arg0}')} style={styles.image} />` }); }
+      else { imports.add('Text'); elements.push({ jsx: `<Text>${arg0}</Text>` }); }
+    }
+
+    this.emit(`import React from 'react';`);
+    this.emit(`import { ${[...imports].join(', ')} } from 'react-native';`);
+    this.emitRaw('');
+    this.emit(`export function ${node.name}() {`);
+    this.indent++;
+    this.emit(`return (`);
+    this.indent++;
+    this.emit(`<View style={styles.container}>`);
+    this.indent++;
+    for (const el of elements) this.emit(el.jsx);
+    this.indent--;
+    this.emit(`</View>`);
+    this.indent--;
+    this.emit(`);`);
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+    this.emit(`const styles = StyleSheet.create({`);
+    this.indent++;
+    this.emit(`container: { flex: 1, padding: 16, justifyContent: 'center' },`);
+    this.emit(`input: { borderWidth: 1, borderColor: '#ccc', padding: 8, marginVertical: 4, borderRadius: 4 },`);
+    this.emit(`image: { width: 200, height: 200, alignSelf: 'center' },`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+  }
+
+  screenBodyToJs(body) {
+    if (!body || body.length === 0) return '';
+    const saved = this.output;
+    const savedIndent = this.indent;
+    this.output = [];
+    this.indent = 0;
+    for (const stmt of body) this.visitStatement(stmt);
+    const result = this.output.join(' ');
+    this.output = saved;
+    this.indent = savedIndent;
+    return result;
   }
 
   // ===== Expression generation =====

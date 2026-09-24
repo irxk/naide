@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GraphQL — NAIDE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v1.12.0</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <a href="nx.html">NAIDE-X Syntax</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="page.html">Page Generation</a>
+      <a href="mail.html">Email</a>
+      <a href="graphql.html" class="active">GraphQL</a>
+      <a href="desktop-mobile.html">Desktop &amp; Mobile</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="content">
+
+      <h1>GraphQL</h1>
+      <p>Add a <code>graphql</code> endpoint inside any <code>server</code> block. NAIDE auto-generates the GraphQL schema from your <code>schema</code> declarations.</p>
+
+      <h2>Basic Setup</h2>
+      <pre><code>server app port 3000:
+  graphql "/graphql"</code></pre>
+      <p>This creates a GraphQL endpoint at <code>/graphql</code> with a default "hello" query.</p>
+
+      <h2>Auto-Schema Generation</h2>
+      <p>Define schemas in your server, and NAIDE generates matching GraphQL types and queries automatically:</p>
+      <pre><code>server app port 3000:
+  schema User:
+    id auto
+    name str
+    email str
+
+  schema Post:
+    id auto
+    title str
+    body str
+
+  graphql "/graphql"</code></pre>
+      <p>This generates:</p>
+      <ul>
+        <li><code>type User { id: ID, name: String, email: String }</code></li>
+        <li><code>type Post { id: ID, title: String, body: String }</code></li>
+        <li><code>Query.users: [User]</code>, <code>Query.user(id: ID): User</code></li>
+        <li><code>Query.posts: [Post]</code>, <code>Query.post(id: ID): Post</code></li>
+      </ul>
+
+      <h2>Type Mapping</h2>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">NAIDE Type</th>
+          <th style="text-align:left; padding:8px;">GraphQL Type</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px;">str</td><td style="padding:8px;">String</td></tr>
+        <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px;">int</td><td style="padding:8px;">Int</td></tr>
+        <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px;">num</td><td style="padding:8px;">Float</td></tr>
+        <tr style="border-bottom:1px solid var(--border);"><td style="padding:8px;">bool</td><td style="padding:8px;">Boolean</td></tr>
+        <tr><td style="padding:8px;">auto</td><td style="padding:8px;">ID</td></tr>
+      </table>
+
+      <h2>Multi-Target</h2>
+      <table style="width:100%; border-collapse:collapse; margin:1em 0;">
+        <tr style="border-bottom:1px solid var(--border);">
+          <th style="text-align:left; padding:8px;">Target</th>
+          <th style="text-align:left; padding:8px;">Library</th>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Node.js</td>
+          <td style="padding:8px;"><a href="https://graphql.org/graphql-js/">graphql</a> + <a href="https://github.com/graphql/graphql-http">graphql-http</a></td>
+        </tr>
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px;">Bun</td>
+          <td style="padding:8px;"><a href="https://graphql.org/graphql-js/">graphql</a> (inline handler)</td>
+        </tr>
+        <tr>
+          <td style="padding:8px;">Python</td>
+          <td style="padding:8px;"><a href="https://graphene-python.org/">graphene</a> + <a href="https://github.com/graphql-python/flask-graphql">flask-graphql</a></td>
+        </tr>
+      </table>
+
+      <div class="footer">
+        <p>NAIDE &mdash; AI-Optimized Language &mdash; <a href="https://github.com/irxk/naide">GitHub</a></p>
+      </div>
+    </div>
+  </main>
+<script src="highlight.js"></script>
+</body>
+</html>
