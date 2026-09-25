@@ -3,175 +3,954 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NAIDE Playground</title>
+<title>NAIDE Playground — Try NAIDE Online</title>
+<meta name="description" content="Write and compile NAIDE code in your browser. Targets: JavaScript, Python, TypeScript, Go, Rust, Java, C, C++, C#, Kotlin, Swift, Dart, PHP, Ruby.">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
-  header { padding: 16px 24px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header h1 span { color: #58a6ff; }
-  .mode-toggle { display: flex; gap: 0; }
-  .mode-toggle button { padding: 6px 14px; border: 1px solid #30363d; background: #0d1117; color: #8b949e; cursor: pointer; font-size: 13px; }
-  .mode-toggle button:first-child { border-radius: 6px 0 0 6px; }
-  .mode-toggle button:last-child { border-radius: 0 6px 6px 0; }
-  .mode-toggle button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-  .container { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 53px); }
-  .panel { display: flex; flex-direction: column; }
-  .panel-header { padding: 8px 16px; background: #161b22; border-bottom: 1px solid #30363d; font-size: 12px; color: #8b949e; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
-  .panel-header .stats { font-weight: 400; }
-  textarea { flex: 1; padding: 16px; background: #0d1117; color: #c9d1d9; border: none; resize: none; font-family: 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; tab-size: 2; outline: none; }
-  textarea::placeholder { color: #484f58; }
-  .divider { width: 1px; background: #30363d; }
-  #output { background: #0d1117; color: #7ee787; }
-  #output.error { color: #f85149; }
-  .examples { margin-left: auto; }
-  .examples select { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+/* ===== VARIABLES ===== */
+:root {
+  --bg:           #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary:  #1c2128;
+  --bg-elevated:  #21262d;
+  --border:       #30363d;
+  --border-light: #3d444d;
+  --text:         #e6edf3;
+  --text-muted:   #8b949e;
+  --text-dim:     #6e7681;
+  --blue:         #4178DC;
+  --blue-light:   #58a6ff;
+  --blue-bg:      rgba(65, 120, 220, 0.12);
+  --green:        #32AA64;
+  --green-light:  #3fb950;
+  --green-bg:     rgba(50, 170, 100, 0.12);
+  --orange:       #d29922;
+  --red:          #f85149;
+  --purple:       #bc8cff;
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono:    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, "Courier New", monospace;
+  --header-h:     52px;
+  --toolbar-h:    40px;
+  --radius:       6px;
+  --radius-lg:    8px;
+}
+
+/* ===== RESET ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg); height: 100vh; overflow: hidden; }
+
+/* ===== HEADER ===== */
+.header {
+  height: var(--header-h);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  z-index: 50;
+  flex-shrink: 0;
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.logo-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--blue), #5a9cf5);
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.5px;
+}
+.logo-text { color: var(--text); }
+.logo-play { color: var(--text-muted); font-weight: 400; margin-left: 2px; }
+
+/* Mode toggle */
+.mode-toggle {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mode-toggle button {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.mode-toggle button:hover { color: var(--text); }
+.mode-toggle button.active {
+  background: var(--blue);
+  color: #fff;
+}
+.mode-toggle button + button { border-left: 1px solid var(--border); }
+
+/* Dropdowns (target, examples) */
+.header-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 28px 4px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  min-width: 0;
+}
+.header-select:hover { border-color: var(--border-light); }
+.header-select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(65, 120, 220, 0.25); }
+.header-select option { background: var(--bg-secondary); color: var(--text); }
+
+/* Header right actions */
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Small buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { color: var(--text); border-color: var(--border-light); background: var(--bg-tertiary); }
+.btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+.btn.primary:hover { background: #4e8de8; }
+.btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+/* ===== LAYOUT ===== */
+.app { display: flex; flex-direction: column; height: 100vh; }
+.workspace {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* Panels */
+.panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.panel-header {
+  height: var(--toolbar-h);
+  padding: 0 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.panel-title .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.panel-title .dot.blue { background: var(--blue); }
+.panel-title .dot.green { background: var(--green); }
+.panel-stats {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Divider */
+.divider {
+  width: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.divider::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0;
+  left: -3px; right: -3px;
+  cursor: col-resize;
+}
+
+/* ===== EDITOR ===== */
+.editor-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+.editor-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: auto;
+}
+.line-numbers {
+  padding: 14px 0;
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: right;
+  user-select: none;
+  min-width: 44px;
+  padding-right: 12px;
+  padding-left: 12px;
+  border-right: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.editor-scroll {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+}
+.editor-highlight,
+.editor-textarea {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 14px 14px;
+  white-space: pre;
+  tab-size: 2;
+  -moz-tab-size: 2;
+  min-height: 100%;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+.editor-highlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: transparent;
+  z-index: 1;
+}
+.editor-textarea {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text);
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+/* Syntax tokens */
+.editor-highlight .kw  { color: #ff7b72; }
+.editor-highlight .type { color: #79c0ff; }
+.editor-highlight .str { color: #a5d6ff; }
+.editor-highlight .num { color: #d2a8ff; }
+.editor-highlight .cmt { color: #6e7681; font-style: italic; }
+.editor-highlight .fn  { color: #d2a8ff; }
+.editor-highlight .bi  { color: #7ee787; }
+.editor-highlight .op  { color: #8b949e; }
+
+/* ===== OUTPUT ===== */
+.output-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+.output-container {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 14px;
+}
+.output-pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+  color: var(--green-light);
+  tab-size: 2;
+  -moz-tab-size: 2;
+  min-height: 100%;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+.output-pre.error { color: var(--red); }
+.output-pre.empty { color: var(--text-dim); font-style: italic; }
+
+/* Copy button */
+.copy-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.copy-btn:hover { color: var(--text); border-color: var(--border-light); }
+.copy-btn.copied { color: var(--green-light); border-color: var(--green); }
+
+/* ===== STATUS BAR ===== */
+.statusbar {
+  height: 24px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  gap: 16px;
+  flex-shrink: 0;
+}
+.statusbar-left, .statusbar-right { display: flex; gap: 16px; align-items: center; }
+.statusbar-right { margin-left: auto; }
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  display: inline-block;
+}
+.status-dot.error { background: var(--red); }
+
+/* ===== SHARE TOAST ===== */
+.toast {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 20px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+/* ===== MOBILE ===== */
+@media (max-width: 768px) {
+  .header { padding: 0 10px; gap: 6px; flex-wrap: wrap; height: auto; min-height: var(--header-h); padding-top: 8px; padding-bottom: 8px; }
+  .logo-play { display: none; }
+  .workspace { flex-direction: column; }
+  .divider { width: auto; height: 1px; }
+  .divider::after { top: -3px; bottom: -3px; left: 0; right: 0; cursor: row-resize; }
+  .panel { min-height: 200px; }
+  .header-select { font-size: 11px; padding: 3px 24px 3px 8px; }
+  .mode-toggle button { padding: 3px 8px; font-size: 11px; }
+  .btn { padding: 3px 8px; font-size: 11px; }
+  .btn span.btn-label { display: none; }
+  .line-numbers { min-width: 34px; padding-left: 6px; padding-right: 8px; }
+}
+@media (max-width: 480px) {
+  .header-right .btn span.btn-label { display: none; }
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>NAIDE <span>Playground</span></h1>
-  <div class="mode-toggle">
-    <button class="active" onclick="setMode('naide')">NAIDE</button>
-    <button onclick="setMode('x')">NAIDE-X</button>
-  </div>
-  <div class="examples">
-    <select onchange="loadExample(this.value)">
-      <option value="">Load example...</option>
-      <option value="hello">Hello World</option>
-      <option value="server">Server</option>
-      <option value="crud">CRUD API</option>
-      <option value="auth">Auth + JWT</option>
-      <option value="full">Full App</option>
-      <option value="simple">Simple Syntax</option>
-      <option value="builtins">Builtins</option>
-      <option value="modern">Modern Features</option>
+
+<div class="app">
+  <!-- HEADER -->
+  <header class="header">
+    <a class="logo" href="../docs/index.html" title="NAIDE Documentation">
+      <span class="logo-n">N</span>
+      <span class="logo-text">NAIDE</span>
+      <span class="logo-play">Playground</span>
+    </a>
+
+    <div class="mode-toggle">
+      <button class="active" data-mode="naide" title="Standard NAIDE syntax">NAIDE</button>
+      <button data-mode="x" title="NAIDE-X compressed syntax">NAIDE-X</button>
+    </div>
+
+    <select id="target-select" class="header-select" title="Compilation target">
+      <optgroup label="Primary">
+        <option value="node" selected>JavaScript (Node.js)</option>
+        <option value="typescript">TypeScript</option>
+        <option value="bun">Bun</option>
+      </optgroup>
+      <optgroup label="Systems">
+        <option value="c">C</option>
+        <option value="cpp">C++</option>
+        <option value="rust">Rust</option>
+        <option value="go">Go</option>
+      </optgroup>
+      <optgroup label="JVM / .NET">
+        <option value="java">Java</option>
+        <option value="kotlin">Kotlin</option>
+        <option value="csharp">C#</option>
+      </optgroup>
+      <optgroup label="Scripting">
+        <option value="python">Python</option>
+        <option value="ruby">Ruby</option>
+        <option value="php">PHP</option>
+      </optgroup>
+      <optgroup label="Mobile">
+        <option value="swift">Swift</option>
+        <option value="dart">Dart</option>
+      </optgroup>
     </select>
-  </div>
-</header>
-<div class="container">
-  <div class="panel">
-    <div class="panel-header">
-      <span id="mode-label">NAIDE</span>
-      <span class="stats" id="input-stats"></span>
+
+    <select id="example-select" class="header-select" title="Load example">
+      <option value="">Examples...</option>
+      <optgroup label="Basics">
+        <option value="hello">Hello World</option>
+        <option value="variables">Variables &amp; Types</option>
+        <option value="functions">Functions &amp; Lambda</option>
+      </optgroup>
+      <optgroup label="Application">
+        <option value="server">Server &amp; API</option>
+        <option value="schema">Class Inheritance</option>
+        <option value="bot">Bot</option>
+      </optgroup>
+      <optgroup label="Advanced">
+        <option value="pipe">Pipe &amp; Functional</option>
+        <option value="modern">Modern Features</option>
+      </optgroup>
+    </select>
+
+    <div class="header-right">
+      <button class="btn" id="share-btn" title="Copy shareable URL to clipboard">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 10l4-4"/><circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="4.5" r="2"/></svg>
+        <span class="btn-label">Share</span>
+      </button>
     </div>
-    <textarea id="input" placeholder="Type NAIDE code here..." spellcheck="false"></textarea>
-  </div>
-  <div class="divider"></div>
-  <div class="panel">
-    <div class="panel-header">
-      <span>JavaScript Output</span>
-      <span class="stats" id="output-stats"></span>
+  </header>
+
+  <!-- WORKSPACE -->
+  <div class="workspace">
+    <!-- INPUT PANEL -->
+    <div class="panel" id="input-panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="dot blue"></span><span id="mode-label">NAIDE</span></span>
+        <span class="panel-stats" id="input-stats"></span>
+      </div>
+      <div class="editor-wrap">
+        <div class="editor-container">
+          <div class="line-numbers" id="line-numbers"></div>
+          <div class="editor-scroll" id="editor-scroll">
+            <div class="editor-highlight" id="editor-highlight"></div>
+            <textarea class="editor-textarea" id="editor-textarea" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="Type NAIDE code here..."></textarea>
+          </div>
+        </div>
+      </div>
     </div>
-    <textarea id="output" readonly></textarea>
+
+    <!-- DIVIDER -->
+    <div class="divider" id="divider"></div>
+
+    <!-- OUTPUT PANEL -->
+    <div class="panel" id="output-panel">
+      <div class="panel-header">
+        <span class="panel-title"><span class="dot green"></span><span id="output-label">JavaScript</span> Output</span>
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span class="panel-stats" id="output-stats"></span>
+          <button class="copy-btn" id="copy-btn" title="Copy output">Copy</button>
+        </span>
+      </div>
+      <div class="output-wrap">
+        <div class="output-container" id="output-container">
+          <pre class="output-pre empty" id="output-pre">Compiled output will appear here...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="statusbar-left">
+      <span><span class="status-dot" id="status-dot"></span></span>
+      <span id="status-text">Ready</span>
+    </div>
+    <div class="statusbar-right">
+      <span id="target-label">node</span>
+    </div>
   </div>
 </div>
-<script type="module">
-import { transpile } from '../src/index.js';
 
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { compile, compileAsync } from '../src/index.js';
+
+// ========== HIGHLIGHTING ==========
+const HL_KEYWORDS = new Set([
+  'fn','ret','if','elif','else','each','for','while','match',
+  'try','fail','ensure','server','model','schema','use','pub','mut',
+  'log','typeof','instanceof','not','and','or','break','continue',
+  'throw','new','await','test','assert','queue','job','db','env',
+  'get','post','put','del','patch','crud','cors','auth','static',
+  'cache','ws','sse','cookie','session','limit','upload','group',
+  'validate','openapi','error','mid','prompt','bot','slash',
+  'page','cli','mail','graphql','desktop','screen','every','watch',
+  'oauth','pay','storage','pdf','i18n','push','search','image',
+  'csv','logging','migrate','grpc','webrtc','blockchain',
+  'unless','until','repeat','enum','swap','is','isnt','print','as',
+  'import','from','export','extends','init',
+  'const','let','var','function','async','return','class',
+  'catch','finally','switch','case',
+  'default','def','True','False','None','pass','in','global',
+]);
+const HL_TYPES = new Set([
+  'str','int','num','bool','list','map','any','json','void',
+  'auto','required','optional','unique','default','min','max','email',
+]);
+const HL_BUILTINS = new Set([
+  'log','assert','uuid','hash','verify','sign',
+  'ai','api','console','print','jsonify','Flask',
+  'createMock','createSpy','registerPlugin','usePlugin',
+  'createVectorStore','createPrompt','createSchema','createStore',
+  'ask','sleep','exit','read','write','fetch_json','random',
+  'sort','reverse','unique','len','upper','lower','trim',
+  'split','join','contains','replace','keys','values','entries',
+  'range','abs','round','ceil','floor','sqrt','pow','sum',
+  'flat','zip','chunk','json_parse','json_str','now','time',
+  'map','filter','reduce','find','every','some','foreach',
+]);
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function highlightCode(text) {
+  const out = [];
+  let i = 0;
+  while (i < text.length) {
+    // Comments
+    if (text[i] === '#' || (text[i] === '/' && text[i+1] === '/')) {
+      const end = text.indexOf('\n', i);
+      const s = end === -1 ? text.slice(i) : text.slice(i, end);
+      out.push('<span class="cmt">' + escHtml(s) + '</span>');
+      i += s.length;
+      continue;
+    }
+    // Strings
+    if (text[i] === '"' || text[i] === "'") {
+      const q = text[i];
+      let j = i + 1;
+      while (j < text.length && text[j] !== q) { if (text[j] === '\\') j++; j++; }
+      j++;
+      out.push('<span class="str">' + escHtml(text.slice(i, j)) + '</span>');
+      i = j;
+      continue;
+    }
+    // Numbers
+    if (/\d/.test(text[i]) && (i === 0 || /[\s(,=:[\{+\-*/]/.test(text[i-1]))) {
+      let j = i;
+      while (j < text.length && /[\d.]/.test(text[j])) j++;
+      out.push('<span class="num">' + escHtml(text.slice(i, j)) + '</span>');
+      i = j;
+      continue;
+    }
+    // Words
+    if (/[a-zA-Z_]/.test(text[i])) {
+      let j = i;
+      while (j < text.length && /[\w.]/.test(text[j])) j++;
+      const word = text.slice(i, j);
+      const base = word.split('.')[0];
+      if (HL_TYPES.has(base)) out.push('<span class="type">' + escHtml(word) + '</span>');
+      else if (HL_KEYWORDS.has(base)) out.push('<span class="kw">' + escHtml(word) + '</span>');
+      else if (HL_BUILTINS.has(base)) out.push('<span class="bi">' + escHtml(word) + '</span>');
+      else if (j < text.length && text[j] === '(') out.push('<span class="fn">' + escHtml(word) + '</span>');
+      else out.push(escHtml(word));
+      i = j;
+      continue;
+    }
+    // Operators
+    if (/[=+\-*/<>!&|%^~?:]/.test(text[i])) {
+      out.push('<span class="op">' + escHtml(text[i]) + '</span>');
+      i++;
+      continue;
+    }
+    out.push(escHtml(text[i]));
+    i++;
+  }
+  return out.join('');
+}
+
+// ========== STATE ==========
 let mode = 'naide';
-const input = document.getElementById('input');
-const output = document.getElementById('output');
+let target = 'node';
+let compileTimer = null;
+let outputCode = '';
+
+// ========== DOM ==========
+const textarea = document.getElementById('editor-textarea');
+const highlightEl = document.getElementById('editor-highlight');
+const lineNums = document.getElementById('line-numbers');
+const editorScroll = document.getElementById('editor-scroll');
+const outputPre = document.getElementById('output-pre');
 const inputStats = document.getElementById('input-stats');
 const outputStats = document.getElementById('output-stats');
 const modeLabel = document.getElementById('mode-label');
+const outputLabel = document.getElementById('output-label');
+const targetSelect = document.getElementById('target-select');
+const exampleSelect = document.getElementById('example-select');
+const copyBtn = document.getElementById('copy-btn');
+const shareBtn = document.getElementById('share-btn');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const targetLabel = document.getElementById('target-label');
+const toast = document.getElementById('toast');
 
-const examples = {
-  hello: {
-    naide: `str name = "World"\n\nfn greet(str who) -> str:\n  ret "Hello, {who}!"\n\nlog greet(name)`,
-    x: `s:name="World"\n\nf greet(s:who)s\n  >"Hello, {who}!"\n\nlog greet(name)`
-  },
-  server: {
-    naide: `server app port 3000:\n  cors "*"\n\n  get "/":\n    ret {message: "Hello from NAIDE"}\n\n  get "/health":\n    ret {status: "ok"}`,
-    x: `$app:3000\n  cors "*"\n  G"/"\n    >{message:"Hello from NAIDE"}\n  G"/health"\n    >{status:"ok"}`
-  },
-  crud: {
-    naide: `db "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\nserver app port 3000:\n  cors "*"\n  crud "/api/todos" Todo\n\n  get "/":\n    ret.html "<h1>Todo API</h1>"`,
-    x: `db "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\n$app:3000\n  cors "*"\n  crud "/api/todos" Todo\n  G"/"\n    >.h "<h1>Todo API</h1>"`
-  },
-  auth: {
-    naide: `server app port 3000:\n  auth "my-secret":\n    protect "/api/*"\n    public "/api/auth/*"\n\n  post "/api/auth/login" (req, res):\n    token = auth.sign({id: 1, role: "admin"})\n    ret {token}\n\n  get "/api/profile" (req, res):\n    ret {user: req.user}`,
-    x: `$app:3000\n  auth "my-secret":\n    protect "/api/*"\n    public "/api/auth/*"\n  P"/api/auth/login"(req,res)\n    token=auth.sign({id:1,role:"admin"})\n    >{token}\n  G"/api/profile"(req,res)\n    >{user:req.user}`
-  },
-  full: {
-    naide: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\nserver app port PORT:\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n\n  post "/api/auth/register" (req, res):\n    str hashed = hash(req.body.password)\n    user = UserStore.create({...req.body, password: hashed})\n    token = auth.sign({id: user.id})\n    ret {token, user}\n\n  get "/":\n    ret.html "<h1>API</h1>"`,
-    x: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\n$app:PORT\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n  P"/api/auth/register"(req,res)\n    s:hashed=hash(req.body.password)\n    user=UserStore.create({...req.body,password:hashed})\n    token=auth.sign({id:user.id})\n    >{token,user}\n  G"/"\n    >.h "<h1>API</h1>"`
-  },
-  simple: {
-    naide: `# Syntax Sugar - Simpler than Python!\n\n# one-line functions\nfn double(int x) -> int = x * 2\nfn greet(str name) -> str = "Hello, {name}!"\n\n# unless / until / repeat\nunless x > 10:\n  print "small"\n\nmut int i = 0\nuntil i > 5:\n  i = i + 1\n\nrepeat 3 as n:\n  print n\n\n# enum\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n# swap\nmut int a = 1\nmut int b = 2\nswap a, b\n\n# is / isnt\nif a is 2:\n  print "swapped!"`,
-    x: `# Syntax Sugar\nf double(i:x)i=x*2\nf greet(s:name)s="Hello, {name}!"\n\nunless x>10\n  log "small"\n\nm i:i=0\nuntil i>5\n  i=i+1\n\nrepeat 3 as n\n  log n\n\nenum Color:\n  RED\n  GREEN\n  BLUE\n\nm i:a=1\nm i:b=2\nswap a,b\n\nif a is 2\n  log "swapped!"`
-  },
-  builtins: {
-    naide: `# Built-in Functions - No imports needed!\n\nlist items = [3, 1, 4, 1, 5, 9]\n\n# Collection ops\nint n = len(items)\nlist sorted = sort(items)\nlist uniq = unique(items)\nlist rev = reverse(items)\nlist r = range(10)\n\n# String ops\nstr hello = upper("hello")\nstr trimmed = trim("  hi  ")\nlist parts = split("a,b,c", ",")\nstr joined = join(parts, "-")\nbool has = contains("hello", "ell")\n\n# Math\nnum total = sum(items)\nnum sq = sqrt(16)\nnum p = pow(2, 10)\n\n# Type conversions\nstr s = str(42)\nint num = int("42")\n\n# JSON\nany data = json_parse("{}")\nstr j = json_str(data)\n\n# Time\nint now_ms = now()\nstr t = time()`,
-    x: `# Built-in Functions\nl:items=[3,1,4,1,5,9]\n\ni:n=len(items)\nl:sorted=sort(items)\nl:uniq=unique(items)\nl:rev=reverse(items)\nl:r=range(10)\n\ns:hello=upper("hello")\ns:trimmed=trim("  hi  ")\nl:parts=split("a,b,c",",")\ns:joined=join(parts,"-")\nb:has=contains("hello","ell")\n\nn:total=sum(items)\nn:sq=sqrt(16)\nn:p=pow(2,10)\n\ns:s=str(42)\ni:num=int("42")\n\na:data=json_parse("{}")\ns:j=json_str(data)\n\ni:now_ms=now()\ns:t=time()`
-  },
-  modern: {
-    naide: `# Modern Features\n\n# auto type inference\nauto x = 42\nauto msg = "hello"\nmut auto counter = 0\n\n# Destructuring\nmap user = {name: "Alice", age: 25, role: "admin"}\nauto {name, age} = user\nauto {role, ...rest} = user\n\nlist coords = [10, 20, 30]\nauto [x2, y] = coords\nauto [head, ...tail] = coords\n\n# map / filter / reduce\nlist items = [1, 2, 3, 4, 5]\nlist doubled = map(items, (x) => x * 2)\nlist big = filter(items, (x) => x > 3)\nint total = reduce(items, (a, b) => a + b, 0)\nany found = find(items, (x) => x > 3)\nbool allPos = every(items, (x) => x > 0)\n\n# Pipe operator\nlist result = items\n  |> filter((x) => x > 2)\n  |> map((x) => x * 10)\n\n# Optional chaining + null coalescing\nany val = user?.name ?? "Anonymous"\n\n# Spread\nlist all = [...items, 6, 7, 8]\nmap merged = {...user, active: true}`,
-    x: `# Modern Features\n\nauto x=42\nauto msg="hello"\n~auto counter=0\n\nm:user={name:"Alice",age:25,role:"admin"}\nauto {name,age}=user\nauto {role,...rest}=user\n\nl:coords=[10,20,30]\nauto [x2,y]=coords\nauto [head,...tail]=coords\n\nl:items=[1,2,3,4,5]\nl:doubled=map(items,(x)=>x*2)\nl:big=filter(items,(x)=>x>3)\ni:total=reduce(items,(a,b)=>a+b,0)\na:found=find(items,(x)=>x>3)\nb:allPos=every(items,(x)=>x>0)\n\nl:result=items|>filter((x)=>x>2)|>map((x)=>x*10)\n\na:val=user?.name??"Anonymous"\n\nl:all=[...items,6,7,8]\nm:merged={...user,active:true}`
-  }
+// ========== TARGET LABELS ==========
+const TARGET_LABELS = {
+  node: 'JavaScript', typescript: 'TypeScript', bun: 'Bun (JavaScript)',
+  python: 'Python', ruby: 'Ruby', php: 'PHP',
+  c: 'C', cpp: 'C++', rust: 'Rust', go: 'Go',
+  java: 'Java', kotlin: 'Kotlin', csharp: 'C#',
+  swift: 'Swift', dart: 'Dart',
 };
 
+// ========== EXAMPLES ==========
+const EXAMPLES = {
+  hello: {
+    naide: `# Hello World in NAIDE\nstr name = "World"\n\nfn greet(str who) -> str:\n  ret "Hello, {who}!"\n\nlog greet(name)\nlog "Welcome to NAIDE!"`,
+    x: `# Hello World in NAIDE-X\ns:name="World"\n\nf greet(s:who)s\n  >"Hello, {who}!"\n\nlog greet(name)\nlog "Welcome to NAIDE!"`,
+  },
+  variables: {
+    naide: `# Variables & Types\n\n# Typed declarations\nstr greeting = "Hello"\nint count = 42\nnum pi = 3.14159\nbool active = true\nlist items = [1, 2, 3, 4, 5]\nmap config = {debug: true, port: 3000}\n\n# Auto type inference\nauto x = 42\nauto msg = "inferred as string"\nmut auto counter = 0\n\n# Destructuring\nmap user = {name: "Alice", age: 25, role: "admin"}\nauto {name, age} = user\nauto {role, ...rest} = user\n\nlist coords = [10, 20, 30]\nauto [cx, cy] = coords\nauto [head, ...tail] = coords\n\n# Spread operator\nlist all = [...items, 6, 7, 8]\nmap merged = {...config, verbose: false}`,
+    x: `# Variables & Types\n\ns:greeting="Hello"\ni:count=42\nn:pi=3.14159\nb:active=true\nl:items=[1,2,3,4,5]\nm:config={debug:true,port:3000}\n\nauto x=42\nauto msg="inferred as string"\n~auto counter=0\n\nm:user={name:"Alice",age:25,role:"admin"}\nauto {name,age}=user\nauto {role,...rest}=user\n\nl:coords=[10,20,30]\nauto [cx,cy]=coords\nauto [head,...tail]=coords\n\nl:all=[...items,6,7,8]\nm:merged={...config,verbose:false}`,
+  },
+  functions: {
+    naide: `# Functions & Lambda\n\n# Basic function\nfn add(int a, int b) -> int:\n  ret a + b\n\n# One-line function\nfn double(int x) -> int = x * 2\nfn greet(str name) -> str = "Hello, {name}!"\n\n# Lambda / arrow functions\nauto multiply = (a, b) => a * b\nauto square = (x) => x * x\n\n# Higher-order functions\nfn apply(fn callback, int value) -> int:\n  ret callback(value)\n\nlog apply(double, 5)\nlog apply(square, 4)\n\n# Async function\nasync fn fetchData(str url):\n  auto data = await fetch_json(url)\n  ret data`,
+    x: `# Functions & Lambda\n\nf add(i:a,i:b)i\n  >a+b\n\nf double(i:x)i=x*2\nf greet(s:name)s="Hello, {name}!"\n\nauto multiply=(a,b)=>a*b\nauto square=(x)=>x*x\n\nf apply(fn:callback,i:value)i\n  >callback(value)\n\nlog apply(double,5)\nlog apply(square,4)\n\nasync f fetchData(s:url)\n  auto data=await fetch_json(url)\n  >data`,
+  },
+  server: {
+    naide: `# Server & REST API\n\ndb "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\nserver app port 3000:\n  cors "*"\n\n  get "/":\n    ret {message: "Todo API", version: "1.0"}\n\n  get "/health":\n    ret {status: "ok"}\n\n  crud "/api/todos" Todo\n  validate "/api/todos" Todo\n\n  get "/api/stats":\n    auto todos = TodoStore.all()\n    auto done = filter(todos, (t) => t.done)\n    ret {total: len(todos), completed: len(done)}`,
+    x: `# Server & REST API\n\ndb "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\n$app:3000\n  cors "*"\n  G"/"\n    >{message:"Todo API",version:"1.0"}\n  G"/health"\n    >{status:"ok"}\n  crud "/api/todos" Todo\n  validate "/api/todos" Todo\n  G"/api/stats"\n    auto todos=TodoStore.all()\n    auto done=filter(todos,(t)=>t.done)\n    >{total:len(todos),completed:len(done)}`,
+  },
+  schema: {
+    naide: `# Class Inheritance (Schema Extends)\n\ndb "data/"\n\nschema Entity:\n  id auto\n  createdAt str default("now")\n\nschema User extends Entity:\n  name str required min(2) max(50)\n  email str required email\n  role str default("user")\n\nschema Admin extends User:\n  permissions list default(["read", "write"])\n  department str required\n\nserver app port 3000:\n  cors "*"\n  crud "/api/users" User\n  crud "/api/admins" Admin\n  validate "/api/users" User\n  validate "/api/admins" Admin\n\n  get "/":\n    ret {message: "User Management API"}`,
+    x: `# Class Inheritance\n\ndb "data/"\n\nschema Entity:\n  id auto\n  createdAt str default("now")\n\nschema User extends Entity:\n  name str required min(2) max(50)\n  email str required email\n  role str default("user")\n\nschema Admin extends User:\n  permissions list default(["read","write"])\n  department str required\n\n$app:3000\n  cors "*"\n  crud "/api/users" User\n  crud "/api/admins" Admin\n  validate "/api/users" User\n  validate "/api/admins" Admin\n  G"/"\n    >{message:"User Management API"}`,
+  },
+  pipe: {
+    naide: `# Pipe & Functional Programming\n\nlist numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n\n# map / filter / reduce\nlist doubled = map(numbers, (x) => x * 2)\nlist evens = filter(numbers, (x) => x % 2 == 0)\nint total = reduce(numbers, (a, b) => a + b, 0)\nany found = find(numbers, (x) => x > 7)\nbool allPos = every(numbers, (x) => x > 0)\nbool hasNeg = some(numbers, (x) => x < 0)\n\n# Pipe operator |>\nlist result = numbers\n  |> filter((x) => x > 3)\n  |> map((x) => x * 10)\n  |> sort()\n\nlog result\n\n# Chaining transformations\nlist words = ["hello", "world", "naide"]\nlist processed = words\n  |> map((w) => upper(w))\n  |> filter((w) => len(w) > 4)\n  |> sort()\n\nlog processed`,
+    x: `# Pipe & Functional\n\nl:numbers=[1,2,3,4,5,6,7,8,9,10]\n\nl:doubled=map(numbers,(x)=>x*2)\nl:evens=filter(numbers,(x)=>x%2==0)\ni:total=reduce(numbers,(a,b)=>a+b,0)\na:found=find(numbers,(x)=>x>7)\nb:allPos=every(numbers,(x)=>x>0)\nb:hasNeg=some(numbers,(x)=>x<0)\n\nl:result=numbers|>filter((x)=>x>3)|>map((x)=>x*10)|>sort()\n\nlog result\n\nl:words=["hello","world","naide"]\nl:processed=words|>map((w)=>upper(w))|>filter((w)=>len(w)>4)|>sort()\n\nlog processed`,
+  },
+  modern: {
+    naide: `# Modern Features\n\n# Optional chaining\nmap user = {profile: {name: "Alice", address: {city: "Tokyo"}}}\nauto city = user?.profile?.address?.city\nauto zip = user?.profile?.address?.zip\n\n# Null coalescing\nstr displayName = user?.profile?.name ?? "Anonymous"\nint timeout = config?.timeout ?? 5000\n\n# Pattern matching\nstr status = "active"\nmatch status:\n  "active":\n    log "User is active"\n  "inactive":\n    log "User is inactive"\n  _:\n    log "Unknown status"\n\n# unless / until / repeat\nint val = 5\nunless val > 10:\n  log "Value is small"\n\nmut int i = 0\nuntil i >= 3:\n  log "Count: {i}"\n  i = i + 1\n\nrepeat 3 as n:\n  log "Iteration {n}"\n\n# Enum\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n# Swap\nmut int a = 1\nmut int b = 2\nswap a, b\nlog "a={a}, b={b}"`,
+    x: `# Modern Features\n\nm:user={profile:{name:"Alice",address:{city:"Tokyo"}}}\nauto city=user?.profile?.address?.city\nauto zip=user?.profile?.address?.zip\n\ns:displayName=user?.profile?.name??"Anonymous"\ni:timeout=config?.timeout??5000\n\ns:status="active"\nmatch status:\n  "active"\n    log "User is active"\n  "inactive"\n    log "User is inactive"\n  _\n    log "Unknown status"\n\ni:val=5\nunless val>10\n  log "Value is small"\n\n~i:i=0\nuntil i>=3\n  log "Count: {i}"\n  i=i+1\n\nrepeat 3 as n\n  log "Iteration {n}"\n\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n~i:a=1\n~i:b=2\nswap a,b\nlog "a={a}, b={b}"`,
+  },
+  bot: {
+    naide: `# Discord Bot\n\nbot mybot token env.DISCORD_TOKEN:\n  prefix "!"\n\n  slash "hello" "Say hello":\n    ret "Hello from NAIDE bot!"\n\n  slash "ping" "Check latency":\n    ret "Pong! Bot is alive."\n\n  slash "echo" "Echo a message":\n    str text = opt "text" str required "Text to echo"\n    ret text\n\n  slash "roll" "Roll a dice":\n    int sides = opt "sides" int default(6) "Number of sides"\n    int result = floor(random() * sides) + 1\n    ret "You rolled: {result}"`,
+    x: `# Discord Bot\n\nbot mybot token env.DISCORD_TOKEN:\n  prefix "!"\n  slash "hello" "Say hello"\n    >"Hello from NAIDE bot!"\n  slash "ping" "Check latency"\n    >"Pong! Bot is alive."\n  slash "echo" "Echo a message"\n    s:text=opt "text" str required "Text to echo"\n    >text\n  slash "roll" "Roll a dice"\n    i:sides=opt "sides" int default(6) "Number of sides"\n    i:result=floor(random()*sides)+1\n    >"You rolled: {result}"`,
+  },
+};
+
+// ========== UTILITY ==========
 function countTokens(code) {
   return code.trim().split(/[\s]+/).filter(t => t.length > 0).length;
 }
 
-function update() {
-  const code = input.value;
+function showToast(msg, ms = 2500) {
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  setTimeout(() => toast.classList.remove('visible'), ms);
+}
+
+// ========== LINE NUMBERS ==========
+function updateLineNumbers() {
+  const lines = textarea.value.split('\n');
+  const count = lines.length;
+  let html = '';
+  for (let i = 1; i <= count; i++) html += i + '\n';
+  lineNums.textContent = html;
+}
+
+// ========== HIGHLIGHT ==========
+function updateHighlight() {
+  // Must keep trailing newline so heights match
+  const code = textarea.value;
+  highlightEl.innerHTML = highlightCode(code) + (code.endsWith('\n') ? ' ' : '\n ');
+}
+
+// ========== SCROLL SYNC ==========
+function syncScroll() {
+  highlightEl.style.transform = `translate(-${textarea.scrollLeft}px, -${textarea.scrollTop}px)`;
+  lineNums.style.transform = `translateY(-${textarea.scrollTop}px)`;
+}
+
+// ========== COMPILE ==========
+async function doCompile() {
+  const code = textarea.value;
   const tokens = countTokens(code);
   const lines = code.split('\n').filter(l => l.trim()).length;
-  inputStats.textContent = `${tokens} tokens, ${lines} lines`;
+  inputStats.textContent = tokens + ' tokens · ' + lines + ' lines';
 
   if (!code.trim()) {
-    output.value = '';
-    output.classList.remove('error');
+    outputPre.textContent = 'Compiled output will appear here...';
+    outputPre.className = 'output-pre empty';
     outputStats.textContent = '';
+    outputCode = '';
+    statusDot.className = 'status-dot';
+    statusText.textContent = 'Ready';
     return;
   }
 
   try {
-    const js = transpile(code, { mode });
-    output.value = js;
-    output.classList.remove('error');
-    const jsTokens = countTokens(js);
-    const jsLines = js.split('\n').filter(l => l.trim()).length;
-    const saving = jsTokens > 0 ? Math.round((1 - tokens / jsTokens) * 100) : 0;
-    outputStats.textContent = `${jsTokens} tokens, ${jsLines} lines (${saving > 0 ? '-' : '+'}${Math.abs(saving)}% tokens)`;
+    let result;
+    if (target === 'node') {
+      result = compile(code, { mode, target: 'node' });
+      outputCode = result.js;
+    } else {
+      result = await compileAsync(code, { mode, target });
+      outputCode = result.code || result.js;
+    }
+    outputPre.textContent = outputCode;
+    outputPre.className = 'output-pre';
+
+    const outTokens = countTokens(outputCode);
+    const outLines = outputCode.split('\n').filter(l => l.trim()).length;
+    const saving = outTokens > 0 ? Math.round((1 - tokens / outTokens) * 100) : 0;
+    const savingStr = saving > 0 ? '−' + saving + '%' : '+' + Math.abs(saving) + '%';
+    outputStats.textContent = outTokens + ' tokens · ' + outLines + ' lines (' + savingStr + ')';
+    statusDot.className = 'status-dot';
+    statusText.textContent = 'Compiled successfully';
   } catch (e) {
-    output.value = e.message;
-    output.classList.add('error');
+    outputPre.textContent = e.message;
+    outputPre.className = 'output-pre error';
+    outputCode = '';
     outputStats.textContent = 'Error';
+    statusDot.className = 'status-dot error';
+    statusText.textContent = 'Compilation error';
   }
 }
 
-window.setMode = function(m) {
+function scheduleCompile() {
+  clearTimeout(compileTimer);
+  compileTimer = setTimeout(doCompile, 300);
+}
+
+// ========== SHARE ==========
+function encodeShare() {
+  const payload = JSON.stringify({ c: textarea.value, m: mode, t: target });
+  return '#' + btoa(unescape(encodeURIComponent(payload)));
+}
+
+function decodeShare(hash) {
+  try {
+    const json = decodeURIComponent(escape(atob(hash.slice(1))));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function loadFromHash() {
+  if (!location.hash || location.hash.length < 2) return false;
+  const data = decodeShare(location.hash);
+  if (!data || !data.c) return false;
+  textarea.value = data.c;
+  if (data.m) setMode(data.m, true);
+  if (data.t) setTarget(data.t, true);
+  return true;
+}
+
+// ========== MODE SWITCH ==========
+function setMode(m, silent) {
   mode = m;
   modeLabel.textContent = m === 'x' ? 'NAIDE-X' : 'NAIDE';
-  document.querySelectorAll('.mode-toggle button').forEach((btn, i) => {
-    btn.classList.toggle('active', (i === 0 && m === 'naide') || (i === 1 && m === 'x'));
+  document.querySelectorAll('.mode-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === m);
   });
-  update();
-};
+  if (!silent) {
+    updateHighlight();
+    updateLineNumbers();
+    doCompile();
+  }
+}
 
-window.loadExample = function(name) {
-  if (!name || !examples[name]) return;
-  input.value = examples[name][mode];
-  update();
-};
+// ========== TARGET SWITCH ==========
+function setTarget(t, silent) {
+  target = t;
+  targetSelect.value = t;
+  targetLabel.textContent = t;
+  outputLabel.textContent = TARGET_LABELS[t] || t;
+  if (!silent) doCompile();
+}
 
-input.addEventListener('input', update);
-input.addEventListener('keydown', (e) => {
+// ========== EVENTS ==========
+// Mode toggle
+document.querySelectorAll('.mode-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+// Target select
+targetSelect.addEventListener('change', () => setTarget(targetSelect.value));
+
+// Example select
+exampleSelect.addEventListener('change', () => {
+  const name = exampleSelect.value;
+  if (!name || !EXAMPLES[name]) return;
+  textarea.value = EXAMPLES[name][mode] || EXAMPLES[name].naide;
+  updateHighlight();
+  updateLineNumbers();
+  syncScroll();
+  doCompile();
+  exampleSelect.value = '';
+});
+
+// Editor input
+textarea.addEventListener('input', () => {
+  updateHighlight();
+  updateLineNumbers();
+  scheduleCompile();
+});
+
+textarea.addEventListener('scroll', syncScroll);
+
+// Tab key
+textarea.addEventListener('keydown', (e) => {
   if (e.key === 'Tab') {
     e.preventDefault();
-    const start = input.selectionStart;
-    input.value = input.value.substring(0, start) + '  ' + input.value.substring(input.selectionEnd);
-    input.selectionStart = input.selectionEnd = start + 2;
-    update();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + 2;
+    updateHighlight();
+    updateLineNumbers();
+    scheduleCompile();
   }
 });
 
-// Load hello example
-input.value = examples.hello.naide;
-update();
+// Copy button
+copyBtn.addEventListener('click', () => {
+  if (!outputCode) return;
+  navigator.clipboard.writeText(outputCode).then(() => {
+    copyBtn.textContent = 'Copied!';
+    copyBtn.classList.add('copied');
+    setTimeout(() => {
+      copyBtn.textContent = 'Copy';
+      copyBtn.classList.remove('copied');
+    }, 1500);
+  });
+});
+
+// Share button
+shareBtn.addEventListener('click', () => {
+  const url = location.origin + location.pathname + encodeShare();
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Shareable URL copied to clipboard');
+  }).catch(() => {
+    // Fallback: update URL bar
+    history.replaceState(null, '', encodeShare());
+    showToast('URL updated in address bar');
+  });
+});
+
+// Resizable divider
+{
+  const divider = document.getElementById('divider');
+  const workspace = document.querySelector('.workspace');
+  const inputPanel = document.getElementById('input-panel');
+  const outputPanel = document.getElementById('output-panel');
+  let dragging = false;
+
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = workspace.getBoundingClientRect();
+    const isVertical = window.innerWidth <= 768;
+    if (isVertical) {
+      const pct = ((e.clientY - rect.top) / rect.height) * 100;
+      const clamped = Math.min(Math.max(pct, 20), 80);
+      inputPanel.style.flex = 'none';
+      inputPanel.style.height = clamped + '%';
+      outputPanel.style.flex = '1';
+    } else {
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.min(Math.max(pct, 20), 80);
+      inputPanel.style.flex = 'none';
+      inputPanel.style.width = clamped + '%';
+      outputPanel.style.flex = '1';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (dragging) {
+      dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+}
+
+// ========== INIT ==========
+if (!loadFromHash()) {
+  textarea.value = EXAMPLES.hello.naide;
+}
+updateHighlight();
+updateLineNumbers();
+doCompile();
+
+// Hash change (back/forward)
+window.addEventListener('hashchange', () => {
+  if (loadFromHash()) {
+    updateHighlight();
+    updateLineNumbers();
+    doCompile();
+  }
+});
 </script>
 </body>
 </html>

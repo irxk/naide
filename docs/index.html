@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NAIDE — AI-Optimized Language for Node.js</title>
+  <title>NAIDE — AI-Optimized Language for 15 Targets</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v1.12.0</span>
+      <span class="version">v1.18.0</span>
     </div>
     <nav>
       <a href="index.html" class="active">Home</a>
@@ -22,6 +22,7 @@
       <a href="nx.html">NAIDE-X Syntax</a>
       <span class="nav-section">Features</span>
       <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
       <a href="ai.html">AI / LLM</a>
       <a href="database.html">Database</a>
       <a href="page.html">Page Generation</a>
@@ -31,6 +32,7 @@
       <a href="testing.html">Testing</a>
       <span class="nav-section">Tools</span>
       <a href="cli.html">CLI Reference</a>
+      <a href="../playground/index.html">Playground</a>
     </nav>
   </aside>
 
@@ -39,16 +41,24 @@
 
       <div class="hero">
         <h1>NAIDE</h1>
-        <p class="tagline">AI-optimized language for Node.js</p>
+        <p class="tagline">AI-optimized language that transpiles to 15 targets</p>
         <div class="install-cmd"><span>$ </span>npm install -g naider</div>
-        <p style="color: var(--text-dim); font-size: 14px;">Multi-target: Node.js, Python (Flask), and Bun</p>
+        <p style="color: var(--text-dim); font-size: 14px;">Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, Ruby</p>
       </div>
 
       <!-- Feature cards -->
       <div class="features">
         <div class="feature-card">
+          <h3>15 Compilation Targets</h3>
+          <p>Write once, transpile to Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, and Ruby.</p>
+        </div>
+        <div class="feature-card">
           <h3>AI-Native</h3>
           <p>Built-in <code>ai.ask</code>, <code>ai.json</code>, <code>ai.stream</code>, embeddings, RAG, and prompt templates. Zero-dependency LLM integration.</p>
+        </div>
+        <div class="feature-card">
+          <h3>55+ Built-in Features</h3>
+          <p>Servers, bots, 40+ built-in functions, type inference, destructuring, pipes, optional chaining, spread, class inheritance &mdash; batteries included.</p>
         </div>
         <div class="feature-card">
           <h3>Full-Stack Built-in</h3>
@@ -61,6 +71,14 @@
         <div class="feature-card">
           <h3>Two Syntax Modes</h3>
           <p><code>.naide</code> is human-readable. <code>.nx</code> is AI-optimized. Convert freely between them with <code>naide convert</code>.</p>
+        </div>
+        <div class="feature-card">
+          <h3>MCP Server</h3>
+          <p>Built-in <code>naide-mcp</code> binary for Claude Code integration. Let AI agents read, write, and run NAIDE code directly.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Modern Syntax Sugar</h3>
+          <p>Pipe operator (<code>|&gt;</code>), optional chaining (<code>?.</code>), null coalescing (<code>??</code>), spread, <code>auto</code> type inference, destructuring, and more.</p>
         </div>
       </div>
 
@@ -120,13 +138,15 @@ Build to JavaScript:
       <h2>Learn More</h2>
       <ul>
         <li><a href="guide.html">Getting Started</a> &mdash; install, create a project, run your first app</li>
-        <li><a href="syntax.html">Syntax Reference</a> &mdash; variables, functions, control flow, classes</li>
+        <li><a href="syntax.html">Syntax Reference</a> &mdash; variables, functions, control flow, classes, pipes, destructuring</li>
         <li><a href="server.html">Server &amp; API</a> &mdash; routes, auth, CRUD, WebSockets, SSE</li>
+        <li><a href="bot.html">Bots</a> &mdash; Discord, Slack, Telegram, LINE chatbots</li>
         <li><a href="ai.html">AI / LLM</a> &mdash; prompts, streaming, embeddings, RAG</li>
         <li><a href="database.html">Database</a> &mdash; JSON storage, SQLite, PostgreSQL</li>
         <li><a href="testing.html">Testing</a> &mdash; test blocks, assertions, mock/spy</li>
-        <li><a href="cli.html">CLI Reference</a> &mdash; all commands and flags</li>
+        <li><a href="cli.html">CLI Reference</a> &mdash; all 15 compilation targets, flags, MCP server</li>
         <li><a href="nx.html">NAIDE-X Syntax</a> &mdash; compressed AI-only syntax</li>
+        <li><a href="../playground/index.html">Playground</a> &mdash; try NAIDE in your browser</li>
       </ul>
 
       <div class="footer">

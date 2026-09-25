@@ -12,7 +12,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v1.12.0</span>
+      <span class="version">v1.18.0</span>
     </div>
     <nav>
       <a href="index.html">Home</a>
@@ -22,6 +22,7 @@
       <a href="nx.html">NAIDE-X Syntax</a>
       <span class="nav-section">Features</span>
       <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
       <a href="ai.html">AI / LLM</a>
       <a href="database.html">Database</a>
       <a href="page.html">Page Generation</a>
@@ -31,6 +32,7 @@
       <a href="testing.html">Testing</a>
       <span class="nav-section">Tools</span>
       <a href="cli.html">CLI Reference</a>
+      <a href="../playground/index.html">Playground</a>
     </nav>
   </aside>
 
@@ -68,6 +70,38 @@
           <tr><td><code>void</code></td><td>No return value</td><td><code>void</code></td></tr>
         </tbody>
       </table>
+
+      <!-- Type Inference -->
+      <h2>Type Inference (auto)</h2>
+      <p>Use <code>auto</code> to let the compiler infer the type from the assigned value:</p>
+      <pre><code class="lang-naide"><span class="kw">auto</span> name = <span class="str">"hello"</span>              <span class="cmt"># inferred as str</span>
+<span class="kw">auto</span> count = <span class="num">42</span>                  <span class="cmt"># inferred as int</span>
+<span class="kw">auto</span> price = <span class="num">9.99</span>                <span class="cmt"># inferred as num</span>
+<span class="kw">auto</span> active = <span class="num">true</span>               <span class="cmt"># inferred as bool</span>
+<span class="kw">auto</span> items = [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]          <span class="cmt"># inferred as list</span>
+<span class="kw">auto</span> config = {host: <span class="str">"localhost"</span>} <span class="cmt"># inferred as map</span>
+
+<span class="kw">mut</span> <span class="kw">auto</span> counter = <span class="num">0</span>             <span class="cmt"># mutable with inferred type</span></code></pre>
+      <p>Compiles to <code>const</code> (or <code>let</code> with <code>mut</code>) without explicit type annotations in the output.</p>
+
+      <!-- Destructuring -->
+      <h2>Destructuring</h2>
+      <p>Extract values from objects and arrays with destructuring syntax:</p>
+      <h3>Object Destructuring</h3>
+      <pre><code class="lang-naide"><span class="kw">auto</span> {name, age} = user
+<span class="kw">auto</span> {name, age, ...rest} = user   <span class="cmt"># with rest</span>
+<span class="type">str</span> {first, last} = names           <span class="cmt"># typed destructuring</span></code></pre>
+      <h3>Array Destructuring</h3>
+      <pre><code class="lang-naide"><span class="kw">auto</span> [a, b] = items
+<span class="kw">auto</span> [first, ...rest] = items       <span class="cmt"># with rest</span>
+<span class="type">int</span> [x, y, z] = coordinates         <span class="cmt"># typed destructuring</span></code></pre>
+
+      <!-- Spread Operator -->
+      <h2>Spread Operator</h2>
+      <p>Spread arrays and objects with <code>...</code>:</p>
+      <pre><code class="lang-naide"><span class="type">list</span> merged = [...a, ...b]                 <span class="cmt"># merge arrays</span>
+<span class="type">map</span> combined = {...defaults, ...overrides}  <span class="cmt"># merge objects</span>
+<span class="type">map</span> updated = {...user, name: <span class="str">"new"</span>}        <span class="cmt"># override a field</span></code></pre>
 
       <!-- String Interpolation -->
       <h2>String Interpolation</h2>
@@ -129,6 +163,48 @@
   <span class="bi">log</span> <span class="str">"running"</span>
   active = <span class="num">false</span></code></pre>
 
+      <!-- Syntax Sugar -->
+      <h2>Syntax Sugar</h2>
+      <h3>unless</h3>
+      <p>Inverted <code>if</code> &mdash; runs the block when the condition is false:</p>
+      <pre><code class="lang-naide"><span class="kw">unless</span> active:
+  <span class="bi">log</span> <span class="str">"not active"</span></code></pre>
+
+      <h3>until</h3>
+      <p>Inverted <code>while</code> &mdash; loops until the condition becomes true:</p>
+      <pre><code class="lang-naide"><span class="kw">until</span> done:
+  process()
+  done = check()</code></pre>
+
+      <h3>repeat</h3>
+      <p>Loop a fixed number of times:</p>
+      <pre><code class="lang-naide"><span class="kw">repeat</span> <span class="num">5</span>:
+  <span class="bi">log</span> <span class="str">"hello"</span></code></pre>
+
+      <h3>is / isnt</h3>
+      <p>Readable aliases for <code>===</code> and <code>!==</code>:</p>
+      <pre><code class="lang-naide"><span class="kw">if</span> status <span class="kw">is</span> <span class="str">"ok"</span>:
+  <span class="bi">log</span> <span class="str">"success"</span>
+<span class="kw">if</span> status <span class="kw">isnt</span> <span class="str">"error"</span>:
+  <span class="bi">log</span> <span class="str">"not an error"</span></code></pre>
+
+      <h3>swap</h3>
+      <p>Swap two variables in one statement:</p>
+      <pre><code class="lang-naide"><span class="kw">swap</span> a, b</code></pre>
+
+      <h3>One-Line Functions</h3>
+      <pre><code class="lang-naide"><span class="kw">fn</span> <span class="fn">double</span>(<span class="type">int</span> x) -> <span class="type">int</span>: <span class="kw">ret</span> x * <span class="num">2</span>
+<span class="kw">fn</span> <span class="fn">greet</span>(<span class="type">str</span> name): <span class="bi">log</span> <span class="str">"Hi {name}"</span></code></pre>
+
+      <h3>print</h3>
+      <p>Alias for <code>log</code>:</p>
+      <pre><code class="lang-naide"><span class="bi">print</span> <span class="str">"hello world"</span></code></pre>
+
+      <h3>enum</h3>
+      <p>Define enumerations:</p>
+      <pre><code class="lang-naide"><span class="kw">enum</span> Color: RED, GREEN, BLUE
+<span class="bi">log</span> Color.RED   <span class="cmt"># 0</span></code></pre>
+
       <!-- Pattern Matching -->
       <h2>Pattern Matching</h2>
       <pre><code class="lang-naide"><span class="kw">match</span> status:
@@ -162,29 +238,69 @@
       <p><code>typeof</code> returns the type as a string. <code>instanceof</code> checks if a value is an instance of a class or constructor.</p>
 
       <!-- Classes -->
-      <h2>Classes (model)</h2>
-      <p>Use <code>model</code> to define classes with typed properties:</p>
+      <h2>Classes (model / schema)</h2>
+      <p>Use <code>model</code> or <code>schema</code> to define classes with typed properties:</p>
       <pre><code class="lang-naide"><span class="kw">model</span> <span class="fn">User</span>:
   <span class="type">str</span> name
   <span class="type">str</span> email
   <span class="type">int</span> age = <span class="num">0</span>
 
   <span class="kw">fn</span> <span class="fn">greet</span>() -> <span class="type">str</span>:
-    <span class="kw">ret</span> <span class="str">"Hi, I'm {self.name}"</span>
+    <span class="kw">ret</span> <span class="str">"Hi, I'm {self.name}"</span></code></pre>
+      <p><code>self</code> refers to the current instance (compiles to <code>this</code>).</p>
 
-<span class="kw">model</span> <span class="fn">Admin</span> <span class="kw">extends</span> User:
+      <h3>Class Inheritance (extends)</h3>
+      <p>Use <code>extends</code> with <code>schema</code> or <code>model</code> for class inheritance:</p>
+      <pre><code class="lang-naide"><span class="kw">schema</span> <span class="fn">Animal</span>:
+  <span class="type">str</span> name
+  <span class="type">str</span> sound
+
+  <span class="kw">fn</span> <span class="fn">speak</span>() -> <span class="type">str</span>:
+    <span class="kw">ret</span> <span class="str">"{self.name} says {self.sound}"</span>
+
+<span class="kw">schema</span> <span class="fn">Dog</span> <span class="kw">extends</span> Animal:
+  <span class="kw">init</span>(<span class="type">str</span> name):
+    self.name = name
+    self.sound = <span class="str">"woof"</span>
+
+  <span class="kw">fn</span> <span class="fn">fetch</span>(<span class="type">str</span> item) -> <span class="type">str</span>:
+    <span class="kw">ret</span> <span class="str">"{self.name} fetches {item}"</span></code></pre>
+      <p>The <code>init</code> keyword defines a constructor. Child classes inherit all properties and methods from the parent.</p>
+
+      <h3>Admin Example</h3>
+      <pre><code class="lang-naide"><span class="kw">model</span> <span class="fn">Admin</span> <span class="kw">extends</span> User:
   <span class="type">str</span> role = <span class="str">"admin"</span>
   <span class="kw">fn</span> <span class="fn">permissions</span>() -> <span class="type">list</span>:
     <span class="kw">ret</span> [<span class="str">"read"</span>, <span class="str">"write"</span>, <span class="str">"delete"</span>]</code></pre>
-      <p><code>self</code> refers to the current instance (compiles to <code>this</code>).</p>
 
       <!-- Pipe Operator -->
-      <h2>Pipe Operator</h2>
+      <h2>Pipe Operator (|&gt;)</h2>
+      <p>Chain operations for readable data transformations:</p>
       <pre><code class="lang-naide"><span class="type">list</span> result = data
   |> filter((x) => x.active)
   |> map((x) => x.name)
   |> sort()</code></pre>
-      <p>Pipes chain method calls for readable data transformations.</p>
+      <pre><code class="lang-naide"><span class="type">list</span> result = items
+  |> filter((x) => x > <span class="num">0</span>)
+  |> map((x) => x * <span class="num">2</span>)
+  |> unique()
+  |> sort()</code></pre>
+
+      <!-- Optional Chaining -->
+      <h2>Optional Chaining (?.)</h2>
+      <p>Safely access nested properties without null checks:</p>
+      <pre><code class="lang-naide"><span class="type">str</span> name = user?.profile?.name
+<span class="type">str</span> city = user?.address?.city
+<span class="type">any</span> result = obj?.method?.()</code></pre>
+      <p>Returns <code>undefined</code> if any part of the chain is <code>null</code> or <code>undefined</code>.</p>
+
+      <!-- Null Coalescing -->
+      <h2>Null Coalescing (??)</h2>
+      <p>Provide a default value when the left-hand side is <code>null</code> or <code>undefined</code>:</p>
+      <pre><code class="lang-naide"><span class="type">str</span> name = user?.name ?? <span class="str">"Anonymous"</span>
+<span class="type">int</span> port = config?.port ?? <span class="num">3000</span>
+<span class="type">str</span> display = label ?? title ?? <span class="str">"Untitled"</span></code></pre>
+      <p>Unlike <code>||</code>, the <code>??</code> operator only falls through on <code>null</code>/<code>undefined</code>, not on <code>0</code>, <code>""</code>, or <code>false</code>.</p>
 
       <!-- Imports / Exports -->
       <h2>Imports &amp; Exports</h2>
@@ -211,13 +327,108 @@
       <p>Variables become constants read from <code>process.env</code>. Missing <code>required</code> variables cause the process to exit with an error.</p>
 
       <!-- Built-in Functions -->
-      <h2>Built-in Functions</h2>
+      <h2>Built-in Functions (40+)</h2>
+      <p>NAIDE includes 40+ built-in functions auto-imported from the runtime when used. No <code>import</code> required.</p>
+
+      <h3>I/O &amp; System</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>ask(prompt)</code></td><td>Read user input from stdin</td></tr>
+          <tr><td><code>sleep(ms)</code></td><td>Pause execution for <code>ms</code> milliseconds</td></tr>
+          <tr><td><code>exit(code?)</code></td><td>Exit the process with optional exit code</td></tr>
+          <tr><td><code>read(path)</code></td><td>Read file contents as string</td></tr>
+          <tr><td><code>write(path, data)</code></td><td>Write string data to a file</td></tr>
+          <tr><td><code>fetch_json(url)</code></td><td>Fetch a URL and parse JSON response</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Collections</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>sort(list)</code></td><td>Sort a list</td></tr>
+          <tr><td><code>reverse(list)</code></td><td>Reverse a list</td></tr>
+          <tr><td><code>unique(list)</code></td><td>Remove duplicates</td></tr>
+          <tr><td><code>len(val)</code></td><td>Length of string, list, or map</td></tr>
+          <tr><td><code>range(start, end)</code></td><td>Generate a numeric range</td></tr>
+          <tr><td><code>flat(list)</code></td><td>Flatten nested lists</td></tr>
+          <tr><td><code>zip(a, b)</code></td><td>Zip two lists into pairs</td></tr>
+          <tr><td><code>chunk(list, n)</code></td><td>Split list into chunks of size <code>n</code></td></tr>
+          <tr><td><code>random(min?, max?)</code></td><td>Random number (or random from list)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Higher-Order Functions</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>map(list, fn)</code></td><td>Transform each element</td></tr>
+          <tr><td><code>filter(list, fn)</code></td><td>Keep elements matching predicate</td></tr>
+          <tr><td><code>reduce(list, fn, init)</code></td><td>Reduce to single value</td></tr>
+          <tr><td><code>find(list, fn)</code></td><td>Find first matching element</td></tr>
+          <tr><td><code>every(list, fn)</code></td><td>Check if all elements match</td></tr>
+          <tr><td><code>some(list, fn)</code></td><td>Check if any element matches</td></tr>
+          <tr><td><code>foreach(list, fn)</code></td><td>Execute function for each element</td></tr>
+        </tbody>
+      </table>
+
+      <h3>String Functions</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>upper(str)</code></td><td>Convert to uppercase</td></tr>
+          <tr><td><code>lower(str)</code></td><td>Convert to lowercase</td></tr>
+          <tr><td><code>trim(str)</code></td><td>Remove leading/trailing whitespace</td></tr>
+          <tr><td><code>split(str, sep)</code></td><td>Split string by separator</td></tr>
+          <tr><td><code>join(list, sep)</code></td><td>Join list elements into string</td></tr>
+          <tr><td><code>contains(str, sub)</code></td><td>Check if string contains substring</td></tr>
+          <tr><td><code>replace(str, old, new)</code></td><td>Replace occurrences in string</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Object / Map Functions</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>keys(map)</code></td><td>Get list of keys</td></tr>
+          <tr><td><code>values(map)</code></td><td>Get list of values</td></tr>
+          <tr><td><code>entries(map)</code></td><td>Get list of [key, value] pairs</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Math Functions</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>abs(n)</code></td><td>Absolute value</td></tr>
+          <tr><td><code>round(n)</code></td><td>Round to nearest integer</td></tr>
+          <tr><td><code>ceil(n)</code></td><td>Round up</td></tr>
+          <tr><td><code>floor(n)</code></td><td>Round down</td></tr>
+          <tr><td><code>sqrt(n)</code></td><td>Square root</td></tr>
+          <tr><td><code>pow(base, exp)</code></td><td>Exponentiation</td></tr>
+          <tr><td><code>sum(list)</code></td><td>Sum of all numbers in list</td></tr>
+        </tbody>
+      </table>
+
+      <h3>JSON &amp; Time</h3>
+      <table>
+        <thead><tr><th>Function</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>json_parse(str)</code></td><td>Parse JSON string to object</td></tr>
+          <tr><td><code>json_str(val)</code></td><td>Stringify value to JSON</td></tr>
+          <tr><td><code>now()</code></td><td>Current ISO timestamp</td></tr>
+          <tr><td><code>time()</code></td><td>Current Unix timestamp (ms)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Security</h3>
       <pre><code class="lang-naide"><span class="type">str</span> id = <span class="bi">uuid</span>()                          <span class="cmt"># UUID generation</span>
 <span class="type">str</span> hashed = <span class="bi">hash</span>(<span class="str">"password"</span>)            <span class="cmt"># scrypt hash</span>
 <span class="type">bool</span> ok = <span class="bi">verify</span>(<span class="str">"password"</span>, hashed)     <span class="cmt"># timing-safe verify</span>
 <span class="type">str</span> token = <span class="bi">sign</span>({id: <span class="num">1</span>})                <span class="cmt"># JWT (uses auth secret)</span>
 <span class="type">str</span> token = <span class="bi">sign</span>({id: <span class="num">1</span>}, <span class="str">"my-secret"</span>)   <span class="cmt"># JWT (explicit secret)</span></code></pre>
-      <p>These are auto-imported from the NAIDE runtime when used.</p>
+      <p>All built-in functions are auto-imported from the NAIDE runtime when used.</p>
 
       <!-- HTTP Client -->
       <h2>HTTP Client</h2>
