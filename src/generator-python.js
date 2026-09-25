@@ -162,6 +162,8 @@ export class PythonGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -1067,6 +1069,12 @@ export class PythonGenerator {
 
   generateCall(node) {
     const args = node.args.map(a => this.expr(a)).join(', ');
+
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b !== null) return b;
+    }
 
     // Map common JS global functions to Python
     if (node.callee.type === 'Identifier') {
@@ -2465,5 +2473,70 @@ export class PythonGenerator {
     this.indent--;
     this.emit(`${name.replace(/\W/g, '_')} = ${name.charAt(0).toUpperCase() + name.slice(1).replace(/\W/g, '_')}()`);
     this.emitRaw('');
+  }
+
+  // ===== Enum =====
+  visitEnum(node) {
+    this.addFromImport('enum', 'Enum');
+    this.emit(`class ${node.name}(Enum):`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`${v} = ${i}`);
+    });
+    this.indent--;
+    this.emitRaw('');
+  }
+
+  // ===== Swap =====
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`${a}, ${b} = ${b}, ${a}`);
+  }
+
+  // ===== Builtins =====
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'ask': return `input(${args[0] || '""'})`;
+      case 'sleep': { this.addImport('time'); return `time.sleep(${args[0]} / 1000)`; }
+      case 'exit': { this.addImport('sys'); return `sys.exit(${args[0] || '0'})`; }
+      case 'read': return `open(${args[0]}).read()`;
+      case 'write': return `open(${args[0]}, 'w').write(${args[1]})`;
+      case 'fetch_json': { this.addImport('requests'); return `requests.get(${args[0]}).json()`; }
+      case 'random': { this.addImport('random'); return args.length >= 2 ? `random.randint(${args[0]}, ${args[1]})` : `random.random()`; }
+      case 'sort': return `sorted(${args[0]})`;
+      case 'reverse': return `list(reversed(${args[0]}))`;
+      case 'unique': return `list(set(${args[0]}))`;
+      case 'len': return `len(${args[0]})`;
+      case 'upper': return `${args[0]}.upper()`;
+      case 'lower': return `${args[0]}.lower()`;
+      case 'trim': return `${args[0]}.strip()`;
+      case 'split': return `${args[0]}.split(${args[1] || ''})`;
+      case 'join': return `${args[1] || '","'}.join(${args[0]})`;
+      case 'contains': return `(${args[1]} in ${args[0]})`;
+      case 'replace': return `${args[0]}.replace(${args[1]}, ${args[2]})`;
+      case 'keys': return `list(${args[0]}.keys())`;
+      case 'values': return `list(${args[0]}.values())`;
+      case 'entries': return `list(${args[0]}.items())`;
+      case 'range': return args.length >= 2 ? `list(range(${args[0]}, ${args[1]}))` : `list(range(${args[0]}))`;
+      case 'abs': return `abs(${args[0]})`;
+      case 'round': return `round(${args[0]})`;
+      case 'ceil': { this.addImport('math'); return `math.ceil(${args[0]})`; }
+      case 'floor': { this.addImport('math'); return `math.floor(${args[0]})`; }
+      case 'sqrt': { this.addImport('math'); return `math.sqrt(${args[0]})`; }
+      case 'pow': return `${args[0]} ** ${args[1]}`;
+      case 'sum': return `sum(${args[0]})`;
+      case 'flat': return `[x for sub in ${args[0]} for x in sub]`;
+      case 'zip': return `list(zip(${args[0]}, ${args[1]}))`;
+      case 'str': return `str(${args[0]})`;
+      case 'int': return `int(${args[0]})`;
+      case 'float': return `float(${args[0]})`;
+      case 'json_parse': { this.addImport('json'); return `json.loads(${args[0]})`; }
+      case 'json_str': { this.addImport('json'); return `json.dumps(${args[0]})`; }
+      case 'now': { this.addImport('time'); return `int(time.time() * 1000)`; }
+      case 'time': { this.addFromImport('datetime', 'datetime'); return `datetime.now().isoformat()`; }
+      case 'chunk': return `[${args[0]}[i:i+${args[1]}] for i in range(0, len(${args[0]}), ${args[1]})]`;
+      default: return null;
+    }
   }
 }

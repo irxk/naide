@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { compile, transpile, preprocess } from '../src/index.js';
+import { compile, transpile, compileAsync, preprocess } from '../src/index.js';
 import * as lexerMod from '../src/lexer.js';
 
 describe('NAIDE v1', () => {
@@ -2076,5 +2076,160 @@ describe('Runtime unit tests', () => {
     assert.ok(lsp.includes('getDefinition'));
     assert.ok(lsp.includes('getReferences'));
     assert.ok(lsp.includes('indexSymbols'));
+  });
+});
+
+// ===== Syntax Sugar & Simplicity =====
+describe('Syntax Sugar', () => {
+  it('compiles unless (desugars to negated if)', () => {
+    const js = transpile('unless x > 5:\n  log "small"');
+    assert.ok(js.includes('if (!'));
+    assert.ok(js.includes('console.log'));
+  });
+
+  it('compiles until (desugars to negated while)', () => {
+    const js = transpile('mut int i = 0\nuntil i > 10:\n  i = i + 1');
+    assert.ok(js.includes('while (!'));
+  });
+
+  it('compiles repeat N', () => {
+    const js = transpile('repeat 5:\n  log "hi"');
+    assert.ok(js.includes('for (let it = 0; it < 5; it++)'));
+  });
+
+  it('compiles repeat N as varName', () => {
+    const js = transpile('repeat 3 as i:\n  log i');
+    assert.ok(js.includes('for (let i = 0; i < 3; i++)'));
+  });
+
+  it('compiles enum declaration', () => {
+    const js = transpile('enum Color:\n  RED\n  GREEN\n  BLUE');
+    assert.ok(js.includes('Object.freeze'));
+    assert.ok(js.includes('RED'));
+    assert.ok(js.includes('GREEN'));
+    assert.ok(js.includes('BLUE'));
+  });
+
+  it('compiles inline enum', () => {
+    const js = transpile('enum Status: ACTIVE, INACTIVE');
+    assert.ok(js.includes('Object.freeze'));
+    assert.ok(js.includes('ACTIVE'));
+  });
+
+  it('compiles swap', () => {
+    const js = transpile('mut int a = 1\nmut int b = 2\nswap a, b');
+    assert.ok(js.includes('[a, b] = [b, a]'));
+  });
+
+  it('compiles is / isnt operators', () => {
+    const js = transpile('if x is 5:\n  log "yes"');
+    assert.ok(js.includes('==='));
+    const js2 = transpile('if x isnt null:\n  log "exists"');
+    assert.ok(js2.includes('!=='));
+  });
+
+  it('compiles one-line function', () => {
+    const js = transpile('fn double(int x) -> int = x * 2');
+    assert.ok(js.includes('function double(x)'));
+    assert.ok(js.includes('return'));
+    assert.ok(js.includes('x * 2'));
+  });
+
+  it('compiles print alias', () => {
+    const js = transpile('print "hello"');
+    assert.ok(js.includes('console.log'));
+  });
+});
+
+describe('Builtin functions', () => {
+  it('compiles len()', () => {
+    const js = transpile('int n = len(items)');
+    assert.ok(js.includes('.length'));
+  });
+
+  it('compiles sort()', () => {
+    const js = transpile('list s = sort(items)');
+    assert.ok(js.includes('sort()'));
+  });
+
+  it('compiles upper() and lower()', () => {
+    const js = transpile('str u = upper(name)');
+    assert.ok(js.includes('.toUpperCase()'));
+    const js2 = transpile('str l = lower(name)');
+    assert.ok(js2.includes('.toLowerCase()'));
+  });
+
+  it('compiles trim()', () => {
+    const js = transpile('str t = trim(text)');
+    assert.ok(js.includes('.trim()'));
+  });
+
+  it('compiles contains()', () => {
+    const js = transpile('bool found = contains(items, "x")');
+    assert.ok(js.includes('.includes'));
+  });
+
+  it('compiles range()', () => {
+    const js = transpile('list r = range(10)');
+    assert.ok(js.includes('Array.from'));
+  });
+
+  it('compiles keys/values/entries()', () => {
+    const js = transpile('list k = keys(obj)');
+    assert.ok(js.includes('Object.keys'));
+    const js2 = transpile('list v = values(obj)');
+    assert.ok(js2.includes('Object.values'));
+    const js3 = transpile('list e = entries(obj)');
+    assert.ok(js3.includes('Object.entries'));
+  });
+
+  it('compiles str/int/float type conversions', () => {
+    const js = transpile('str s = str(42)');
+    assert.ok(js.includes('String('));
+    const js2 = transpile('int n = int("42")');
+    assert.ok(js2.includes('parseInt('));
+    const js3 = transpile('num f = float("3.14")');
+    assert.ok(js3.includes('parseFloat('));
+  });
+
+  it('compiles json_parse/json_str', () => {
+    const js = transpile('any d = json_parse(text)');
+    assert.ok(js.includes('JSON.parse'));
+    const js2 = transpile('str s = json_str(data)');
+    assert.ok(js2.includes('JSON.stringify'));
+  });
+
+  it('compiles abs/round/ceil/floor/sqrt/pow', () => {
+    const js = transpile('num a = abs(-5)');
+    assert.ok(js.includes('Math.abs'));
+    const js2 = transpile('num r = round(3.7)');
+    assert.ok(js2.includes('Math.round'));
+    const js3 = transpile('num s = sqrt(16)');
+    assert.ok(js3.includes('Math.sqrt'));
+  });
+
+  it('compiles sum/flat/zip', () => {
+    const js = transpile('num total = sum(nums)');
+    assert.ok(js.includes('.reduce('));
+    const js2 = transpile('list f = flat(nested)');
+    assert.ok(js2.includes('.flat()'));
+  });
+
+  it('compiles builtins to Python target', async () => {
+    const r = await compileAsync('int n = len(items)', { target: 'python' });
+    assert.ok(r.code.includes('len('));
+    const r2 = await compileAsync('str u = upper(name)', { target: 'python' });
+    assert.ok(r2.code.includes('.upper()'));
+  });
+
+  it('compiles enum to Python target', async () => {
+    const r = await compileAsync('enum Color:\n  RED\n  GREEN\n  BLUE', { target: 'python' });
+    assert.ok(r.code.includes('class Color(Enum)'));
+    assert.ok(r.code.includes('RED'));
+  });
+
+  it('compiles swap to Python target', async () => {
+    const r = await compileAsync('mut int a = 1\nmut int b = 2\nswap a, b', { target: 'python' });
+    assert.ok(r.code.includes('a, b = b, a'));
   });
 });

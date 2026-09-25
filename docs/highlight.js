@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'page', 'cli', 'mail', 'graphql', 'desktop', 'screen', 'every', 'watch',
     'oauth', 'pay', 'storage', 'pdf', 'i18n', 'push', 'search', 'image',
     'csv', 'logging', 'migrate', 'grpc', 'webrtc', 'blockchain',
+    'unless', 'until', 'repeat', 'enum', 'swap', 'is', 'isnt', 'print', 'as',
     'import', 'from', 'export',
     'const', 'let', 'var', 'function', 'async', 'return', 'class', 'extends',
     'try', 'catch', 'finally', 'if', 'else', 'for', 'while', 'switch', 'case',
@@ -26,6 +27,11 @@ document.addEventListener('DOMContentLoaded', () => {
     'ai', 'api', 'console', 'print', 'jsonify', 'Flask',
     'createMock', 'createSpy', 'registerPlugin', 'usePlugin',
     'createVectorStore', 'createPrompt', 'createSchema', 'createStore',
+    'ask', 'sleep', 'exit', 'read', 'write', 'fetch_json', 'random',
+    'sort', 'reverse', 'unique', 'len', 'upper', 'lower', 'trim',
+    'split', 'join', 'contains', 'replace', 'keys', 'values', 'entries',
+    'range', 'abs', 'round', 'ceil', 'floor', 'sqrt', 'pow', 'sum',
+    'flat', 'zip', 'chunk', 'json_parse', 'json_str', 'now', 'time',
   ]);
 
   function escapeHtml(s) {

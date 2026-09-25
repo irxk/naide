@@ -634,3 +634,105 @@ blockchain "eth":
   contract "0x1234abcd..."
   abi "contract-abi.json"
 # usage: eth.getBalance("0x..."), eth.getBlock(), eth.sendTx(wallet, to, "0.1")
+
+
+# ============================================
+# シンプルシンタックス (Pythonより簡単)
+# ============================================
+
+# ---- unless (ifの逆) ----
+unless x > 10:
+  log "xは10以下"
+
+# ---- until (whileの逆) ----
+mut int i = 0
+until i > 10:
+  i = i + 1
+
+# ---- repeat (簡単ループ) ----
+repeat 5:
+  log "hello"
+
+repeat 10 as i:
+  log i
+
+# ---- enum (列挙型) ----
+enum Color:
+  RED
+  GREEN
+  BLUE
+
+# インライン形式
+enum Status: ACTIVE, INACTIVE, PENDING
+
+# ---- swap (値の交換) ----
+mut int a = 1
+mut int b = 2
+swap a, b
+
+# ---- is / isnt (比較演算子) ----
+if x is 5:
+  log "xは5"
+if y isnt null:
+  log "yはnullじゃない"
+
+# ---- 一行関数 ----
+fn double(int x) -> int = x * 2
+fn greet(str name) -> str = "Hello, {name}!"
+
+# ---- print (logのエイリアス) ----
+print "hello world"
+
+# ---- ビルトイン関数 ----
+# 型変換
+str s = str(42)
+int n = int("42")
+num f = float("3.14")
+
+# 文字列操作
+str u = upper("hello")        # "HELLO"
+str l = lower("HELLO")        # "hello"
+str t = trim("  hi  ")        # "hi"
+list parts = split("a,b,c", ",")  # ["a","b","c"]
+str joined = join(parts, "-")     # "a-b-c"
+str replaced = replace("hello", "l", "r")  # "herro"
+bool has = contains("hello", "ell")  # true
+
+# コレクション操作
+int length = len(items)
+list sorted = sort(items)
+list reversed = reverse(items)
+list uniq = unique([1,1,2,3])  # [1,2,3]
+list k = keys(obj)
+list v = values(obj)
+list e = entries(obj)
+list r = range(10)             # [0,1,...,9]
+list chunks = chunk([1,2,3,4], 2)  # [[1,2],[3,4]]
+list zipped = zip([1,2], ["a","b"])
+list flattened = flat([[1,2],[3,4]])
+
+# 数学
+num a2 = abs(-5)
+num r2 = round(3.7)
+num c = ceil(3.1)
+num fl = floor(3.9)
+num sq = sqrt(16)
+num p = pow(2, 10)
+num total = sum([1,2,3])
+
+# JSON
+any data2 = json_parse('{"a":1}')
+str json = json_str(data2)
+
+# 時間
+int timestamp = now()
+str timestr = time()
+
+# I/O
+str content = read("file.txt")
+write("out.txt", content)
+str answer = ask("名前は？")
+
+# その他
+sleep(1000)
+exit(0)

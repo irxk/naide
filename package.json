@@ -1,7 +1,7 @@
 {
   "name": "naider",
-  "version": "1.15.0",
-  "description": "NAIDE - Node AI Development Environment. AI-specialized language transpiling to 15 targets: Node.js, Python, Bun, TypeScript, C, C++, Java, Go, Rust, PHP, Ruby, Kotlin, Swift, Dart, C#. Built-in server, auth, DB, AI/LLM, bots, GraphQL, gRPC, WebRTC, blockchain, and 47 more features.",
+  "version": "1.16.0",
+  "description": "NAIDE - Simpler than Python, compiles to 15 targets. AI-specialized language with 35+ built-in functions, syntax sugar (unless/until/repeat/swap/is/isnt), and 47 features. Targets: Node.js, Python, TypeScript, C, C++, Java, Go, Rust, PHP, Ruby, Kotlin, Swift, Dart, C#, Bun.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",

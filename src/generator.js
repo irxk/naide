@@ -162,6 +162,8 @@ export class Generator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1724,6 +1726,12 @@ export class Generator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const args = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, args);
+      if (b !== null) return b;
+    }
+
     const AUTO_IMPORT = { 'hash': 'hash', 'verify': 'verify', 'uuid': 'uuid',
       'createMock': 'createMock', 'createSpy': 'createSpy',
       'registerPlugin': 'registerPlugin', 'usePlugin': 'usePlugin' };
@@ -2393,5 +2401,70 @@ export class Generator {
     this.indent--;
     this.emit(`};`);
     this.emitRaw('');
+  }
+
+  // ===== Enum =====
+  visitEnum(node) {
+    this.emit(`const ${node.name} = Object.freeze({`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`${v}: ${i},`);
+    });
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+  }
+
+  // ===== Swap =====
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`[${a}, ${b}] = [${b}, ${a}];`);
+  }
+
+  // ===== Builtins =====
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'ask': return `await new Promise(__r => { const __rl = (await import('readline')).createInterface({input:process.stdin,output:process.stdout}); __rl.question(${args[0] || '""'}, __a => { __rl.close(); __r(__a); }); })`;
+      case 'sleep': return `await new Promise(__r => setTimeout(__r, ${args[0] || '0'}))`;
+      case 'exit': return `process.exit(${args[0] || '0'})`;
+      case 'read': return `(await import('fs')).readFileSync(${args[0]}, 'utf-8')`;
+      case 'write': return `(await import('fs')).writeFileSync(${args[0]}, ${args[1]})`;
+      case 'fetch_json': return `await fetch(${args[0]}).then(r => r.json())`;
+      case 'random': return args.length >= 2 ? `(Math.floor(Math.random() * (${args[1]} - ${args[0]} + 1)) + ${args[0]})` : `Math.random()`;
+      case 'sort': return `[...${args[0]}].sort()`;
+      case 'reverse': return `[...${args[0]}].reverse()`;
+      case 'unique': return `[...new Set(${args[0]})]`;
+      case 'len': return `${args[0]}.length`;
+      case 'upper': return `${args[0]}.toUpperCase()`;
+      case 'lower': return `${args[0]}.toLowerCase()`;
+      case 'trim': return `${args[0]}.trim()`;
+      case 'split': return `${args[0]}.split(${args[1] || '""'})`;
+      case 'join': return `${args[0]}.join(${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.includes(${args[1]})`;
+      case 'replace': return `${args[0]}.replace(${args[1]}, ${args[2]})`;
+      case 'keys': return `Object.keys(${args[0]})`;
+      case 'values': return `Object.values(${args[0]})`;
+      case 'entries': return `Object.entries(${args[0]})`;
+      case 'range': return args.length >= 2 ? `Array.from({length: ${args[1]} - ${args[0]}}, (_, i) => i + ${args[0]})` : `Array.from({length: ${args[0]}}, (_, i) => i)`;
+      case 'abs': return `Math.abs(${args[0]})`;
+      case 'round': return `Math.round(${args[0]})`;
+      case 'ceil': return `Math.ceil(${args[0]})`;
+      case 'floor': return `Math.floor(${args[0]})`;
+      case 'sqrt': return `Math.sqrt(${args[0]})`;
+      case 'pow': return `Math.pow(${args[0]}, ${args[1]})`;
+      case 'sum': return `${args[0]}.reduce((a, b) => a + b, 0)`;
+      case 'flat': return `${args[0]}.flat()`;
+      case 'zip': return `${args[0]}.map((v, i) => [v, ${args[1]}[i]])`;
+      case 'str': return `String(${args[0]})`;
+      case 'int': return `parseInt(${args[0]})`;
+      case 'float': return `parseFloat(${args[0]})`;
+      case 'json_parse': return `JSON.parse(${args[0]})`;
+      case 'json_str': return `JSON.stringify(${args[0]})`;
+      case 'now': return `Date.now()`;
+      case 'time': return `new Date().toISOString()`;
+      case 'chunk': return `Array.from({length: Math.ceil(${args[0]}.length / ${args[1]})}, (_, i) => ${args[0]}.slice(i * ${args[1]}, (i + 1) * ${args[1]}))`;
+      default: return null;
+    }
   }
 }

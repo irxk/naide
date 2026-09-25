@@ -1,8 +1,8 @@
 # NAIDE
 
-**Node AI Development Environment** — A programming language designed for AI-speed code generation that transpiles to **15 languages**.
+**Node AI Development Environment** — A programming language simpler than Python, designed for AI-speed code generation, that transpiles to **15 languages**.
 
-NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 47 built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
+NAIDE is built on four principles: simpler than Python (built-in functions, syntax sugar, zero boilerplate), one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 35+ built-in functions, syntax sugar (`unless`, `until`, `repeat`, `swap`, `is`/`isnt`, one-line functions), and 47 built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
 
 ### Compilation Targets
 
@@ -885,14 +885,97 @@ env:
 
 Variables become constants. Missing `required` vars exit with an error.
 
+## Syntax Sugar (Simpler than Python)
+
+```python
+# unless — negated if
+unless x > 10:
+  log "small"
+
+# until — negated while
+until done:
+  process()
+
+# repeat — simple counted loop
+repeat 5:
+  log "hi"
+repeat 10 as i:
+  log i
+
+# enum
+enum Color:
+  RED
+  GREEN
+  BLUE
+
+# swap
+swap a, b
+
+# is / isnt — readable equality
+if x is 5: log "five"
+if y isnt null: log "exists"
+
+# one-line functions
+fn double(int x) -> int = x * 2
+
+# print alias
+print "hello world"
+```
+
 ## Built-in Functions
 
 ```python
-str id = uuid()                          # UUID
-str hashed = hash("password")            # scrypt hash
-bool ok = verify("password", hashed)     # timing-safe verify
-str token = sign({id: 1})                # JWT (uses auth secret)
-str token = sign({id: 1}, "my-secret")   # JWT (explicit secret)
+# Security
+str id = uuid()
+str hashed = hash("password")
+bool ok = verify("password", hashed)
+str token = sign({id: 1})
+
+# Type conversions
+str s = str(42)
+int n = int("42")
+num f = float("3.14")
+
+# String ops
+str u = upper("hello")
+str l = lower("HELLO")
+str t = trim("  hi  ")
+list parts = split("a,b,c", ",")
+str joined = join(parts, "-")
+bool has = contains("hello", "ell")
+
+# Collection ops
+int length = len(items)
+list sorted = sort(items)
+list r = range(10)
+list k = keys(obj)
+list v = values(obj)
+list uniq = unique(items)
+list flat_list = flat(nested)
+list zipped = zip(a, b)
+list chunks = chunk(items, 3)
+
+# Math
+num a = abs(-5)
+num r = round(3.7)
+num s = sqrt(16)
+num p = pow(2, 10)
+num total = sum(nums)
+
+# JSON
+any data = json_parse('{"a":1}')
+str json = json_str(data)
+
+# I/O
+str answer = ask("Name?")
+str content = read("file.txt")
+write("out.txt", content)
+
+# Time & misc
+int ts = now()
+str t = time()
+sleep(1000)
+exit(0)
 ```
 
 Auto-imported from the runtime when used.

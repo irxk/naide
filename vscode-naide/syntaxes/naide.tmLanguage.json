@@ -83,7 +83,7 @@
       "name": "support.type.naide"
     },
     "keywords-control": {
-      "match": "\\b(if|elif|else|each|for|while|in|match|try|fail|ensure|ret|break|continue|throw|then|not|and|or|typeof|instanceof)\\b",
+      "match": "\\b(if|elif|else|each|for|while|in|match|try|fail|ensure|ret|break|continue|throw|then|not|and|or|typeof|instanceof|unless|until|repeat|is|isnt)\\b",
       "name": "keyword.control.naide"
     },
     "keywords-server": {
@@ -91,7 +91,7 @@
       "name": "keyword.other.naide"
     },
     "keywords-declaration": {
-      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new)\\b",
+      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new|enum|swap)\\b",
       "name": "keyword.declaration.naide"
     },
     "keywords-operator": {
@@ -126,6 +126,10 @@
         },
         {
           "match": "\\b(send|broadcast|next)\\b(?=\\s*\\()",
+          "name": "support.function.naide"
+        },
+        {
+          "match": "\\b(ask|sleep|exit|read|write|fetch_json|random|sort|reverse|unique|len|upper|lower|trim|split|join|contains|replace|keys|values|entries|range|abs|round|ceil|floor|sqrt|pow|sum|flat|zip|chunk|str|int|float|json_parse|json_str|now|time|print)\\b(?=\\s*[\\(])",
           "name": "support.function.naide"
         }
       ]

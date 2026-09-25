@@ -116,7 +116,9 @@ export class Parser {
       type === T.PDF || type === T.I18N ||
       type === T.PUSH || type === T.SEARCH || type === T.IMAGE ||
       type === T.CSV || type === T.LOGGING || type === T.MIGRATE ||
-      type === T.GRPC || type === T.WEBRTC || type === T.BLOCKCHAIN;
+      type === T.GRPC || type === T.WEBRTC || type === T.BLOCKCHAIN ||
+      type === T.UNLESS || type === T.UNTIL || type === T.REPEAT ||
+      type === T.ENUM_DECL || type === T.SWAP || type === T.IS || type === T.ISNT;
   }
 
   expectPropertyName() {
@@ -166,9 +168,14 @@ export class Parser {
       case T.PUB: return this.parsePub();
       case T.RET: return this.parseReturn();
       case T.IF: return this.parseIf();
+      case T.UNLESS: return this.parseUnless();
       case T.EACH: return this.parseEach();
       case T.FOR: return this.parseFor();
       case T.WHILE: return this.parseWhile();
+      case T.UNTIL: return this.parseUntil();
+      case T.REPEAT: return this.parseRepeat();
+      case T.ENUM_DECL: return this.parseEnum();
+      case T.SWAP: return this.parseSwap();
       case T.MATCH: return this.parseMatch();
       case T.TRY: return this.parseTry();
       case T.SERVER: return this.parseServer();
@@ -323,6 +330,11 @@ export class Parser {
     let returnType = null;
     if (this.match(T.ARROW)) {
       returnType = this.parseTypeAnnotation();
+    }
+
+    if (this.match(T.ASSIGN)) {
+      const expr = this.parseExpression();
+      return new ASTNode('Function', { name, params, returnType, body: [new ASTNode('Return', { value: expr })], isAsync, isPublic });
     }
 
     this.expect(T.COLON);
@@ -1016,11 +1028,15 @@ export class Parser {
 
   parseComparison() {
     let left = this.parseAddition();
-    while (this.atAny(T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE, T.INSTANCEOF)) {
+    while (this.atAny(T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE, T.INSTANCEOF, T.IS, T.ISNT)) {
       const tok = this.advance();
       const right = this.parseAddition();
       if (tok.type === T.INSTANCEOF) {
         left = new ASTNode('Binary', { op: 'instanceof', left, right });
+      } else if (tok.type === T.IS) {
+        left = new ASTNode('Binary', { op: '===', left, right });
+      } else if (tok.type === T.ISNT) {
+        left = new ASTNode('Binary', { op: '!==', left, right });
       } else {
         left = new ASTNode('Binary', { op: tok.value === '==' ? '===' : tok.value === '!=' ? '!==' : tok.value, left, right });
       }
@@ -1171,6 +1187,8 @@ export class Parser {
       case T.PUSH: case T.SEARCH: case T.IMAGE:
       case T.CSV: case T.LOGGING: case T.MIGRATE:
       case T.GRPC: case T.WEBRTC: case T.BLOCKCHAIN:
+      case T.UNLESS: case T.UNTIL: case T.REPEAT:
+      case T.ENUM_DECL: case T.SWAP: case T.IS: case T.ISNT:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -1389,7 +1407,7 @@ export class Parser {
 
     if (TYPE_TOKENS.has(this.peek().type)) {
       fieldType = this.advance().value;
-    } else if (this.at(T.IDENT)) {
+    } else if (this.at(T.IDENT) || this.at(T.ENUM_DECL)) {
       fieldType = this.advance().value;
       if (fieldType === 'enum' && this.at(T.LPAREN)) {
         this.advance();
@@ -2356,5 +2374,83 @@ export class Parser {
     }
     if (this.at(T.DEDENT)) this.advance();
     return new ASTNode('BlockchainDecl', { name, network, provider, contract, abi });
+  }
+
+  // unless cond:  → desugars to if (!cond)
+  parseUnless() {
+    this.advance();
+    const condition = this.parseExpression();
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('If', {
+      condition: new ASTNode('Unary', { op: '!', expr: condition }),
+      elifs: [], elseBody: null, body
+    });
+  }
+
+  // until cond:  → desugars to while (!cond)
+  parseUntil() {
+    this.advance();
+    const condition = this.parseExpression();
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('While', {
+      condition: new ASTNode('Unary', { op: '!', expr: condition }),
+      body
+    });
+  }
+
+  // repeat 5:  or  repeat 5 as i:
+  parseRepeat() {
+    this.advance();
+    const count = this.parseExpression();
+    let varName = 'it';
+    if (this.peek().value === 'as') {
+      this.advance();
+      varName = this.advance().value;
+    }
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    return new ASTNode('For', {
+      varName,
+      start: new ASTNode('Number', { value: '0' }),
+      end: count,
+      body
+    });
+  }
+
+  // enum Color: red, green, blue
+  parseEnum() {
+    this.advance();
+    const name = this.advance().value;
+    this.expect(T.COLON);
+    const values = [];
+    if (this.at(T.INDENT) || this.at(T.NEWLINE)) {
+      this.skipNewlines();
+      this.expect(T.INDENT);
+      while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+        this.skipNewlines();
+        if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+        values.push(this.advance().value);
+        this.match(T.COMMA);
+        this.skipNewlines();
+      }
+      if (this.at(T.DEDENT)) this.advance();
+    } else {
+      while (!this.at(T.NEWLINE) && !this.at(T.EOF)) {
+        values.push(this.advance().value);
+        this.match(T.COMMA);
+      }
+    }
+    return new ASTNode('EnumDecl', { name, values });
+  }
+
+  // swap a, b
+  parseSwap() {
+    this.advance();
+    const a = this.parseExpression();
+    this.expect(T.COMMA);
+    const b = this.parseExpression();
+    return new ASTNode('Swap', { a, b });
   }
 }
