@@ -156,6 +156,12 @@ export class PythonGenerator {
       case 'PushDecl': return this.visitPush(node);
       case 'SearchDecl': return this.visitSearch(node);
       case 'ImageDecl': return this.visitImage(node);
+      case 'CsvDecl': return this.visitCsv(node);
+      case 'LoggingDecl': return this.visitLogging(node);
+      case 'MigrateDecl': return this.visitMigrate(node);
+      case 'GrpcDecl': return this.visitGrpc(node);
+      case 'WebrtcDecl': return this.visitWebrtc(node);
+      case 'BlockchainDecl': return this.visitBlockchain(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -2246,6 +2252,218 @@ export class PythonGenerator {
 
     this.emit(`__img.save(${output})`);
     this.emit(`print(f"Processed: {${output}}")`);
+    this.emitRaw('');
+  }
+
+  // ===== CSV/Excel =====
+  visitCsv(node) {
+    const name = this.rawString(node.name);
+    const format = node.format ? this.rawString(node.format) : 'csv';
+    const columns = node.columns.map(c => this.rawString(c));
+    const source = node.source ? this.expr(node.source) : '[]';
+    const output = node.output ? this.rawString(node.output) : `${name}.${format}`;
+
+    if (format === 'xlsx' || format === 'excel') {
+      this.addImport('openpyxl');
+      this.emitRaw('');
+      this.emit(`__wb = openpyxl.Workbook()`);
+      this.emit(`__ws = __wb.active`);
+      this.emit(`__ws.title = ${JSON.stringify(name)}`);
+      if (columns.length > 0) {
+        this.emit(`__ws.append(${JSON.stringify(columns)})`);
+      }
+      this.emit(`for row in ${source}:`);
+      this.indent++;
+      this.emit(`__ws.append(list(row.values()) if isinstance(row, dict) else row)`);
+      this.indent--;
+      this.emit(`__wb.save(${JSON.stringify(output)})`);
+    } else {
+      this.addImport('csv');
+      this.emitRaw('');
+      this.emit(`with open(${JSON.stringify(output)}, 'w', newline='') as __f:`);
+      this.indent++;
+      if (columns.length > 0) {
+        this.emit(`__writer = csv.DictWriter(__f, fieldnames=${JSON.stringify(columns)})`);
+        this.emit(`__writer.writeheader()`);
+        this.emit(`__writer.writerows(${source})`);
+      } else {
+        this.emit(`__writer = csv.writer(__f)`);
+        this.emit(`__writer.writerows(${source})`);
+      }
+      this.indent--;
+    }
+    this.emit(`print(f"Exported: ${output}")`);
+    this.emitRaw('');
+  }
+
+  // ===== Logging =====
+  visitLogging(node) {
+    const name = this.rawString(node.name);
+    const level = node.level ? this.rawString(node.level) : 'INFO';
+    const file = node.file ? this.rawString(node.file) : null;
+    const format = node.format ? this.rawString(node.format) : 'text';
+
+    this.addImport('logging');
+    this.emitRaw('');
+    this.emit(`logger = logging.getLogger(${JSON.stringify(name)})`);
+    this.emit(`logger.setLevel(logging.${level.toUpperCase()})`);
+    if (format === 'json') {
+      this.emit(`import json`);
+      this.emit(`class JsonFormatter(logging.Formatter):`);
+      this.indent++;
+      this.emit(`def format(self, record): return json.dumps({'time': self.formatTime(record), 'level': record.levelname, 'message': record.getMessage()})`);
+      this.indent--;
+      this.emit(`__handler = logging.StreamHandler()`);
+      this.emit(`__handler.setFormatter(JsonFormatter())`);
+    } else {
+      this.emit(`__handler = logging.StreamHandler()`);
+      this.emit(`__handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(message)s'))`);
+    }
+    this.emit(`logger.addHandler(__handler)`);
+    if (file) {
+      this.emit(`__fh = logging.FileHandler(${JSON.stringify(file)})`);
+      this.emit(`logger.addHandler(__fh)`);
+    }
+    this.emitRaw('');
+  }
+
+  // ===== DB Migration =====
+  visitMigrate(node) {
+    const name = this.rawString(node.name);
+    this.addImport('os');
+    this.emitRaw('');
+    this.emit(`os.makedirs('migrations', exist_ok=True)`);
+    this.emit(`class Migration_${name.replace(/\W/g, '_')}:`);
+    this.indent++;
+    this.emit(`name = ${JSON.stringify(name)}`);
+    this.emit(`@staticmethod`);
+    this.emit(`def up(db):`);
+    this.indent++;
+    if (node.up.length > 0) {
+      for (const stmt of node.up) this.visitStatement(stmt);
+    } else {
+      this.emit(`pass`);
+    }
+    this.indent--;
+    this.emit(`@staticmethod`);
+    this.emit(`def down(db):`);
+    this.indent++;
+    if (node.down.length > 0) {
+      for (const stmt of node.down) this.visitStatement(stmt);
+    } else {
+      this.emit(`pass`);
+    }
+    this.indent--;
+    this.indent--;
+    this.emitRaw('');
+  }
+
+  // ===== gRPC =====
+  visitGrpc(node) {
+    const name = this.rawString(node.name);
+    const port = node.port ? this.expr(node.port) : '50051';
+
+    this.addImport('grpc');
+    this.addFromImport('concurrent', 'futures');
+    this.emitRaw('');
+    this.emit(`class ${name.charAt(0).toUpperCase() + name.slice(1)}Servicer:`);
+    this.indent++;
+    for (const rpc of node.rpcs) {
+      this.emit(`def ${rpc.method}(self, request, context):`);
+      this.indent++;
+      if (rpc.body.length > 0) {
+        if (rpc.params.length > 0) {
+          this.emit(`${rpc.params[0]} = request`);
+        }
+        for (const stmt of rpc.body) this.visitStatement(stmt);
+      } else {
+        this.emit(`return {}`);
+      }
+      this.indent--;
+    }
+    if (node.rpcs.length === 0) { this.emit(`pass`); }
+    this.indent--;
+    this.emitRaw('');
+    this.emit(`__grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))`);
+    this.emit(`__grpc_server.add_insecure_port(f'[::]:{${port}}')`);
+    this.emit(`__grpc_server.start()`);
+    this.emit(`print(f'gRPC server running on port {${port}}')`);
+    this.emitRaw('');
+  }
+
+  // ===== WebRTC =====
+  visitWebrtc(node) {
+    const name = this.rawString(node.name);
+    const stun = node.stun ? this.rawString(node.stun) : 'stun:stun.l.google.com:19302';
+
+    this.addImport('asyncio');
+    this.addImport('websockets');
+    this.addImport('json');
+    this.emitRaw('');
+    this.emit(`__rtc_config = {'iceServers': [{'urls': ${JSON.stringify(stun)}}]}`);
+    this.emit(`__peers = {}`);
+    this.emitRaw('');
+    this.emit(`async def __signaling_handler(ws, path):`);
+    this.indent++;
+    this.emit(`peer_id = id(ws)`);
+    this.emit(`__peers[peer_id] = ws`);
+    this.emit(`try:`);
+    this.indent++;
+    this.emit(`async for raw in ws:`);
+    this.indent++;
+    this.emit(`data = json.loads(raw)`);
+    for (const evt of node.events) {
+      this.emit(`if data.get('type') == ${JSON.stringify(evt.event)}:`);
+      this.indent++;
+      if (evt.params.length > 0) {
+        this.emit(`${evt.params[0]} = data`);
+      }
+      for (const stmt of evt.body) this.visitStatement(stmt);
+      this.indent--;
+    }
+    this.indent--;
+    this.indent--;
+    this.emit(`finally:`);
+    this.indent++;
+    this.emit(`del __peers[peer_id]`);
+    this.indent--;
+    this.indent--;
+    this.emitRaw('');
+    this.emit(`asyncio.get_event_loop().run_until_complete(websockets.serve(__signaling_handler, '0.0.0.0', 8080))`);
+    this.emit(`print('WebRTC signaling server on port 8080')`);
+    this.emitRaw('');
+  }
+
+  // ===== Blockchain =====
+  visitBlockchain(node) {
+    const name = this.rawString(node.name);
+    const provider = node.provider ? this.expr(node.provider) : "'http://localhost:8545'";
+    const contract = node.contract ? this.rawString(node.contract) : null;
+
+    this.addFromImport('web3', 'Web3');
+    this.emitRaw('');
+    this.emit(`__w3 = Web3(Web3.HTTPProvider(${provider}))`);
+    this.emitRaw('');
+    this.emit(`class ${name.charAt(0).toUpperCase() + name.slice(1).replace(/\W/g, '_')}:`);
+    this.indent++;
+    this.emit(`w3 = __w3`);
+    this.emit(`@staticmethod`);
+    this.emit(`def get_balance(address): return __w3.from_wei(__w3.eth.get_balance(address), 'ether')`);
+    this.emit(`@staticmethod`);
+    this.emit(`def get_block(n='latest'): return __w3.eth.get_block(n)`);
+    this.emit(`@staticmethod`);
+    this.emit(`def send_tx(private_key, to, value):`);
+    this.indent++;
+    this.emit(`acct = __w3.eth.account.from_key(private_key)`);
+    this.emit(`tx = {'to': to, 'value': __w3.to_wei(value, 'ether'), 'gas': 21000, 'gasPrice': __w3.eth.gas_price, 'nonce': __w3.eth.get_transaction_count(acct.address)}`);
+    this.emit(`signed = __w3.eth.account.sign_transaction(tx, private_key)`);
+    this.emit(`return __w3.eth.send_raw_transaction(signed.rawTransaction)`);
+    this.indent--;
+    if (contract) {
+      this.emit(`contract = __w3.eth.contract(address=${JSON.stringify(contract)}, abi=[])`);
+    }
+    this.indent--;
+    this.emit(`${name.replace(/\W/g, '_')} = ${name.charAt(0).toUpperCase() + name.slice(1).replace(/\W/g, '_')}()`);
     this.emitRaw('');
   }
 }

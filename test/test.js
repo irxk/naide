@@ -1926,6 +1926,147 @@ describe('Runtime unit tests', () => {
     assert.ok(result.code.includes('rotate'));
   });
 
+  // ===== CSV/Excel =====
+  it('compiles CSV export', () => {
+    const src = 'csv "users" format "csv":\n  columns "name" "email"\n  from data\n';
+    const js = transpile(src);
+    assert.ok(js.includes('csv-stringify'));
+    assert.ok(js.includes('writeFileSync'));
+  });
+
+  it('compiles Excel export', () => {
+    const src = 'csv "report" format "xlsx":\n  columns "id" "value"\n  from items\n';
+    const js = transpile(src);
+    assert.ok(js.includes('ExcelJS') || js.includes('exceljs'));
+    assert.ok(js.includes('Workbook'));
+  });
+
+  it('compileAsync Python CSV', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'csv "data" format "csv":\n  columns "a" "b"\n  from rows\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('csv'));
+    assert.ok(result.code.includes('DictWriter'));
+  });
+
+  // ===== Logging =====
+  it('compiles logging', () => {
+    const src = 'logging "app":\n  level "info"\n  file "app.log"\n  format "json"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('winston'));
+    assert.ok(js.includes('createLogger'));
+  });
+
+  it('compileAsync Python logging', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'logging "myapp":\n  level "debug"\n  file "debug.log"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('logging'));
+    assert.ok(result.code.includes('getLogger'));
+  });
+
+  // ===== DB Migration =====
+  it('compiles DB migration', () => {
+    const src = 'migrate "create_users":\n  up:\n    log "creating"\n  down:\n    log "dropping"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('migration'));
+    assert.ok(js.includes('up'));
+    assert.ok(js.includes('down'));
+  });
+
+  it('compileAsync Python migration', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'migrate "add_email":\n  up:\n    log "adding"\n  down:\n    log "removing"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('Migration'));
+    assert.ok(result.code.includes('up'));
+  });
+
+  // ===== gRPC =====
+  it('compiles gRPC service', () => {
+    const src = 'grpc "users" port 50051:\n  rpc getUser(id) -> user\n  rpc createUser(data) -> user\n';
+    const js = transpile(src);
+    assert.ok(js.includes('@grpc/grpc-js'));
+    assert.ok(js.includes('grpcServer') || js.includes('__grpcServer'));
+    assert.ok(js.includes('getUser'));
+  });
+
+  it('compileAsync Python gRPC', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'grpc "users" port 50051:\n  rpc getUser(id) -> user\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('grpc'));
+    assert.ok(result.code.includes('getUser'));
+  });
+
+  // ===== WebRTC =====
+  it('compiles WebRTC signaling', () => {
+    const src = 'webrtc "video":\n  stun "stun:stun.l.google.com:19302"\n  on offer(data):\n    log "offer"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('WebSocketServer'));
+    assert.ok(js.includes('iceServers'));
+    assert.ok(js.includes('offer'));
+  });
+
+  it('compileAsync Python WebRTC', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'webrtc "chat":\n  stun "stun:stun.l.google.com:19302"\n  on offer(data):\n    log "offer"\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('websockets'));
+    assert.ok(result.code.includes('offer'));
+  });
+
+  // ===== Blockchain =====
+  it('compiles blockchain', () => {
+    const src = 'blockchain "eth":\n  network "ethereum"\n  provider env.ETH_RPC\n  contract "0x1234"\n';
+    const js = transpile(src);
+    assert.ok(js.includes('ethers'));
+    assert.ok(js.includes('JsonRpcProvider'));
+    assert.ok(js.includes('getBalance'));
+  });
+
+  it('compileAsync Python blockchain', async () => {
+    const { compileAsync } = await import('../src/index.js');
+    const src = 'blockchain "token":\n  network "ethereum"\n  provider env.ETH_RPC\n';
+    const result = await compileAsync(src, { target: 'python' });
+    assert.ok(result.code.includes('Web3'));
+    assert.ok(result.code.includes('get_balance'));
+  });
+
+  // ===== Multi-target compilation =====
+  const multiTargets = [
+    { target: 'ts', name: 'TypeScript', varCheck: 'string', fnCheck: 'function' },
+    { target: 'c', name: 'C', varCheck: 'char', fnCheck: 'printf' },
+    { target: 'cpp', name: 'C++', varCheck: 'string', fnCheck: 'cout' },
+    { target: 'java', name: 'Java', varCheck: 'String', fnCheck: 'System.out' },
+    { target: 'php', name: 'PHP', varCheck: '$', fnCheck: 'function' },
+    { target: 'ruby', name: 'Ruby', varCheck: 'name', fnCheck: 'def' },
+    { target: 'go', name: 'Go', varCheck: 'var', fnCheck: 'func' },
+    { target: 'kotlin', name: 'Kotlin', varCheck: 'val', fnCheck: 'fun' },
+    { target: 'swift', name: 'Swift', varCheck: 'let', fnCheck: 'func' },
+    { target: 'dart', name: 'Dart', varCheck: 'final', fnCheck: 'greet' },
+    { target: 'csharp', name: 'C#', varCheck: 'string', fnCheck: 'Console' },
+    { target: 'rust', name: 'Rust', varCheck: 'let', fnCheck: 'fn' },
+  ];
+
+  for (const { target, name, varCheck, fnCheck } of multiTargets) {
+    it(`compileAsync ${name} variables + functions`, async () => {
+      const { compileAsync } = await import('../src/index.js');
+      const src = 'str name = "hello"\nfn greet(str who) -> str:\n  ret "Hi {who}"\nlog greet(name)';
+      const result = await compileAsync(src, { target });
+      assert.ok(result.code.includes(varCheck), `${name} should have ${varCheck}`);
+      assert.ok(result.code.includes(fnCheck), `${name} should have ${fnCheck}`);
+    });
+
+    it(`compileAsync ${name} control flow`, async () => {
+      const { compileAsync } = await import('../src/index.js');
+      const src = 'if x > 0:\n  log "pos"\nelse:\n  log "neg"\neach item in items:\n  log item';
+      const result = await compileAsync(src, { target });
+      assert.ok(result.code.includes('if'), `${name} should have if`);
+      assert.ok(result.code.length > 10, `${name} should produce output`);
+    });
+  }
+
   // ===== LSP capabilities =====
   it('LSP server file exists and exports handlers', async () => {
     const { readFileSync } = await import('fs');

@@ -290,6 +290,7 @@ function getCompletions() {
     'cache', 'view', 'upload', 'group', 'validate', 'openapi', 'error', 'mid', 'prompt',
     'page', 'cli', 'mail', 'graphql', 'desktop', 'screen',
     'oauth', 'pay', 'storage', 'pdf', 'i18n', 'push', 'search', 'image',
+    'csv', 'logging', 'migrate', 'grpc', 'webrtc', 'blockchain',
   ];
   const builtins = [
     { label: 'uuid()', detail: 'Generate UUID v4', insertText: 'uuid()' },
@@ -354,6 +355,12 @@ const HOVER_DOCS = {
   'push': '**push** — Push notifications\n```naide\npush env.VAPID_PUBLIC env.VAPID_PRIVATE:\n  endpoint "/subscribe"\n```\nUsage: `push.send(subscription, title, body)`',
   'search': '**search** — Full-text search\n```naide\nsearch "meilisearch" "http://localhost:7700" env.KEY:\n  index "products"\n```\nUsage: `search.query("keyword")`, `search.add(docs)`',
   'image': '**image** — Image processing\n```naide\nimage "input.jpg" -> "output.jpg":\n  resize 800 600\n  grayscale\n  watermark "logo.png"\n```',
+  'csv': '**csv** — CSV/Excel export\n```naide\ncsv "users" format "xlsx":\n  columns "name" "email"\n  from data\n```\nSupports csv and xlsx formats',
+  'logging': '**logging** — Structured logging\n```naide\nlogging "app":\n  level "info"\n  file "app.log"\n  format "json"\n  rotate "14d"\n```\nUsage: `logger.info("msg")`, `logger.error("fail")`',
+  'migrate': '**migrate** — DB migrations\n```naide\nmigrate "create_users":\n  up:\n    log "creating"\n  down:\n    log "dropping"\n```',
+  'grpc': '**grpc** — gRPC service\n```naide\ngrpc "users" port 50051:\n  rpc getUser(id) -> user\n  rpc createUser(data) -> user\n```',
+  'webrtc': '**webrtc** — WebRTC signaling\n```naide\nwebrtc "video":\n  stun "stun:stun.l.google.com:19302"\n  on offer(data):\n    log "offer received"\n```',
+  'blockchain': '**blockchain** — Blockchain/Web3\n```naide\nblockchain "eth":\n  network "ethereum"\n  provider env.ETH_RPC\n  contract "0x..."\n```\nUsage: `eth.getBalance(addr)`, `eth.getBlock()`',
 };
 
 function getHover(params) {

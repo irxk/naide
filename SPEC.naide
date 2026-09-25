@@ -584,3 +584,53 @@ image "photo.jpg" -> "output.jpg":
   resize 800 600
   grayscale
   watermark "logo.png"
+
+
+# ---- CSV/Excelエクスポート ----
+csv "users" format "csv":
+  columns "name" "email" "age"
+  from data
+# Excel形式
+csv "report" format "xlsx":
+  columns "id" "value" "date"
+  from items
+  output "monthly_report.xlsx"
+
+# ---- ロギング ----
+logging "app":
+  level "info"
+  file "app.log"
+  format "json"
+  rotate "14d"
+# usage: logger.info("message"), logger.error("fail")
+
+# ---- DBマイグレーション ----
+migrate "create_users":
+  up:
+    log "Creating users table"
+  down:
+    log "Dropping users table"
+
+# ---- gRPC ----
+grpc "users" port 50051:
+  rpc getUser(id) -> user
+  rpc createUser(data) -> user
+  rpc deleteUser(id) -> result
+
+# ---- WebRTC ----
+webrtc "video-chat":
+  stun "stun:stun.l.google.com:19302"
+  on offer(data):
+    log "Received offer"
+  on answer(data):
+    log "Received answer"
+  on candidate(data):
+    log "ICE candidate"
+
+# ---- ブロックチェーン ----
+blockchain "eth":
+  network "ethereum"
+  provider env.ETH_RPC
+  contract "0x1234abcd..."
+  abi "contract-abi.json"
+# usage: eth.getBalance("0x..."), eth.getBlock(), eth.sendTx(wallet, to, "0.1")

@@ -15,6 +15,61 @@ async function getGenerator(target, options) {
       const { BunGenerator } = await import('./generator-bun.js');
       return new BunGenerator(options);
     }
+    case 'typescript':
+    case 'ts': {
+      const { TypeScriptGenerator } = await import('./generator-typescript.js');
+      return new TypeScriptGenerator(options);
+    }
+    case 'c': {
+      const { CGenerator } = await import('./generator-c.js');
+      return new CGenerator(options);
+    }
+    case 'cpp':
+    case 'c++': {
+      const { CppGenerator } = await import('./generator-cpp.js');
+      return new CppGenerator(options);
+    }
+    case 'java': {
+      const { JavaGenerator } = await import('./generator-java.js');
+      return new JavaGenerator(options);
+    }
+    case 'php': {
+      const { PhpGenerator } = await import('./generator-php.js');
+      return new PhpGenerator(options);
+    }
+    case 'ruby':
+    case 'rb': {
+      const { RubyGenerator } = await import('./generator-ruby.js');
+      return new RubyGenerator(options);
+    }
+    case 'go': {
+      const { GoGenerator } = await import('./generator-go.js');
+      return new GoGenerator(options);
+    }
+    case 'kotlin':
+    case 'kt': {
+      const { KotlinGenerator } = await import('./generator-kotlin.js');
+      return new KotlinGenerator(options);
+    }
+    case 'swift': {
+      const { SwiftGenerator } = await import('./generator-swift.js');
+      return new SwiftGenerator(options);
+    }
+    case 'dart': {
+      const { DartGenerator } = await import('./generator-dart.js');
+      return new DartGenerator(options);
+    }
+    case 'csharp':
+    case 'cs':
+    case 'c#': {
+      const { CSharpGenerator } = await import('./generator-csharp.js');
+      return new CSharpGenerator(options);
+    }
+    case 'rust':
+    case 'rs': {
+      const { RustGenerator } = await import('./generator-rust.js');
+      return new RustGenerator(options);
+    }
     default:
       return new Generator(options);
   }

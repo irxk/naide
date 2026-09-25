@@ -1,8 +1,28 @@
 # NAIDE
 
-**Node AI Development Environment** — A programming language designed for AI-speed code generation that transpiles to Node.js.
+**Node AI Development Environment** — A programming language designed for AI-speed code generation that transpiles to **15 languages**.
 
-NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). It includes built-in declarations for servers, databases, authentication, file uploads, WebSockets, bots (Discord/Slack/Telegram/LINE), CLI apps, HTML pages, email, GraphQL, desktop apps, mobile screens, cron jobs, job queues, testing, and more — all with zero external dependencies.
+NAIDE is built on three principles: one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 47 built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
+
+### Compilation Targets
+
+| Target | Flag | Language | Server Framework |
+|--------|------|----------|-----------------|
+| `node` | default | JavaScript (ES Modules) | Express |
+| `python` / `py` | `--target python` | Python | Flask |
+| `bun` | `--target bun` | JavaScript (Bun) | Bun.serve |
+| `typescript` / `ts` | `--target ts` | TypeScript | Express |
+| `go` | `--target go` | Go | net/http |
+| `java` | `--target java` | Java | HttpServer |
+| `rust` / `rs` | `--target rust` | Rust | actix-web |
+| `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib |
+| `c` | `--target c` | C | libmicrohttpd |
+| `csharp` / `cs` | `--target csharp` | C# | ASP.NET |
+| `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor |
+| `swift` | `--target swift` | Swift | Vapor |
+| `dart` | `--target dart` | Dart | shelf |
+| `php` | `--target php` | PHP | Built-in / Laravel |
+| `ruby` / `rb` | `--target ruby` | Ruby | Sinatra |
 
 Two syntax modes:
 
@@ -755,6 +775,104 @@ image "photo.jpg" -> "output.jpg":
 ```
 
 Operations: `resize`, `crop`, `rotate`, `blur`, `grayscale`, `flip`, `watermark`, `format`. Compiles to sharp (Node.js) or Pillow (Python).
+
+## CSV/Excel Export
+
+```python
+csv "users" format "csv":
+  columns "name" "email" "age"
+  from data
+
+csv "report" format "xlsx":
+  columns "id" "value" "date"
+  from items
+  output "monthly_report.xlsx"
+```
+
+| Target | CSV Library | Excel Library |
+|--------|-----------|-------------|
+| Node.js | csv-stringify | ExcelJS |
+| Python | csv (stdlib) | openpyxl |
+
+## Logging
+
+```python
+logging "app":
+  level "info"
+  file "app.log"
+  format "json"
+  rotate "14d"
+```
+
+Usage: `logger.info("message")`, `logger.error("fail")`, `logger.warn("caution")`.
+
+| Target | Library |
+|--------|---------|
+| Node.js | winston + winston-daily-rotate-file |
+| Python | logging (stdlib) |
+
+## DB Migrations
+
+```python
+migrate "create_users":
+  up:
+    log "Creating users table"
+  down:
+    log "Dropping users table"
+```
+
+Generates migration files with `up()` and `down()` methods for reversible schema changes.
+
+## gRPC
+
+```python
+grpc "users" port 50051:
+  rpc getUser(id) -> user
+  rpc createUser(data) -> user
+  rpc deleteUser(id) -> result
+```
+
+| Target | Library |
+|--------|---------|
+| Node.js | @grpc/grpc-js + @grpc/proto-loader |
+| Python | grpcio |
+
+## WebRTC
+
+```python
+webrtc "video-chat":
+  stun "stun:stun.l.google.com:19302"
+  on offer(data):
+    log "Received offer"
+  on answer(data):
+    log "Received answer"
+  on candidate(data):
+    log "ICE candidate"
+```
+
+Generates a WebSocket-based signaling server with ICE configuration.
+
+| Target | Library |
+|--------|---------|
+| Node.js | ws (WebSocketServer) |
+| Python | websockets + asyncio |
+
+## Blockchain / Web3
+
+```python
+blockchain "eth":
+  network "ethereum"
+  provider env.ETH_RPC
+  contract "0x1234abcd..."
+  abi "contract-abi.json"
+```
+
+Usage: `eth.getBalance("0x...")`, `eth.getBlock()`, `eth.sendTx(wallet, to, "0.1")`.
+
+| Target | Library |
+|--------|---------|
+| Node.js | ethers.js v6 |
+| Python | web3.py |
 
 ## Environment Variables
 

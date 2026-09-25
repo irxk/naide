@@ -156,6 +156,12 @@ export class Generator {
       case 'PushDecl': return this.visitPush(node);
       case 'SearchDecl': return this.visitSearch(node);
       case 'ImageDecl': return this.visitImage(node);
+      case 'CsvDecl': return this.visitCsv(node);
+      case 'LoggingDecl': return this.visitLogging(node);
+      case 'MigrateDecl': return this.visitMigrate(node);
+      case 'GrpcDecl': return this.visitGrpc(node);
+      case 'WebrtcDecl': return this.visitWebrtc(node);
+      case 'BlockchainDecl': return this.visitBlockchain(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -2169,6 +2175,223 @@ export class Generator {
 
     this.emit(`await __img.toFile(${output});`);
     this.emit(`console.log('Processed:', ${output});`);
+    this.emitRaw('');
+  }
+
+  // ===== CSV/Excel =====
+
+  visitCsv(node) {
+    const name = this.rawPageString(node.name);
+    const format = node.format ? this.rawPageString(node.format) : 'csv';
+    const columns = node.columns.map(c => this.rawPageString(c));
+    const source = node.source ? this.expr(node.source) : '[]';
+    const output = node.output ? this.rawPageString(node.output) : `${name}.${format}`;
+
+    if (format === 'xlsx' || format === 'excel') {
+      this.emit(`import ExcelJS from 'exceljs';`);
+      this.emitRaw('');
+      this.emit(`const __wb = new ExcelJS.Workbook();`);
+      this.emit(`const __ws = __wb.addWorksheet(${JSON.stringify(name)});`);
+      if (columns.length > 0) {
+        this.emit(`__ws.columns = [${columns.map(c => `{ header: ${JSON.stringify(c)}, key: ${JSON.stringify(c)} }`).join(', ')}];`);
+      }
+      this.emit(`for (const row of ${source}) { __ws.addRow(row); }`);
+      this.emit(`await __wb.xlsx.writeFile(${JSON.stringify(output)});`);
+    } else {
+      this.emit(`import { writeFileSync } from 'fs';`);
+      this.emit(`import { stringify } from 'csv-stringify/sync';`);
+      this.emitRaw('');
+      if (columns.length > 0) {
+        this.emit(`const __csvOut = stringify(${source}, { header: true, columns: ${JSON.stringify(columns)} });`);
+      } else {
+        this.emit(`const __csvOut = stringify(${source}, { header: true });`);
+      }
+      this.emit(`writeFileSync(${JSON.stringify(output)}, __csvOut);`);
+    }
+    this.emit(`console.log('Exported: ${output}');`);
+    this.emitRaw('');
+  }
+
+  // ===== Logging =====
+
+  visitLogging(node) {
+    const name = this.rawPageString(node.name);
+    const level = node.level ? this.rawPageString(node.level) : 'info';
+    const file = node.file ? this.rawPageString(node.file) : null;
+    const format = node.format ? this.rawPageString(node.format) : 'text';
+    const rotate = node.rotate ? this.rawPageString(node.rotate) : null;
+
+    this.emit(`import winston from 'winston';`);
+    this.emitRaw('');
+    this.emit(`const __logTransports = [new winston.transports.Console()];`);
+    if (file) {
+      if (rotate) {
+        this.emit(`import DailyRotateFile from 'winston-daily-rotate-file';`);
+        this.emit(`__logTransports.push(new DailyRotateFile({ filename: ${JSON.stringify(file.replace(/\.\w+$/, '-%DATE%$&'))}, datePattern: 'YYYY-MM-DD', maxFiles: ${JSON.stringify(rotate)} }));`);
+      } else {
+        this.emit(`__logTransports.push(new winston.transports.File({ filename: ${JSON.stringify(file)} }));`);
+      }
+    }
+    this.emit(`const logger = winston.createLogger({`);
+    this.indent++;
+    this.emit(`level: ${JSON.stringify(level)},`);
+    if (format === 'json') {
+      this.emit(`format: winston.format.json(),`);
+    } else {
+      this.emit(`format: winston.format.combine(winston.format.timestamp(), winston.format.simple()),`);
+    }
+    this.emit(`transports: __logTransports,`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+  }
+
+  // ===== DB Migration =====
+
+  visitMigrate(node) {
+    const name = this.rawPageString(node.name);
+
+    this.emit(`import { writeFileSync, mkdirSync, readdirSync, readFileSync } from 'fs';`);
+    this.emitRaw('');
+    this.emit(`mkdirSync('migrations', { recursive: true });`);
+    this.emit(`const __ts = Date.now();`);
+    this.emit(`const __migration_${name.replace(/\W/g, '_')} = {`);
+    this.indent++;
+    this.emit(`name: ${JSON.stringify(name)},`);
+    this.emit(`async up(db) {`);
+    this.indent++;
+    for (const stmt of node.up) this.visitStatement(stmt);
+    this.indent--;
+    this.emit(`},`);
+    this.emit(`async down(db) {`);
+    this.indent++;
+    for (const stmt of node.down) this.visitStatement(stmt);
+    this.indent--;
+    this.emit(`},`);
+    this.indent--;
+    this.emit(`};`);
+    this.emitRaw('');
+  }
+
+  // ===== gRPC =====
+
+  visitGrpc(node) {
+    const name = this.rawPageString(node.name);
+    const port = node.port ? this.expr(node.port) : '50051';
+
+    this.emit(`import grpc from '@grpc/grpc-js';`);
+    this.emit(`import protoLoader from '@grpc/proto-loader';`);
+    this.emitRaw('');
+    this.emit(`const __grpcServer = new grpc.Server();`);
+    this.emit(`const __grpcService = {};`);
+    this.emitRaw('');
+
+    for (const rpc of node.rpcs) {
+      this.emit(`__grpcService.${rpc.method} = (call, callback) => {`);
+      this.indent++;
+      if (rpc.params.length > 0) {
+        this.emit(`const ${rpc.params[0]} = call.request;`);
+      }
+      if (rpc.body.length > 0) {
+        for (const stmt of rpc.body) this.visitStatement(stmt);
+      } else {
+        this.emit(`callback(null, {});`);
+      }
+      this.indent--;
+      this.emit(`};`);
+    }
+
+    this.emitRaw('');
+    this.emit(`__grpcServer.addService(${JSON.stringify(name)}, __grpcService);`);
+    this.emit(`__grpcServer.bindAsync('0.0.0.0:' + ${port}, grpc.ServerCredentials.createInsecure(), () => {`);
+    this.indent++;
+    this.emit(`console.log('gRPC server running on port ' + ${port});`);
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+  }
+
+  // ===== WebRTC =====
+
+  visitWebrtc(node) {
+    const name = this.rawPageString(node.name);
+    const stun = node.stun ? this.rawPageString(node.stun) : 'stun:stun.l.google.com:19302';
+    const turn = node.turn ? this.rawPageString(node.turn) : null;
+
+    this.emit(`import { WebSocketServer } from 'ws';`);
+    this.emitRaw('');
+    this.emit(`const __rtcConfig = {`);
+    this.indent++;
+    this.emit(`iceServers: [`);
+    this.indent++;
+    this.emit(`{ urls: ${JSON.stringify(stun)} },`);
+    if (turn) {
+      this.emit(`{ urls: ${JSON.stringify(turn)} },`);
+    }
+    this.indent--;
+    this.emit(`],`);
+    this.indent--;
+    this.emit(`};`);
+    this.emitRaw('');
+
+    this.emit(`const __signalingServer = new WebSocketServer({ port: 8080 });`);
+    this.emit(`const __peers = new Map();`);
+    this.emitRaw('');
+    this.emit(`__signalingServer.on('connection', (ws) => {`);
+    this.indent++;
+    this.emit(`const peerId = Math.random().toString(36).slice(2);`);
+    this.emit(`__peers.set(peerId, ws);`);
+    this.emitRaw('');
+    this.emit(`ws.on('message', (raw) => {`);
+    this.indent++;
+    this.emit(`const data = JSON.parse(raw);`);
+
+    for (const evt of node.events) {
+      this.emit(`if (data.type === ${JSON.stringify(evt.event)}) {`);
+      this.indent++;
+      if (evt.params.length > 0) {
+        this.emit(`const ${evt.params[0]} = data;`);
+      }
+      for (const stmt of evt.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`}`);
+    }
+
+    this.indent--;
+    this.emit(`});`);
+    this.emitRaw('');
+    this.emit(`ws.on('close', () => __peers.delete(peerId));`);
+    this.indent--;
+    this.emit(`});`);
+    this.emit(`console.log('WebRTC signaling server on port 8080');`);
+    this.emitRaw('');
+  }
+
+  // ===== Blockchain =====
+
+  visitBlockchain(node) {
+    const name = this.rawPageString(node.name);
+    const network = node.network ? this.rawPageString(node.network) : 'ethereum';
+    const provider = node.provider ? this.expr(node.provider) : "'http://localhost:8545'";
+    const contract = node.contract ? this.rawPageString(node.contract) : null;
+    const abi = node.abi ? this.rawPageString(node.abi) : null;
+
+    this.emit(`import { ethers } from 'ethers';`);
+    this.emitRaw('');
+    this.emit(`const __provider = new ethers.JsonRpcProvider(${provider});`);
+    this.emitRaw('');
+    this.emit(`const ${name.replace(/\W/g, '_')} = {`);
+    this.indent++;
+    this.emit(`provider: __provider,`);
+    this.emit(`async getBalance(address) { return ethers.formatEther(await __provider.getBalance(address)); },`);
+    this.emit(`async getBlock(n) { return __provider.getBlock(n ?? 'latest'); },`);
+    this.emit(`async sendTx(wallet, to, value) { return wallet.sendTransaction({ to, value: ethers.parseEther(value) }); },`);
+    if (contract) {
+      const abiVal = abi ? `JSON.parse(require('fs').readFileSync(${JSON.stringify(abi)}, 'utf-8'))` : '[]';
+      this.emit(`contract: new ethers.Contract(${JSON.stringify(contract)}, ${abiVal}, __provider),`);
+    }
+    this.indent--;
+    this.emit(`};`);
     this.emitRaw('');
   }
 }

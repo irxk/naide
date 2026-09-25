@@ -114,7 +114,9 @@ export class Parser {
       type === T.GRAPHQL || type === T.DESKTOP || type === T.SCREEN ||
       type === T.OAUTH || type === T.PAY || type === T.STORAGE ||
       type === T.PDF || type === T.I18N ||
-      type === T.PUSH || type === T.SEARCH || type === T.IMAGE;
+      type === T.PUSH || type === T.SEARCH || type === T.IMAGE ||
+      type === T.CSV || type === T.LOGGING || type === T.MIGRATE ||
+      type === T.GRPC || type === T.WEBRTC || type === T.BLOCKCHAIN;
   }
 
   expectPropertyName() {
@@ -184,6 +186,12 @@ export class Parser {
       case T.PUSH: return this.parsePush();
       case T.SEARCH: return this.parseSearch();
       case T.IMAGE: return this.parseImage();
+      case T.CSV: return this.parseCsv();
+      case T.LOGGING: return this.parseLogging();
+      case T.MIGRATE: return this.parseMigrate();
+      case T.GRPC: return this.parseGrpc();
+      case T.WEBRTC: return this.parseWebrtc();
+      case T.BLOCKCHAIN: return this.parseBlockchain();
       case T.MODEL: return this.parseModel();
       case T.ON: return this.parseOn();
       case T.LOG: return this.parseLog();
@@ -1161,6 +1169,8 @@ export class Parser {
       case T.GRAPHQL: case T.DESKTOP: case T.SCREEN:
       case T.OAUTH: case T.PAY: case T.STORAGE: case T.PDF: case T.I18N:
       case T.PUSH: case T.SEARCH: case T.IMAGE:
+      case T.CSV: case T.LOGGING: case T.MIGRATE:
+      case T.GRPC: case T.WEBRTC: case T.BLOCKCHAIN:
       case T.FROM: case T.AS: case T.IN:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
@@ -2147,5 +2157,204 @@ export class Parser {
     }
     if (this.at(T.DEDENT)) this.advance();
     return new ASTNode('ImageDecl', { input, output, operations });
+  }
+
+  // csv "users" format "xlsx":
+  //   columns "name" "email" "age"
+  //   from users
+  parseCsv() {
+    this.expect(T.CSV);
+    const name = this.parseString();
+    let format = null;
+    let source = null;
+    let columns = [];
+    let output = null;
+    if (this.peek().value === 'format') { this.advance(); format = this.parseString(); }
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'columns') {
+        this.advance();
+        while (this.at(T.STRING)) { columns.push(this.parseString()); }
+      } else if (kw === 'from') {
+        this.advance(); source = this.parseExpression();
+      } else if (kw === 'output') {
+        this.advance(); output = this.parseString();
+      } else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('CsvDecl', { name, format, source, columns, output });
+  }
+
+  // logging "app":
+  //   level "info"
+  //   file "app.log"
+  //   format "json"
+  parseLogging() {
+    this.expect(T.LOGGING);
+    const name = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let level = null;
+    let file = null;
+    let format = null;
+    let rotate = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'level') { this.advance(); level = this.parseString(); }
+      else if (kw === 'file') { this.advance(); file = this.parseString(); }
+      else if (kw === 'format') { this.advance(); format = this.parseString(); }
+      else if (kw === 'rotate') { this.advance(); rotate = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('LoggingDecl', { name, level, file, format, rotate });
+  }
+
+  // migrate "create_users":
+  //   up:
+  //     sql "CREATE TABLE users (...)"
+  //   down:
+  //     sql "DROP TABLE users"
+  parseMigrate() {
+    this.expect(T.MIGRATE);
+    const name = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let up = [];
+    let down = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'up') {
+        this.advance(); this.expect(T.COLON);
+        up = this.parseBlock();
+      } else if (kw === 'down') {
+        this.advance(); this.expect(T.COLON);
+        down = this.parseBlock();
+      } else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('MigrateDecl', { name, up, down });
+  }
+
+  // grpc "users" port 50051:
+  //   rpc getUser(id) -> user
+  //   rpc createUser(data) -> user
+  parseGrpc() {
+    this.expect(T.GRPC);
+    const name = this.parseString();
+    let port = null;
+    if (this.peek().value === 'port') { this.advance(); port = this.parseExpression(); }
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    const rpcs = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'rpc') {
+        this.advance();
+        const method = this.advance().value;
+        this.expect(T.LPAREN);
+        const params = [];
+        while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+          params.push(this.advance().value);
+          this.match(T.COMMA);
+        }
+        this.expect(T.RPAREN);
+        let returnType = null;
+        if (this.at(T.ARROW)) { this.advance(); returnType = this.advance().value; }
+        let body = [];
+        if (this.at(T.COLON)) { this.advance(); body = this.parseBlock(); }
+        rpcs.push({ method, params, returnType, body });
+      } else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('GrpcDecl', { name, port, rpcs });
+  }
+
+  // webrtc "video-chat":
+  //   stun "stun:stun.l.google.com:19302"
+  //   on offer(data):
+  //     ...
+  parseWebrtc() {
+    this.expect(T.WEBRTC);
+    const name = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let stun = null;
+    let turn = null;
+    const events = [];
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'stun') { this.advance(); stun = this.parseString(); }
+      else if (kw === 'turn') { this.advance(); turn = this.parseString(); }
+      else if (kw === 'on') {
+        this.advance();
+        const eventName = this.advance().value;
+        const params = [];
+        if (this.at(T.LPAREN)) {
+          this.advance();
+          while (!this.at(T.RPAREN) && !this.at(T.EOF)) {
+            params.push(this.advance().value);
+            this.match(T.COMMA);
+          }
+          this.expect(T.RPAREN);
+        }
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        events.push({ event: eventName, params, body });
+      } else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('WebrtcDecl', { name, stun, turn, events });
+  }
+
+  // blockchain "mytoken":
+  //   network "ethereum"
+  //   provider env.ETH_RPC
+  //   contract "0x..."
+  parseBlockchain() {
+    this.expect(T.BLOCKCHAIN);
+    const name = this.parseString();
+    this.expect(T.COLON);
+    this.skipNewlines();
+    this.expect(T.INDENT);
+    let network = null;
+    let provider = null;
+    let contract = null;
+    let abi = null;
+    while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
+      this.skipNewlines();
+      if (this.at(T.DEDENT) || this.at(T.EOF)) break;
+      const kw = this.peek().value;
+      if (kw === 'network') { this.advance(); network = this.parseString(); }
+      else if (kw === 'provider') { this.advance(); provider = this.parseExpression(); }
+      else if (kw === 'contract') { this.advance(); contract = this.parseString(); }
+      else if (kw === 'abi') { this.advance(); abi = this.parseString(); }
+      else { this.advance(); }
+      this.skipNewlines();
+    }
+    if (this.at(T.DEDENT)) this.advance();
+    return new ASTNode('BlockchainDecl', { name, network, provider, contract, abi });
   }
 }
