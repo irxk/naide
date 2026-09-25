@@ -39,10 +39,10 @@ function registerWindows() {
   regAdd('HKCU\\Software\\Classes\\NAIDEXFile\\shell\\open\\command', cmd);
 
   const assetsDir = resolve(__dirname, '..', 'assets');
-  const naideIco = resolve(assetsDir, 'naide.ico').replace(/\\/g, '\\\\');
-  const nxIco = resolve(assetsDir, 'nx.ico').replace(/\\/g, '\\\\');
-  run(`reg add "HKCU\\Software\\Classes\\NAIDEFile\\DefaultIcon" /ve /d "${naideIco}" /f`);
-  run(`reg add "HKCU\\Software\\Classes\\NAIDEXFile\\DefaultIcon" /ve /d "${nxIco}" /f`);
+  const naideIco = resolve(assetsDir, 'naide.ico');
+  const nxIco = resolve(assetsDir, 'nx.ico');
+  regAdd('HKCU\\Software\\Classes\\NAIDEFile\\DefaultIcon', naideIco);
+  regAdd('HKCU\\Software\\Classes\\NAIDEXFile\\DefaultIcon', nxIco);
 
   console.log('  .naide and .nx file associations registered (Windows)');
 }

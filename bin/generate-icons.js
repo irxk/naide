@@ -151,76 +151,79 @@ function fillRoundRect(p, s, x0, y0, w, h, rad, r, g, b, a = 255) {
   }
 }
 
-function drawLetter(p, s, letter, ox, oy, scale, r, g, b) {
-  const glyphs = {
-    N: [
-      '##...##',
-      '###..##',
-      '####.##',
-      '##.####',
-      '##..###',
-      '##...##',
-    ],
-    X: [
-      '##...##',
-      '.##.##.',
-      '..###..',
-      '..###..',
-      '.##.##.',
-      '##...##',
-    ],
-  };
-  const glyph = glyphs[letter];
-  if (!glyph) return;
-  for (let gy = 0; gy < glyph.length; gy++) {
-    for (let gx = 0; gx < glyph[gy].length; gx++) {
-      if (glyph[gy][gx] === '#') {
-        fillRect(p, s, ox + gx * scale, oy + gy * scale, scale, scale, r, g, b);
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function drawSmooth(p, s, segments, ox, oy, scale, r, g, b) {
+  const thick = scale * 0.22;
+  const x0 = Math.floor(ox - thick - 1), y0 = Math.floor(oy - thick - 1);
+  const x1 = Math.ceil(ox + scale + thick + 1), y1 = Math.ceil(oy + scale + thick + 1);
+  for (let y = Math.max(0, y0); y < Math.min(s, y1); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(s, x1); x++) {
+      let minD = Infinity;
+      for (const seg of segments) {
+        const d = distToSegment(x + 0.5, y + 0.5,
+          ox + seg[0] * scale, oy + seg[1] * scale,
+          ox + seg[2] * scale, oy + seg[3] * scale);
+        if (d < minD) minD = d;
+      }
+      if (minD < thick + 1) {
+        const alpha = Math.max(0, Math.min(1, (thick + 0.8 - minD) / 1.2));
+        setPixel(p, s, x, y, r, g, b, Math.round(255 * alpha));
       }
     }
   }
 }
 
+function drawLetterN(p, s, cx, cy, h, r, g, b) {
+  const w = h * 0.7;
+  const x0 = cx - w / 2, y0 = cy - h / 2;
+  const segments = [
+    [0, 0, 0, 1],
+    [1, 0, 1, 1],
+    [0, 0, 1, 1],
+  ];
+  drawSmooth(p, s, segments, x0, y0, h, r, g, b);
+  const extra = h * 0.22;
+  drawSmooth(p, s, [[0, 0, 0, 1], [1, 0, 1, 1], [0, 0, 1, 1]], x0, y0, h, r, g, b);
+}
+
+function drawLetterX(p, s, cx, cy, h, r, g, b) {
+  const segments = [
+    [0, 0, 1, 1],
+    [1, 0, 0, 1],
+  ];
+  const x0 = cx - h * 0.35, y0 = cy - h / 2;
+  drawSmooth(p, s, segments, x0, y0, h, r, g, b);
+}
+
 function renderNaideIcon(pixels, size) {
   const s = size;
-  const pad = Math.max(1, Math.round(s * 0.06));
-  const rad = Math.max(3, Math.round(s * 0.2));
+  const pad = Math.max(1, Math.round(s * 0.08));
+  const rad = Math.max(3, Math.round(s * 0.22));
 
-  fillRoundRect(pixels, s, 0, 0, s, s, rad, 45, 80, 160);
-  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, rad - 1, 65, 120, 220);
+  fillRoundRect(pixels, s, 0, 0, s, s, rad, 35, 70, 150);
+  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, Math.max(2, rad - 2), 55, 110, 210);
 
-  const stripe = Math.max(1, Math.round(s * 0.06));
-  fillRect(pixels, s, 0, s - stripe * 3, s, stripe, 100, 180, 255, 120);
-
-  const sc = Math.max(1, Math.round(s / 14));
-  const gw = 7 * sc, gh = 6 * sc;
-  const ox = Math.round((s - gw) / 2);
-  const oy = Math.round((s - gh) / 2) - Math.round(s * 0.02);
-  drawLetter(pixels, s, 'N', ox, oy, sc, 255, 255, 255);
-
-  const dotR = Math.max(1, Math.round(s * 0.06));
-  fillCircle(pixels, s, s - pad * 3 - dotR, s - pad * 3 - dotR, dotR, 130, 200, 255);
+  const letterH = Math.round(s * 0.5);
+  drawLetterN(pixels, s, Math.round(s / 2), Math.round(s * 0.46), letterH, 255, 255, 255);
 }
 
 function renderNxIcon(pixels, size) {
   const s = size;
-  const pad = Math.max(1, Math.round(s * 0.06));
-  const rad = Math.max(3, Math.round(s * 0.2));
+  const pad = Math.max(1, Math.round(s * 0.08));
+  const rad = Math.max(3, Math.round(s * 0.22));
 
-  fillRoundRect(pixels, s, 0, 0, s, s, rad, 30, 120, 70);
-  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, rad - 1, 50, 170, 100);
+  fillRoundRect(pixels, s, 0, 0, s, s, rad, 25, 110, 60);
+  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, Math.max(2, rad - 2), 45, 160, 90);
 
-  const stripe = Math.max(1, Math.round(s * 0.06));
-  fillRect(pixels, s, 0, s - stripe * 3, s, stripe, 80, 220, 130, 120);
-
-  const sc = Math.max(1, Math.round(s / 14));
-  const gw = 7 * sc, gh = 6 * sc;
-  const ox = Math.round((s - gw) / 2);
-  const oy = Math.round((s - gh) / 2) - Math.round(s * 0.02);
-  drawLetter(pixels, s, 'X', ox, oy, sc, 255, 255, 255);
-
-  const dotR = Math.max(1, Math.round(s * 0.06));
-  fillCircle(pixels, s, s - pad * 3 - dotR, s - pad * 3 - dotR, dotR, 100, 230, 150);
+  const letterH = Math.round(s * 0.5);
+  drawLetterX(pixels, s, Math.round(s / 2), Math.round(s * 0.46), letterH, 255, 255, 255);
 }
 
 mkdirSync(resolve(__dirname, '..', 'assets'), { recursive: true });
