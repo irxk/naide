@@ -209,6 +209,8 @@ export class RustGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1911,6 +1913,71 @@ export class RustGenerator {
     this.emit(`std::mem::swap(&mut ${a}, &mut ${b});`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    const keyword = node.isMut ? 'let mut' : 'let';
+    if (node.pattern === 'array') {
+      const names = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      const indexedVals = names.map((name, i) => `${val}[${i}]`);
+      this.emit(`${keyword} (${names.join(', ')}) = (${indexedVals.join(', ')});`);
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`${keyword} ${varName} = ${val}.get("${n.name}").unwrap_or(&${this.expr(n.defaultValue)});`);
+          } else {
+            this.emit(`${keyword} ${varName} = ${val}["${n.name}"];`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    // Rust uses struct + impl
+    this.emit(`struct ${node.name} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      this.emit(`${field.name}: Box<dyn std::any::Any>,`);
+    }
+    if (node.fields.length === 0) this.emit(`_marker: (),`);
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+    this.emit(`impl ${node.name} {`);
+    this.indent++;
+    if (node.init) {
+      const params = node.init.params.map(p => `${p.name}: impl std::any::Any`).join(', ');
+      this.emit(`fn new(${params}) -> Self {`);
+      this.indent++;
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      if (node.fields.length > 0) {
+        this.emit(`${node.name} { ${node.fields.map(f => f.name).join(', ')} }`);
+      } else {
+        this.emit(`${node.name} { _marker: () }`);
+      }
+      this.indent--;
+      this.emit(`}`);
+    }
+    for (const method of node.methods) {
+      const mutable = method.body.some(s => JSON.stringify(s).includes('"Assignment"')) ? '&mut self' : '&self';
+      const params = method.params.length > 0 ? `, ${method.params.map(p => `${p.name}: impl std::any::Any`).join(', ')}` : '';
+      this.emit(`fn ${method.name}(${mutable}${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('// empty');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit(`}`);
+    }
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.len()`;
@@ -1942,6 +2009,13 @@ export class RustGenerator {
       case 'values': return `${args[0]}.values().cloned().collect::<Vec<_>>()`;
       case 'range': return args.length >= 2 ? `(${args[0]}..${args[1]}).collect::<Vec<_>>()` : `(0..${args[0]}).collect::<Vec<_>>()`;
       case 'flat': return `${args[0]}.into_iter().flatten().collect::<Vec<_>>()`;
+      case 'map': return `${args[0]}.iter().map(${args[1]}).collect::<Vec<_>>()`;
+      case 'filter': return `${args[0]}.iter().filter(${args[1]}).collect::<Vec<_>>()`;
+      case 'reduce': return `${args[0]}.iter().fold(${args[2] || '0'}, ${args[1]})`;
+      case 'find': return `${args[0]}.iter().find(${args[1]})`;
+      case 'every': return `${args[0]}.iter().all(${args[1]})`;
+      case 'some': return `${args[0]}.iter().any(${args[1]})`;
+      case 'foreach': return `${args[0]}.iter().for_each(${args[1]})`;
       default: return null;
     }
   }

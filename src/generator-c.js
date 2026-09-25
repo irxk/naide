@@ -187,6 +187,8 @@ export class CGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1000,6 +1002,62 @@ export class CGenerator {
     this.emit(`{ typeof(${a}) ${tmp} = ${a}; ${a} = ${b}; ${b} = ${tmp}; }`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      node.names.forEach((n, i) => {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          this.emit(`auto ${varName} = ${val}[${i}];`);
+        }
+      });
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          this.emit(`auto ${varName} = ${val}["${n.name}"];`);
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    this.emit(`/* C does not support classes; using struct + functions for ${node.name} */`);
+    this.emit(`typedef struct {`);
+    this.indent++;
+    for (const field of node.fields) {
+      this.emit(`void* ${field.name};`);
+    }
+    if (node.fields.length === 0) this.emit(`int __placeholder;`);
+    this.indent--;
+    this.emit(`} ${node.name};`);
+    this.emitRaw('');
+    if (node.init) {
+      const params = node.init.params.map(p => `void* ${p.name}`).join(', ');
+      this.emit(`${node.name} ${node.name}_create(${params || 'void'}) {`);
+      this.indent++;
+      this.emit(`${node.name} self;`);
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.emit(`return self;`);
+      this.indent--;
+      this.emit(`}`);
+      this.emitRaw('');
+    }
+    for (const method of node.methods) {
+      const params = [`${node.name}* self`, ...method.params.map(p => `void* ${p.name}`)].join(', ');
+      this.emit(`void* ${node.name}_${method.name}(${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return NULL;');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit(`}`);
+      this.emitRaw('');
+    }
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `(sizeof(${args[0]}) / sizeof(${args[0]}[0]))`;
@@ -1018,6 +1076,13 @@ export class CGenerator {
       case 'sleep': { this.includes.add('<unistd.h>'); return `usleep(${args[0]} * 1000)`; }
       case 'now': { this.includes.add('<time.h>'); return `(long long)time(NULL) * 1000`; }
       case 'random': { this.includes.add('<stdlib.h>'); return args.length >= 2 ? `(rand() % (${args[1]} - ${args[0]} + 1) + ${args[0]})` : `rand()`; }
+      case 'map': return `/* C: map requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'filter': return `/* C: filter requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'reduce': return `/* C: reduce requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'find': return `/* C: find requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'every': return `/* C: every requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'some': return `/* C: some requires manual loop over ${args[0]} with ${args[1]} */`;
+      case 'foreach': return `for (int _i = 0; _i < sizeof(${args[0]})/sizeof(${args[0]}[0]); _i++) { ${args[1]}(${args[0]}[_i]); }`;
       default: return null;
     }
   }

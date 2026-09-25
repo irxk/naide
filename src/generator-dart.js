@@ -164,6 +164,8 @@ export class DartGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1592,6 +1594,71 @@ export class DartGenerator {
     this.emit(`{ final _tmp = ${a}; ${a} = ${b}; ${b} = _tmp; }`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    const keyword = node.isMut ? 'var' : 'final';
+    if (node.pattern === 'array') {
+      node.names.forEach((n, i) => {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          this.emit(`${keyword} ${varName} = ${val}[${i}];`);
+        } else {
+          this.emit(`${keyword} ${n.name} = ${val}.sublist(${i});`);
+        }
+      });
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`${keyword} ${varName} = ${val}['${n.name}'] ?? ${this.expr(n.defaultValue)};`);
+          } else {
+            this.emit(`${keyword} ${varName} = ${val}['${n.name}'];`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` extends ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`var ${field.name} = ${this.expr(field.defaultValue)};`);
+      } else {
+        this.emit(`dynamic ${field.name};`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `dynamic ${p.name}`).join(', ');
+      this.emit(`${node.name}(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('super();');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `dynamic ${p.name}`).join(', ');
+      const asyncKw = method.isAsync ? 'async ' : '';
+      const returnType = method.isAsync ? 'Future<dynamic>' : 'dynamic';
+      this.emit(`${returnType} ${method.name}(${params}) ${asyncKw}{`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return null;');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.length`;
@@ -1632,6 +1699,13 @@ export class DartGenerator {
       case 'read': { this.addImport('dart:io'); return `File(${args[0]}).readAsStringSync()`; }
       case 'write': { this.addImport('dart:io'); return `File(${args[0]}).writeAsStringSync(${args[1]})`; }
       case 'ask': { this.addImport('dart:io'); return `((){stdout.write(${args[0] || '""'}); return stdin.readLineSync() ?? "";}())`; }
+      case 'map': return `${args[0]}.map((e) => ${args[1]}(e)).toList()`;
+      case 'filter': return `${args[0]}.where((e) => ${args[1]}(e)).toList()`;
+      case 'reduce': return `${args[0]}.fold(${args[2] || 'null'}, (acc, e) => ${args[1]}(acc, e))`;
+      case 'find': return `${args[0]}.firstWhere((e) => ${args[1]}(e), orElse: () => null)`;
+      case 'every': return `${args[0]}.every((e) => ${args[1]}(e))`;
+      case 'some': return `${args[0]}.any((e) => ${args[1]}(e))`;
+      case 'foreach': return `${args[0]}.forEach((e) => ${args[1]}(e))`;
       default: return null;
     }
   }

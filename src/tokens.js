@@ -114,6 +114,10 @@ export const T = {
   SWAP: 'SWAP',
   IS: 'IS',
   ISNT: 'ISNT',
+  EXTENDS: 'EXTENDS',
+
+  // Types (auto)
+  TYPE_AUTO: 'TYPE_AUTO',
 
   // Operators
   ASSIGN: 'ASSIGN',
@@ -256,7 +260,9 @@ export const KEYWORDS = {
   'swap': T.SWAP,
   'is': T.IS,
   'isnt': T.ISNT,
+  'extends': T.EXTENDS,
   'print': T.LOG,
+  'auto': T.TYPE_AUTO,
   'true': T.BOOL,
   'false': T.BOOL,
   'null': T.NULL,
@@ -274,4 +280,5 @@ export const KEYWORDS = {
 export const TYPE_TOKENS = new Set([
   T.TYPE_STR, T.TYPE_INT, T.TYPE_NUM, T.TYPE_BOOL,
   T.TYPE_LIST, T.TYPE_MAP, T.TYPE_ANY, T.TYPE_JSON, T.TYPE_VOID,
+  T.TYPE_AUTO,
 ]);

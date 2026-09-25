@@ -79,7 +79,7 @@
       "name": "storage.modifier.naide"
     },
     "types": {
-      "match": "\\b(str|int|num|bool|list|map|any|json|void)\\b",
+      "match": "\\b(str|int|num|bool|list|map|any|json|void|auto)\\b",
       "name": "support.type.naide"
     },
     "keywords-control": {
@@ -91,7 +91,7 @@
       "name": "keyword.other.naide"
     },
     "keywords-declaration": {
-      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new|enum|swap)\\b",
+      "match": "\\b(fn|fn\\.async|use|from|as|model|extends|schema|env|db|every|watch|test|assert|queue|job|new|enum|swap|init)\\b",
       "name": "keyword.declaration.naide"
     },
     "keywords-operator": {
@@ -129,7 +129,7 @@
           "name": "support.function.naide"
         },
         {
-          "match": "\\b(ask|sleep|exit|read|write|fetch_json|random|sort|reverse|unique|len|upper|lower|trim|split|join|contains|replace|keys|values|entries|range|abs|round|ceil|floor|sqrt|pow|sum|flat|zip|chunk|str|int|float|json_parse|json_str|now|time|print)\\b(?=\\s*[\\(])",
+          "match": "\\b(ask|sleep|exit|read|write|fetch_json|random|sort|reverse|unique|len|upper|lower|trim|split|join|contains|replace|keys|values|entries|range|abs|round|ceil|floor|sqrt|pow|sum|flat|zip|chunk|str|int|float|json_parse|json_str|now|time|print|map|filter|reduce|find|every|some|foreach)\\b(?=\\s*[\\(])",
           "name": "support.function.naide"
         }
       ]

@@ -2234,6 +2234,104 @@ describe('Builtin functions', () => {
   });
 });
 
+describe('New features (auto, destructure, class, map/filter/reduce)', () => {
+  it('compiles auto type inference', () => {
+    const js = transpile('auto x = 42');
+    assert.ok(js.includes('const x = 42'));
+  });
+
+  it('compiles auto with string', () => {
+    const js = transpile('auto name = "hello"');
+    assert.ok(js.includes('const name = "hello"'));
+  });
+
+  it('compiles object destructuring', () => {
+    const js = transpile('auto {name, age} = user');
+    assert.ok(js.includes('const { name, age } = user'));
+  });
+
+  it('compiles array destructuring', () => {
+    const js = transpile('auto [first, second] = items');
+    assert.ok(js.includes('const [ first, second ] = items'));
+  });
+
+  it('compiles mut destructuring', () => {
+    const js = transpile('mut {x, y} = point');
+    assert.ok(js.includes('let { x, y } = point'));
+  });
+
+  it('compiles destructuring with defaults', () => {
+    const js = transpile('auto {name, age = 0} = user');
+    assert.ok(js.includes('age = 0'));
+  });
+
+  it('compiles destructuring with rest', () => {
+    const js = transpile('auto {name, ...rest} = user');
+    assert.ok(js.includes('...rest'));
+  });
+
+  it('compiles schema extends (class)', () => {
+    const js = transpile('schema Dog extends Animal:\n  breed str\n  init(str name):\n    self.name = name\n  fn bark():\n    log "Woof"');
+    assert.ok(js.includes('class Dog extends Animal'));
+    assert.ok(js.includes('constructor(name)'));
+    assert.ok(js.includes('super()'));
+    assert.ok(js.includes('this.name = name'));
+    assert.ok(js.includes('bark()'));
+  });
+
+  it('compiles schema with methods only', () => {
+    const js = transpile('schema Cat:\n  fn meow():\n    log "Meow"');
+    assert.ok(js.includes('class Cat'));
+    assert.ok(js.includes('meow()'));
+  });
+
+  it('compiles map builtin', () => {
+    const js = transpile('auto doubled = map(items, (x) => x * 2)');
+    assert.ok(js.includes('items.map('));
+  });
+
+  it('compiles filter builtin', () => {
+    const js = transpile('auto big = filter(items, (x) => x > 5)');
+    assert.ok(js.includes('items.filter('));
+  });
+
+  it('compiles reduce builtin', () => {
+    const js = transpile('auto total = reduce(items, (a, b) => a + b, 0)');
+    assert.ok(js.includes('items.reduce('));
+  });
+
+  it('compiles find builtin', () => {
+    const js = transpile('auto found = find(items, (x) => x > 3)');
+    assert.ok(js.includes('items.find('));
+  });
+
+  it('compiles pipe with filter and map', () => {
+    const js = transpile('auto result = items |> filter((x) => x > 0) |> map((x) => x * 2)');
+    assert.ok(js.includes('.filter('));
+    assert.ok(js.includes('.map('));
+  });
+
+  it('compiles optional chaining', () => {
+    const js = transpile('auto val = user?.name');
+    assert.ok(js.includes('user?.name'));
+  });
+
+  it('compiles null coalescing', () => {
+    const js = transpile('auto val = a ?? b');
+    assert.ok(js.includes('a ?? b'));
+  });
+
+  it('compiles spread in array', () => {
+    const js = transpile('auto merged = [...a, ...b]');
+    assert.ok(js.includes('[...a, ...b]'));
+  });
+
+  it('compiles spread in object', () => {
+    const js = transpile('auto merged = {...a, x: 1}');
+    assert.ok(js.includes('...a'));
+  });
+});
+
 describe('Cross-target builtins', () => {
   const targets = ['go', 'rust', 'java', 'cpp', 'c', 'php', 'ruby', 'kotlin', 'swift', 'dart', 'csharp'];
 

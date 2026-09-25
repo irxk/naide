@@ -139,6 +139,8 @@ export class KotlinGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1840,6 +1842,60 @@ export class KotlinGenerator {
     this.emit(`${a} = ${b}.also { ${b} = ${a} }`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    const keyword = node.isMut ? 'var' : 'val';
+    if (node.pattern === 'array') {
+      const names = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      this.emit(`${keyword} (${names.join(', ')}) = ${val}`);
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`${keyword} ${varName} = ${val}["${n.name}"] ?: ${this.expr(n.defaultValue)}`);
+          } else {
+            this.emit(`${keyword} ${varName} = ${val}["${n.name}"]`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` : ${node.parent}()` : '';
+    const initParams = node.init ? node.init.params.map(p => `${p.name}: Any`).join(', ') : '';
+    this.emit(`open class ${node.name}(${initParams})${ext} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`var ${field.name} = ${this.expr(field.defaultValue)}`);
+      }
+    }
+    if (node.init) {
+      this.emit(`init {`);
+      this.indent++;
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit(`}`);
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `${p.name}: Any`).join(', ');
+      this.emit(`fun ${method.name}(${params}): Any? {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return null');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.size`;
@@ -1880,6 +1936,13 @@ export class KotlinGenerator {
       case 'read': return `java.io.File(${args[0]}).readText()`;
       case 'write': return `java.io.File(${args[0]}).writeText(${args[1]})`;
       case 'ask': return `(print(${args[0] || '""'}); readLine() ?: "")`;
+      case 'map': return `${args[0]}.map { ${args[1]}(it) }`;
+      case 'filter': return `${args[0]}.filter { ${args[1]}(it) }`;
+      case 'reduce': return args.length >= 3 ? `${args[0]}.fold(${args[2]}) { acc, it -> ${args[1]}(acc, it) }` : `${args[0]}.reduce { acc, it -> ${args[1]}(acc, it) }`;
+      case 'find': return `${args[0]}.find { ${args[1]}(it) }`;
+      case 'every': return `${args[0]}.all { ${args[1]}(it) }`;
+      case 'some': return `${args[0]}.any { ${args[1]}(it) }`;
+      case 'foreach': return `${args[0]}.forEach { ${args[1]}(it) }`;
       default: return null;
     }
   }

@@ -11,8 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'oauth', 'pay', 'storage', 'pdf', 'i18n', 'push', 'search', 'image',
     'csv', 'logging', 'migrate', 'grpc', 'webrtc', 'blockchain',
     'unless', 'until', 'repeat', 'enum', 'swap', 'is', 'isnt', 'print', 'as',
-    'import', 'from', 'export',
-    'const', 'let', 'var', 'function', 'async', 'return', 'class', 'extends',
+    'import', 'from', 'export', 'extends', 'init',
+    'const', 'let', 'var', 'function', 'async', 'return', 'class',
     'try', 'catch', 'finally', 'if', 'else', 'for', 'while', 'switch', 'case',
     'default', 'def', 'True', 'False', 'None', 'pass', 'in', 'global',
   ]);
@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'split', 'join', 'contains', 'replace', 'keys', 'values', 'entries',
     'range', 'abs', 'round', 'ceil', 'floor', 'sqrt', 'pow', 'sum',
     'flat', 'zip', 'chunk', 'json_parse', 'json_str', 'now', 'time',
+    'map', 'filter', 'reduce', 'find', 'every', 'some', 'foreach',
   ]);
 
   function escapeHtml(s) {

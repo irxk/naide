@@ -228,6 +228,8 @@ export class JavaGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1835,6 +1837,72 @@ export class JavaGenerator {
     this.emit(`{ var _tmp = ${a}; ${a} = ${b}; ${b} = _tmp; }`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      node.names.forEach((n, i) => {
+        if (n.rest) {
+          this.emit(`var ${n.name} = ${val}.subList(${i}, ${val}.size());`);
+        } else {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`var ${varName} = ${i} < ${val}.size() ? ${val}.get(${i}) : ${this.expr(n.defaultValue)};`);
+          } else {
+            this.emit(`var ${varName} = ${val}.get(${i});`);
+          }
+        }
+      });
+    } else {
+      for (const n of node.names) {
+        if (n.rest) {
+          this.emit(`var ${n.name} = new java.util.HashMap<>(${val}); ${node.names.filter(x => !x.rest).forEach(x => `${n.name}.remove(${JSON.stringify(x.name)})`)};`);
+        } else {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`var ${varName} = ${val}.getOrDefault(${JSON.stringify(n.name)}, ${this.expr(n.defaultValue)});`);
+          } else {
+            this.emit(`var ${varName} = ${val}.get(${JSON.stringify(n.name)});`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` extends ${node.parent}` : '';
+    this.emit(`static class ${node.name}${ext} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`Object ${field.name} = ${this.expr(field.defaultValue)};`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `Object ${p.name}`).join(', ');
+      this.emit(`${node.name}(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('super();');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `Object ${p.name}`).join(', ');
+      this.emit(`Object ${method.name}(${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return null;');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.size()`;
@@ -1869,6 +1937,13 @@ export class JavaGenerator {
       case 'json_parse': return `new com.google.gson.Gson().fromJson(${args[0]}, Object.class)`;
       case 'json_str': return `new com.google.gson.Gson().toJson(${args[0]})`;
       case 'range': return args.length >= 2 ? `java.util.stream.IntStream.range(${args[0]}, ${args[1]}).boxed().collect(java.util.stream.Collectors.toList())` : `java.util.stream.IntStream.range(0, ${args[0]}).boxed().collect(java.util.stream.Collectors.toList())`;
+      case 'map': { this.addImport('java.util.stream.Collectors'); return `${args[0]}.stream().map(${args[1]}).collect(Collectors.toList())`; }
+      case 'filter': { this.addImport('java.util.stream.Collectors'); return `${args[0]}.stream().filter(${args[1]}).collect(Collectors.toList())`; }
+      case 'reduce': return args[2] ? `${args[0]}.stream().reduce(${args[2]}, ${args[1]})` : `${args[0]}.stream().reduce(${args[1]}).orElse(null)`;
+      case 'find': return `${args[0]}.stream().filter(${args[1]}).findFirst().orElse(null)`;
+      case 'every': return `${args[0]}.stream().allMatch(${args[1]})`;
+      case 'some': return `${args[0]}.stream().anyMatch(${args[1]})`;
+      case 'foreach': return `${args[0]}.forEach(${args[1]})`;
       default: return null;
     }
   }

@@ -180,6 +180,8 @@ export class CSharpGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1654,6 +1656,65 @@ export class CSharpGenerator {
     this.emit(`(${a}, ${b}) = (${b}, ${a});`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      const names = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      const indexedVals = names.map((name, i) => `${val}[${i}]`);
+      this.emit(`var (${names.join(', ')}) = (${indexedVals.join(', ')});`);
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`var ${varName} = ${val}.ContainsKey("${n.name}") ? ${val}["${n.name}"] : ${this.expr(n.defaultValue)};`);
+          } else {
+            this.emit(`var ${varName} = ${val}["${n.name}"];`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` : ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`public dynamic ${field.name} = ${this.expr(field.defaultValue)};`);
+      } else {
+        this.emit(`public dynamic ${field.name};`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `dynamic ${p.name}`).join(', ');
+      const baseCall = node.parent ? ' : base()' : '';
+      this.emit(`public ${node.name}(${params})${baseCall} {`);
+      this.indent++;
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `dynamic ${p.name}`).join(', ');
+      const asyncKw = method.isAsync ? 'async ' : '';
+      const returnType = method.isAsync ? 'async Task<dynamic>' : 'dynamic';
+      this.emit(`public ${returnType} ${method.name}(${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return null;');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.Count`;
@@ -1694,6 +1755,13 @@ export class CSharpGenerator {
       case 'read': return `File.ReadAllText(${args[0]})`;
       case 'write': return `File.WriteAllText(${args[0]}, ${args[1]})`;
       case 'ask': return `(Console.Write(${args[0] || '""'}), Console.ReadLine() ?? "").Item2`;
+      case 'map': return `${args[0]}.Select(x => ${args[1]}(x)).ToList()`;
+      case 'filter': return `${args[0]}.Where(x => ${args[1]}(x)).ToList()`;
+      case 'reduce': return `${args[0]}.Aggregate(${args[2] || '0'}, (acc, x) => ${args[1]}(acc, x))`;
+      case 'find': return `${args[0]}.FirstOrDefault(x => ${args[1]}(x))`;
+      case 'every': return `${args[0]}.All(x => ${args[1]}(x))`;
+      case 'some': return `${args[0]}.Any(x => ${args[1]}(x))`;
+      case 'foreach': return `${args[0]}.ForEach(x => ${args[1]}(x))`;
       default: return null;
     }
   }

@@ -141,6 +141,8 @@ export class SwiftGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1758,6 +1760,64 @@ export class SwiftGenerator {
     this.emit(`swap(&${a}, &${b})`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    const keyword = node.isMut ? 'var' : 'let';
+    if (node.pattern === 'array') {
+      const names = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      const indexedVals = names.map((name, i) => `${val}[${i}]`);
+      this.emit(`${keyword} (${names.join(', ')}) = (${indexedVals.join(', ')})`);
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`${keyword} ${varName} = ${val}["${n.name}"] ?? ${this.expr(n.defaultValue)}`);
+          } else {
+            this.emit(`${keyword} ${varName} = ${val}["${n.name}"]`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? `: ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext ? ' ' + ext : ''} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`var ${field.name}: Any = ${this.expr(field.defaultValue)}`);
+      } else {
+        this.emit(`var ${field.name}: Any?`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `_ ${p.name}: Any`).join(', ');
+      this.emit(`init(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('super.init()');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `_ ${p.name}: Any`).join(', ');
+      this.emit(`func ${method.name}(${params}) -> Any? {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return nil');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.count`;
@@ -1796,6 +1856,13 @@ export class SwiftGenerator {
       case 'random': return args.length >= 2 ? `Int.random(in: ${args[0]}...${args[1]})` : `Double.random(in: 0...1)`;
       case 'read': return `try! String(contentsOfFile: ${args[0]})`;
       case 'write': return `try! ${args[1]}.write(toFile: ${args[0]}, atomically: true, encoding: .utf8)`;
+      case 'map': return `${args[0]}.map { ${args[1]}($0) }`;
+      case 'filter': return `${args[0]}.filter { ${args[1]}($0) }`;
+      case 'reduce': return `${args[0]}.reduce(${args[2] || '0'}) { ${args[1]}($0, $1) }`;
+      case 'find': return `${args[0]}.first { ${args[1]}($0) }`;
+      case 'every': return `${args[0]}.allSatisfy { ${args[1]}($0) }`;
+      case 'some': return `${args[0]}.contains { ${args[1]}($0) }`;
+      case 'foreach': return `${args[0]}.forEach { ${args[1]}($0) }`;
       default: return null;
     }
   }

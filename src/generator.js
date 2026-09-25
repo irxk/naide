@@ -94,6 +94,8 @@ export class Generator {
       case 'ReturnStatus': return this.visitReturnStatus(node);
       case 'ReturnMethod': return this.visitReturnMethod(node);
       case 'TypedVar': return this.visitTypedVar(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       case 'If': return this.visitIf(node);
       case 'Each': return this.visitEach(node);
       case 'For': return this.visitFor(node);
@@ -242,6 +244,51 @@ export class Generator {
     const keyword = node.isMut ? 'let' : 'const';
     const exp = node.isPublic ? 'export ' : '';
     this.emit(`${exp}${keyword} ${node.name} = ${this.expr(node.value)};`);
+  }
+
+  visitDestructure(node) {
+    const keyword = node.isMut ? 'let' : 'const';
+    const parts = node.names.map(n => {
+      if (n.rest) return `...${n.name}`;
+      let s = n.name;
+      if (n.alias) s += `: ${n.alias}`;
+      if (n.defaultValue) s += ` = ${this.expr(n.defaultValue)}`;
+      return s;
+    });
+    const open = node.pattern === 'object' ? '{ ' : '[ ';
+    const close = node.pattern === 'object' ? ' }' : ' ]';
+    this.emit(`${keyword} ${open}${parts.join(', ')}${close} = ${this.expr(node.value)};`);
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` extends ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext} {`);
+    this.indent++;
+    if (node.init) {
+      const params = node.init.params.map(p => p.name).join(', ');
+      this.emit(`constructor(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('super();');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`${field.name} = ${this.expr(field.defaultValue)};`);
+      }
+    }
+    for (const method of node.methods) {
+      const async = method.isAsync ? 'async ' : '';
+      const params = method.params.map(p => p.name).join(', ');
+      this.emit(`${async}${method.name}(${params}) {`);
+      this.indent++;
+      for (const stmt of method.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
   }
 
   visitAssignment(node) {
@@ -2464,6 +2511,13 @@ export class Generator {
       case 'now': return `Date.now()`;
       case 'time': return `new Date().toISOString()`;
       case 'chunk': return `Array.from({length: Math.ceil(${args[0]}.length / ${args[1]})}, (_, i) => ${args[0]}.slice(i * ${args[1]}, (i + 1) * ${args[1]}))`;
+      case 'map': return `${args[0]}.map(${args[1]})`;
+      case 'filter': return `${args[0]}.filter(${args[1]})`;
+      case 'reduce': return args[2] ? `${args[0]}.reduce(${args[1]}, ${args[2]})` : `${args[0]}.reduce(${args[1]})`;
+      case 'find': return `${args[0]}.find(${args[1]})`;
+      case 'every': return `${args[0]}.every(${args[1]})`;
+      case 'some': return `${args[0]}.some(${args[1]})`;
+      case 'foreach': return `${args[0]}.forEach(${args[1]})`;
       default: return null;
     }
   }

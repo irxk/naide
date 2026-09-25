@@ -2,7 +2,7 @@
 
 **Node AI Development Environment** — A programming language simpler than Python, designed for AI-speed code generation, that transpiles to **15 languages**.
 
-NAIDE is built on four principles: simpler than Python (built-in functions, syntax sugar, zero boilerplate), one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 35+ built-in functions, syntax sugar (`unless`, `until`, `repeat`, `swap`, `is`/`isnt`, one-line functions), and 47 built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
+NAIDE is built on four principles: simpler than Python (built-in functions, syntax sugar, zero boilerplate), one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 40+ built-in functions, syntax sugar (`unless`, `until`, `repeat`, `swap`, `is`/`isnt`, one-line functions, `auto` type inference, destructuring, pipe operator), and 55+ built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
 
 ### Compilation Targets
 
@@ -136,9 +136,29 @@ any data = null
 
 mut int counter = 0          # mutable (let)
 mut str label = "init"
+
+auto x = 42                  # type inferred (const)
+auto msg = "hello"           # compiler infers str
+mut auto counter2 = 0        # type inferred (let)
 ```
 
-Types: `str`, `int`, `num`, `bool`, `list`, `map`, `any`, `json`, `void`
+Types: `str`, `int`, `num`, `bool`, `list`, `map`, `any`, `json`, `void`, `auto` (inferred)
+
+### Destructuring
+
+```python
+# Object destructuring
+auto {name, age} = user
+auto {name, age = 0} = user          # with defaults
+auto {name, ...rest} = user          # with rest
+mut {score, level} = gameState       # mutable
+
+# Array destructuring
+auto [first, second] = items
+auto [head, ...tail] = items         # with rest
+auto [x, y = 0] = coords            # with defaults
+mut [a, b] = pair                    # mutable
+```
 
 ### String Interpolation
 
@@ -257,6 +277,28 @@ model Admin extends User:
     ret ["read", "write", "delete"]
 ```
 
+Schema inheritance with constructors and methods:
+
+```python
+schema Animal:
+  id       auto
+  name     str required
+  species  str required
+
+schema Dog extends Animal:
+  breed    str optional
+  trained  bool default(false)
+
+  init(str name, str breed):
+    self.name = name
+    self.breed = breed
+
+  fn bark() -> str:
+    ret "Woof! I'm {self.name}"
+```
+
+`init(params):` defines a constructor. `fn method():` defines methods. `extends` inherits all fields and methods from the parent.
+
 ### Pipe Operator
 
 ```python
@@ -264,7 +306,36 @@ list result = data
   |> filter((x) => x.active)
   |> map((x) => x.name)
   |> sort()
+
+int total = items
+  |> filter((x) => x > 0)
+  |> map((x) => x * 2)
+  |> reduce((a, b) => a + b, 0)
 ```
+
+Chain operations left to right for readable data transformations.
+
+### Optional Chaining & Null Coalescing
+
+```python
+str name = user?.name                    # safe property access
+any val = data?.nested?.value            # deep safe access
+str display = user?.name ?? "Anonymous"  # fallback on null/undefined
+int port = config?.port ?? 3000
+```
+
+`?.` safely accesses properties (returns `undefined` if the left side is `null`/`undefined`). `??` provides a fallback value when the left side is `null` or `undefined`.
+
+### Spread Operator
+
+```python
+list combined = [...listA, ...listB]
+map merged = {...defaults, ...overrides}
+list withExtra = [...items, 4, 5, 6]
+map withDebug = {...config, debug: true}
+```
+
+Spread arrays and objects with `...`. Works in list literals, map literals, and function arguments.
 
 ### Imports / Exports
 
@@ -888,6 +959,15 @@ Variables become constants. Missing `required` vars exit with an error.
 ## Syntax Sugar (Simpler than Python)
 
 ```python
+# auto — type inference
+auto x = 42
+auto msg = "hello"
+mut auto counter = 0
+
+# destructuring
+auto {name, age} = user
+auto [first, ...rest] = items
+
 # unless — negated if
 unless x > 10:
   log "small"
@@ -917,6 +997,16 @@ if y isnt null: log "exists"
 
 # one-line functions
 fn double(int x) -> int = x * 2
+
+# pipe operator
+list result = items |> filter((x) => x > 0) |> map((x) => x * 2)
+
+# optional chaining + null coalescing
+str name = user?.name ?? "Anonymous"
+
+# spread
+list all = [...a, ...b]
+map merged = {...defaults, ...overrides}
 
 # print alias
 print "hello world"
@@ -954,6 +1044,15 @@ list uniq = unique(items)
 list flat_list = flat(nested)
 list zipped = zip(a, b)
 list chunks = chunk(items, 3)
+
+# Functional ops (map/filter/reduce)
+list doubled = map(items, (x) => x * 2)
+list big = filter(items, (x) => x > 5)
+int total = reduce(items, (a, b) => a + b, 0)
+any found = find(items, (x) => x > 3)
+bool allPos = every(items, (x) => x > 0)
+bool hasNeg = some(items, (x) => x < 0)
+foreach(items, (x) => log x)
 
 # Math
 num a = abs(-5)

@@ -118,6 +118,8 @@ export class GoGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1809,6 +1811,59 @@ export class GoGenerator {
     this.emit(`${a}, ${b} = ${b}, ${a}`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      const names = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      const indexedVals = names.map((name, i) => `${val}[${i}]`);
+      this.emit(`${names.join(', ')} := ${indexedVals.join(', ')}`);
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          this.emit(`${varName} := ${val}["${n.name}"]`);
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    // Go uses struct + methods
+    this.emit(`type ${node.name} struct {`);
+    this.indent++;
+    if (node.parent) this.emit(`${node.parent}`);
+    for (const field of node.fields) {
+      this.emit(`${field.name.charAt(0).toUpperCase() + field.name.slice(1)} interface{}`);
+    }
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+    if (node.init) {
+      const params = node.init.params.map(p => `${p.name} interface{}`).join(', ');
+      this.emit(`func New${node.name}(${params}) *${node.name} {`);
+      this.indent++;
+      this.emit(`self := &${node.name}{}`);
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.emit(`return self`);
+      this.indent--;
+      this.emit(`}`);
+      this.emitRaw('');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `${p.name} interface{}`).join(', ');
+      this.emit(`func (self *${node.name}) ${method.name.charAt(0).toUpperCase() + method.name.slice(1)}(${params}) interface{} {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return nil');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit(`}`);
+      this.emitRaw('');
+    }
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `len(${args[0]})`;
@@ -1837,6 +1892,13 @@ export class GoGenerator {
       case 'random': { this.addImport('math/rand'); return args.length >= 2 ? `rand.Intn(${args[1]}-${args[0]}+1)+${args[0]}` : `rand.Float64()`; }
       case 'sort': { this.addImport('sort'); return `func() []int { s := make([]int, len(${args[0]})); copy(s, ${args[0]}); sort.Ints(s); return s }()`; }
       case 'reverse': return `func() []interface{} { s := make([]interface{}, len(${args[0]})); copy(s, ${args[0]}); for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 { s[i], s[j] = s[j], s[i] }; return s }()`;
+      case 'map': return `func() []interface{} { _r := make([]interface{}, len(${args[0]})); for _i, _v := range ${args[0]} { _r[_i] = ${args[1]}(_v) }; return _r }()`;
+      case 'filter': return `func() []interface{} { var _r []interface{}; for _, _v := range ${args[0]} { if ${args[1]}(_v) { _r = append(_r, _v) } }; return _r }()`;
+      case 'reduce': return `func() interface{} { _acc := ${args[2] || '0'}; for _, _v := range ${args[0]} { _acc = ${args[1]}(_acc, _v) }; return _acc }()`;
+      case 'find': return `func() interface{} { for _, _v := range ${args[0]} { if ${args[1]}(_v) { return _v } }; return nil }()`;
+      case 'every': return `func() bool { for _, _v := range ${args[0]} { if !${args[1]}(_v) { return false } }; return true }()`;
+      case 'some': return `func() bool { for _, _v := range ${args[0]} { if ${args[1]}(_v) { return true } }; return false }()`;
+      case 'foreach': return `func() { for _, _v := range ${args[0]} { ${args[1]}(_v) } }()`;
       default: return null;
     }
   }

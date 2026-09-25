@@ -164,6 +164,8 @@ export class PythonGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -2494,6 +2496,83 @@ export class PythonGenerator {
     this.emit(`${a}, ${b} = ${b}, ${a}`);
   }
 
+  // ===== Destructure =====
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      const names = node.names.map(n => {
+        if (n.rest) return `*${n.name}`;
+        return n.name;
+      });
+      this.emit(`${names.join(', ')} = ${val}`);
+      // Handle defaults for array destructuring
+      for (const n of node.names) {
+        if (n.defaultValue && !n.rest) {
+          this.emit(`${n.name} = ${n.name} if ${n.name} is not None else ${this.expr(n.defaultValue)}`);
+        }
+      }
+    } else {
+      // object destructuring — per-field assignment
+      for (const n of node.names) {
+        if (n.rest) {
+          this.emit(`${n.name} = {k: v for k, v in ${val}.items() if k not in {${node.names.filter(x => !x.rest).map(x => JSON.stringify(x.name)).join(', ')}}}`);
+        } else {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`${varName} = ${val}.get(${JSON.stringify(n.name)}, ${this.expr(n.defaultValue)})`);
+          } else {
+            this.emit(`${varName} = ${val}[${JSON.stringify(n.name)}]`);
+          }
+        }
+      }
+    }
+  }
+
+  // ===== ClassDecl =====
+  visitClassDecl(node) {
+    const ext = node.parent ? `(${node.parent})` : '';
+    this.emit(`class ${node.name}${ext}:`);
+    this.indent++;
+    if (node.init) {
+      const params = node.init.params.map(p => p.name).join(', ');
+      const selfParams = params ? `self, ${params}` : 'self';
+      this.emit(`def __init__(${selfParams}):`);
+      this.indent++;
+      if (node.parent) this.emit('super().__init__()');
+      if (node.init.body.length === 0 && !node.parent) {
+        this.emit('pass');
+      } else {
+        for (const stmt of node.init.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emitRaw('');
+    }
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`${field.name} = ${this.expr(field.defaultValue)}`);
+      }
+    }
+    for (const method of node.methods) {
+      const async = method.isAsync ? 'async ' : '';
+      const params = method.params.map(p => p.name).join(', ');
+      const selfParams = params ? `self, ${params}` : 'self';
+      this.emit(`${async}def ${method.name}(${selfParams}):`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('pass');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emitRaw('');
+    }
+    if (!node.init && node.fields.length === 0 && node.methods.length === 0) {
+      this.emit('pass');
+    }
+    this.indent--;
+    this.emitRaw('');
+  }
+
   // ===== Builtins =====
   generateBuiltin(name, args) {
     switch (name) {
@@ -2536,6 +2615,13 @@ export class PythonGenerator {
       case 'now': { this.addImport('time'); return `int(time.time() * 1000)`; }
       case 'time': { this.addFromImport('datetime', 'datetime'); return `datetime.now().isoformat()`; }
       case 'chunk': return `[${args[0]}[i:i+${args[1]}] for i in range(0, len(${args[0]}), ${args[1]})]`;
+      case 'map': return `list(map(${args[1]}, ${args[0]}))`;
+      case 'filter': return `list(filter(${args[1]}, ${args[0]}))`;
+      case 'reduce': { this.addFromImport('functools', 'reduce'); return args[2] ? `reduce(${args[1]}, ${args[0]}, ${args[2]})` : `reduce(${args[1]}, ${args[0]})`; }
+      case 'find': return `next((x for x in ${args[0]} if ${args[1]}(x)), None)`;
+      case 'every': return `all(${args[1]}(x) for x in ${args[0]})`;
+      case 'some': return `any(${args[1]}(x) for x in ${args[0]})`;
+      case 'foreach': return `[${args[1]}(x) for x in ${args[0]}]`;
       default: return null;
     }
   }

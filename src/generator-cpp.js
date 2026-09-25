@@ -188,6 +188,8 @@ export class CppGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1233,6 +1235,75 @@ export class CppGenerator {
     this.emit(`std::swap(${a}, ${b});`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      if (node.names.every(n => !n.rest && !n.defaultValue)) {
+        this.includes.add('<tuple>');
+        const names = node.names.map(n => n.alias || n.name).join(', ');
+        this.emit(`auto [${names}] = ${val};`);
+      } else {
+        node.names.forEach((n, i) => {
+          if (!n.rest) {
+            const varName = n.alias || n.name;
+            if (n.defaultValue) {
+              this.emit(`auto ${varName} = (${i} < ${val}.size()) ? ${val}[${i}] : ${this.expr(n.defaultValue)};`);
+            } else {
+              this.emit(`auto ${varName} = ${val}[${i}];`);
+            }
+          }
+        });
+      }
+    } else {
+      for (const n of node.names) {
+        if (!n.rest) {
+          const varName = n.alias || n.name;
+          if (n.defaultValue) {
+            this.emit(`auto ${varName} = ${val}.count("${n.name}") ? ${val}["${n.name}"] : ${this.expr(n.defaultValue)};`);
+          } else {
+            this.emit(`auto ${varName} = ${val}["${n.name}"];`);
+          }
+        }
+      }
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` : public ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext} {`);
+    this.emit(`public:`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`auto ${field.name} = ${this.expr(field.defaultValue)};`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `auto ${p.name}`).join(', ');
+      this.emit(`${node.name}(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit(`${node.parent}();`);
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `auto ${p.name}`).join(', ');
+      this.emit(`auto ${method.name}(${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('return 0;');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('};');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.size()`;
@@ -1258,6 +1329,13 @@ export class CppGenerator {
       case 'now': { this.includes.add('<chrono>'); return `std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()`; }
       case 'random': { this.includes.add('<random>'); return args.length >= 2 ? `([](int a, int b){ std::random_device rd; std::mt19937 gen(rd()); std::uniform_int_distribution<> dis(a,b); return dis(gen); })(${args[0]}, ${args[1]})` : `([]{ std::random_device rd; return rd(); }())`; }
       case 'sum': return `([&](){ auto _v = ${args[0]}; return std::accumulate(_v.begin(), _v.end(), 0); }())`;
+      case 'map': { this.includes.add('<algorithm>'); return `([&](){ auto _v = ${args[0]}; std::vector<decltype(${args[1]}(_v[0]))> _r; std::transform(_v.begin(), _v.end(), std::back_inserter(_r), ${args[1]}); return _r; }())`; }
+      case 'filter': { this.includes.add('<algorithm>'); return `([&](){ auto _v = ${args[0]}; decltype(_v) _r; std::copy_if(_v.begin(), _v.end(), std::back_inserter(_r), ${args[1]}); return _r; }())`; }
+      case 'reduce': { this.includes.add('<numeric>'); return `std::accumulate(${args[0]}.begin(), ${args[0]}.end(), ${args[2] || '0'}, ${args[1]})`; }
+      case 'find': { this.includes.add('<algorithm>'); return `(*std::find_if(${args[0]}.begin(), ${args[0]}.end(), ${args[1]}))`; }
+      case 'every': { this.includes.add('<algorithm>'); return `std::all_of(${args[0]}.begin(), ${args[0]}.end(), ${args[1]})`; }
+      case 'some': { this.includes.add('<algorithm>'); return `std::any_of(${args[0]}.begin(), ${args[0]}.end(), ${args[1]})`; }
+      case 'foreach': { this.includes.add('<algorithm>'); return `std::for_each(${args[0]}.begin(), ${args[0]}.end(), ${args[1]})`; }
       default: return null;
     }
   }

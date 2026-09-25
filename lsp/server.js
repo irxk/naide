@@ -107,7 +107,7 @@ function validateDocument(uri) {
       const line = lines[i].trim();
       if (!line || line.startsWith('#') || line.startsWith('--')) continue;
 
-      const typeMatch = line.match(/^(str|int|num|bool)\s+\w+\s*=\s*(.+)/);
+      const typeMatch = line.match(/^(str|int|num|bool|auto)\s+\w+\s*=\s*(.+)/);
       if (typeMatch) {
         const declType = typeMatch[1];
         const val = typeMatch[2].trim();
@@ -163,7 +163,7 @@ function indexSymbols(uri, text) {
       symbols.definitions.set(name, { line: i, col, kind: 'function' });
     }
 
-    const varMatch = trimmed.match(/^(?:pub\s+)?(?:mut\s+)?(?:str|int|num|bool|list|map|any|json|void)\s+(\w+)\s*=/);
+    const varMatch = trimmed.match(/^(?:pub\s+)?(?:mut\s+)?(?:str|int|num|bool|list|map|any|json|void|auto)\s+(\w+)\s*=/);
     if (varMatch) {
       const name = varMatch[1];
       const col = line.indexOf(name);
@@ -282,9 +282,9 @@ function getCompletions() {
     'try', 'fail', 'ensure', 'server', 'model', 'schema', 'use', 'pub', 'mut',
     'log', 'typeof', 'instanceof', 'not', 'and', 'or', 'break', 'continue',
     'throw', 'new', 'await', 'test', 'assert', 'queue', 'job', 'db', 'env',
-    'get', 'post', 'put', 'del', 'patch', 'every', 'watch',
+    'get', 'post', 'put', 'del', 'patch', 'every', 'watch', 'extends', 'init',
   ];
-  const types = ['str', 'int', 'num', 'bool', 'list', 'map', 'any', 'json', 'void'];
+  const types = ['str', 'int', 'num', 'bool', 'list', 'map', 'any', 'json', 'void', 'auto'];
   const features = [
     'cors', 'auth', 'crud', 'limit', 'cookie', 'session', 'static', 'ws', 'sse',
     'cache', 'view', 'upload', 'group', 'validate', 'openapi', 'error', 'mid', 'prompt',
@@ -355,6 +355,18 @@ function getCompletions() {
     { label: 'write(path, data)', detail: 'Write to file', insertText: 'write(' },
     { label: 'fetch_json(url)', detail: 'Fetch JSON from URL', insertText: 'fetch_json(' },
     { label: 'random(min, max)', detail: 'Random number', insertText: 'random(' },
+    { label: 'map(list, fn)', detail: 'Transform each element', insertText: 'map(' },
+    { label: 'filter(list, fn)', detail: 'Filter elements by condition', insertText: 'filter(' },
+    { label: 'reduce(list, fn, init)', detail: 'Reduce list to single value', insertText: 'reduce(' },
+    { label: 'find(list, fn)', detail: 'Find first matching element', insertText: 'find(' },
+    { label: 'every(list, fn)', detail: 'Check if all match condition', insertText: 'every(' },
+    { label: 'some(list, fn)', detail: 'Check if any match condition', insertText: 'some(' },
+    { label: 'foreach(list, fn)', detail: 'Execute fn for each element', insertText: 'foreach(' },
+    { label: 'auto', detail: 'Type inference (compiler infers type)', insertText: 'auto ' },
+    { label: 'auto {a, b} = obj', detail: 'Object destructuring', insertText: 'auto {' },
+    { label: 'auto [a, b] = list', detail: 'Array destructuring', insertText: 'auto [' },
+    { label: 'extends', detail: 'Inherit from parent schema/model', insertText: 'extends ' },
+    { label: 'init(params):', detail: 'Constructor method', insertText: 'init(' },
   ];
 
   return [
@@ -409,6 +421,16 @@ const HOVER_DOCS = {
   'is': '**is** — Equality comparison (===)\n```naide\nif x is 5: log "five"\n```',
   'isnt': '**isnt** — Inequality comparison (!==)\n```naide\nif x isnt null: log "exists"\n```',
   'print': '**print** — Alias for log\n```naide\nprint "hello world"\n```',
+  'auto': '**auto** — Type inference\n```naide\nauto x = 42          # compiler infers int\nauto msg = "hello"   # compiler infers str\nmut auto counter = 0 # mutable, type inferred\n```\nThe compiler infers the type from the assigned value. Emits `const` (or `let` with `mut`).',
+  'extends': '**extends** — Inherit from parent\n```naide\nschema Dog extends Animal:\n  breed str optional\n\nmodel Admin extends User:\n  str role = "admin"\n```\nInherits all fields and methods from the parent schema or model.',
+  'init': '**init** — Constructor method\n```naide\nschema Dog extends Animal:\n  init(str name, str breed):\n    self.name = name\n    self.breed = breed\n```\nDefines a constructor for schema/model classes.',
+  'map': '**map** — Transform each element\n```naide\nlist doubled = map(items, (x) => x * 2)\n```\nApplies a function to every element and returns a new list.',
+  'filter': '**filter** — Filter elements\n```naide\nlist big = filter(items, (x) => x > 5)\n```\nReturns a new list with only elements matching the condition.',
+  'reduce': '**reduce** — Reduce to single value\n```naide\nint total = reduce(items, (a, b) => a + b, 0)\n```\nAccumulates elements into a single value using a function and initial value.',
+  'find': '**find** — Find first match\n```naide\nany item = find(items, (x) => x > 3)\n```\nReturns the first element matching the condition, or `undefined`.',
+  'every': '**every** — Check all match\n```naide\nbool allPositive = every(items, (x) => x > 0)\n```\nReturns `true` if all elements match the condition.',
+  'some': '**some** — Check any match\n```naide\nbool hasNegative = some(items, (x) => x < 0)\n```\nReturns `true` if at least one element matches the condition.',
+  'foreach': '**foreach** — Iterate with side effects\n```naide\nforeach(items, (x) => log x)\n```\nExecutes a function for each element (no return value).',
 };
 
 function getHover(params) {

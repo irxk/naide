@@ -27,6 +27,26 @@ any data = null
 mut int counter = 0
 mut str label = "initial"
 
+# auto 型推論 (コンパイラが型を推論)
+auto x = 42                  # const x = 42
+auto msg = "hello"           # const msg = "hello"
+auto items = [1, 2, 3]       # const items = [1, 2, 3]
+mut auto counter2 = 0        # let counter2 = 0
+
+
+# ---- 分割代入 (Destructuring) ----
+# オブジェクト分割代入
+auto {name2, age} = user
+auto {name3, age2 = 0} = user         # デフォルト値
+auto {name4, ...rest} = user           # レスト
+mut {score, level} = gameState         # 可変
+
+# 配列分割代入
+auto [first, second] = items
+auto [head, ...tail] = items           # レスト
+auto [x2, y = 0] = coords             # デフォルト値
+mut [a3, b3] = pair                    # 可変
+
 
 # ---- 文字列補間 ----
 # ダブルクォートで {式} が自動展開
@@ -132,11 +152,28 @@ if err instanceof TypeError:
   log "type error occurred"
 
 
+# ---- map/filter/reduce ビルトイン ----
+# コレクション操作の組み込み関数
+list doubled = map(items, (x) => x * 2)
+list big = filter(items, (x) => x > 5)
+int total2 = reduce(items, (a, b) => a + b, 0)
+any found = find(items, (x) => x > 3)
+bool allBig = every(items, (x) => x > 0)
+bool hasBig = some(items, (x) => x > 10)
+foreach(items, (x) => log x)
+
+
 # ---- パイプ演算子 ----
 # データ変換チェーンが読みやすい
 list result = [1, 2, 3, 4, 5]
   |> filter((x) => x > 2)
   |> map((x) => x * 10)
+
+# パイプ + map/filter/reduce の組み合わせ
+list names = users
+  |> filter((u) => u.active)
+  |> map((u) => u.name)
+  |> sort()
 
 
 # ---- クラス (model) ----
@@ -157,6 +194,25 @@ model Admin extends User:
 
   fn permissions() -> list:
     ret ["read", "write", "delete"]
+
+
+# ---- スキーマ継承 (schema extends) ----
+# schema も extends で継承可能
+schema Animal:
+  id       auto
+  name     str required
+  species  str required
+
+schema Dog extends Animal:
+  breed    str optional
+  trained  bool default(false)
+
+  init(str name, str breed):
+    self.name = name
+    self.breed = breed
+
+  fn bark() -> str:
+    ret "Woof! I'm {self.name}"
 
 
 # ---- データベース永続化 ----
@@ -436,7 +492,15 @@ pub str VERSION = "1.0.0"
 
 
 # ---- null安全 ----
+# オプショナルチェーニング (?.)
 any val = data?.nested?.value ?? "default"
+str userName = user?.name
+any first = items?.[0]
+any result2 = obj?.method?.()
+
+# Null合体演算子 (??)
+str displayName = user?.name ?? "Anonymous"
+int port = config?.port ?? 3000
 
 
 # ---- await.all (Promise.all) ----
@@ -446,6 +510,8 @@ any val = data?.nested?.value ?? "default"
 # ---- スプレッド ----
 list combined = [...items, 4, 5, 6]
 map merged = {...config, debug: true}
+list all = [...listA, ...listB]
+map full = {...defaults, ...overrides}
 
 
 # ---- ページ生成 (HTML) ----

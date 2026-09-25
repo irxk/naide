@@ -113,6 +113,8 @@ export class RubyGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -1553,6 +1555,51 @@ export class RubyGenerator {
     this.emit(`${a}, ${b} = ${b}, ${a}`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      const names = node.names.map(n => {
+        if (n.rest) return `*${n.name}`;
+        return n.alias || n.name;
+      });
+      this.emit(`${names.join(', ')} = ${val}`);
+    } else {
+      const keys = node.names.filter(n => !n.rest).map(n => `:${n.name}`);
+      const vars = node.names.filter(n => !n.rest).map(n => n.alias || n.name);
+      this.emit(`${vars.join(', ')} = ${val}.values_at(${keys.join(', ')})`);
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` < ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext}`);
+    this.indent++;
+    if (node.init) {
+      const params = node.init.params.map(p => p.name).join(', ');
+      this.emit(`def initialize(${params})`);
+      this.indent++;
+      if (node.parent) this.emit('super()');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('end');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => p.name).join(', ');
+      this.emit(`def ${method.name}(${params})`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('nil');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('end');
+    }
+    this.indent--;
+    this.emit('end');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `${args[0]}.length`;
@@ -1593,6 +1640,13 @@ export class RubyGenerator {
       case 'read': return `File.read(${args[0]})`;
       case 'write': return `File.write(${args[0]}, ${args[1]})`;
       case 'ask': return `(print(${args[0] || '""'}); gets.chomp)`;
+      case 'map': return `${args[0]}.map { |_x| ${args[1]}.call(_x) }`;
+      case 'filter': return `${args[0]}.select { |_x| ${args[1]}.call(_x) }`;
+      case 'reduce': return args.length >= 3 ? `${args[0]}.reduce(${args[2]}) { |_acc, _x| ${args[1]}.call(_acc, _x) }` : `${args[0]}.reduce { |_acc, _x| ${args[1]}.call(_acc, _x) }`;
+      case 'find': return `${args[0]}.find { |_x| ${args[1]}.call(_x) }`;
+      case 'every': return `${args[0]}.all? { |_x| ${args[1]}.call(_x) }`;
+      case 'some': return `${args[0]}.any? { |_x| ${args[1]}.call(_x) }`;
+      case 'foreach': return `${args[0]}.each { |_x| ${args[1]}.call(_x) }`;
       default: return null;
     }
   }

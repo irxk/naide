@@ -105,6 +105,8 @@ export class PhpGenerator {
       case 'BlockchainDecl': return this.visitBlockchain(node);
       case 'EnumDecl': return this.visitEnum(node);
       case 'Swap': return this.visitSwap(node);
+      case 'Destructure': return this.visitDestructure(node);
+      case 'ClassDecl': return this.visitClassDecl(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1599,6 +1601,58 @@ export class PhpGenerator {
     this.emit(`[$${a.replace('$','')}, $${b.replace('$','')}] = [$${b.replace('$','')}, $${a.replace('$','')}];`);
   }
 
+  visitDestructure(node) {
+    const val = this.expr(node.value);
+    if (node.pattern === 'array') {
+      const names = node.names.map(n => {
+        if (n.rest) return `...$${n.name}`;
+        return `$${n.alias || n.name}`;
+      });
+      this.emit(`[${names.join(', ')}] = ${val};`);
+    } else {
+      const parts = node.names.filter(n => !n.rest).map(n => {
+        const varName = n.alias || n.name;
+        return `'${n.name}' => $${varName}`;
+      });
+      this.emit(`[${parts.join(', ')}] = ${val};`);
+    }
+  }
+
+  visitClassDecl(node) {
+    const ext = node.parent ? ` extends ${node.parent}` : '';
+    this.emit(`class ${node.name}${ext} {`);
+    this.indent++;
+    for (const field of node.fields) {
+      if (field.defaultValue) {
+        this.emit(`public $${field.name} = ${this.expr(field.defaultValue)};`);
+      }
+    }
+    if (node.init) {
+      const params = node.init.params.map(p => `$${p.name}`).join(', ');
+      this.emit(`public function __construct(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('parent::__construct();');
+      for (const stmt of node.init.body) this.visitStatement(stmt);
+      this.indent--;
+      this.emit('}');
+    }
+    for (const method of node.methods) {
+      const params = method.params.map(p => `$${p.name}`).join(', ');
+      this.emit(`public function ${method.name}(${params}) {`);
+      this.indent++;
+      if (method.body.length === 0) {
+        this.emit('// empty');
+      } else {
+        for (const stmt of method.body) this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
+    }
+    this.indent--;
+    this.emit('}');
+    this.emitRaw('');
+  }
+
   generateBuiltin(name, args) {
     switch (name) {
       case 'len': return `count(${args[0]})`;
@@ -1639,6 +1693,13 @@ export class PhpGenerator {
       case 'ask': return `readline(${args[0] || '""'})`;
       case 'chunk': return `array_chunk(${args[0]}, ${args[1]})`;
       case 'zip': return `array_map(null, ${args[0]}, ${args[1]})`;
+      case 'map': return `array_map(${args[1]}, ${args[0]})`;
+      case 'filter': return `array_values(array_filter(${args[0]}, ${args[1]}))`;
+      case 'reduce': return `array_reduce(${args[0]}, ${args[1]}, ${args[2] || 'null'})`;
+      case 'find': return `current(array_filter(${args[0]}, ${args[1]}))`;
+      case 'every': return `count(array_filter(${args[0]}, ${args[1]})) === count(${args[0]})`;
+      case 'some': return `count(array_filter(${args[0]}, ${args[1]})) > 0`;
+      case 'foreach': return `array_walk(${args[0]}, ${args[1]})`;
       default: return null;
     }
   }

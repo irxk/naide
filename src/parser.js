@@ -468,6 +468,12 @@ export class Parser {
 
   parseTypedVariable() {
     const varType = this.advance().value;
+    if (this.at(T.LBRACE)) {
+      return this.parseDestructure(varType, false);
+    }
+    if (this.at(T.LBRACKET)) {
+      return this.parseDestructure(varType, false);
+    }
     const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
@@ -481,10 +487,45 @@ export class Parser {
       node.isMut = true;
       return node;
     }
+    if (this.at(T.LBRACE) || this.at(T.LBRACKET)) {
+      return this.parseDestructure(null, true);
+    }
     const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
     return new ASTNode('TypedVar', { varType: null, name, value, isMut: true });
+  }
+
+  parseDestructure(varType, isMut) {
+    const pattern = this.at(T.LBRACE) ? 'object' : 'array';
+    this.advance(); // { or [
+    const names = [];
+    const endToken = pattern === 'object' ? T.RBRACE : T.RBRACKET;
+    while (!this.at(endToken) && !this.at(T.EOF)) {
+      this.skipWhitespace();
+      if (this.at(endToken)) break;
+      if (this.match(T.SPREAD)) {
+        const name = this.expectIdentLike();
+        names.push({ name, rest: true });
+      } else {
+        const name = this.expectIdentLike();
+        let alias = null;
+        if (this.match(T.COLON)) {
+          alias = this.expectIdentLike();
+        }
+        let defaultValue = null;
+        if (this.match(T.ASSIGN)) {
+          defaultValue = this.parseExpression();
+        }
+        names.push({ name, alias, defaultValue, rest: false });
+      }
+      this.match(T.COMMA);
+      this.skipWhitespace();
+    }
+    this.expect(endToken);
+    this.expect(T.ASSIGN);
+    const value = this.parseExpression();
+    return new ASTNode('Destructure', { pattern, names, value, varType, isMut });
   }
 
   parseIf() {
@@ -1394,19 +1435,40 @@ export class Parser {
   parseSchema() {
     this.advance(); // schema
     const name = this.expect(T.IDENT).value;
+    let parent = null;
+    if (this.match(T.EXTENDS)) {
+      parent = this.expect(T.IDENT).value;
+    }
     this.expect(T.COLON);
     this.skipNewlines();
     this.expect(T.INDENT);
 
     const fields = [];
+    const methods = [];
+    let init = null;
     this.skipNewlines();
 
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
-      fields.push(this.parseSchemaField());
+      if (this.at(T.FN) || this.at(T.FN_ASYNC)) {
+        methods.push(this.parseFunction(this.at(T.FN_ASYNC), false));
+      } else if (this.at(T.IDENT) && this.peek().value === 'init' && this.peek(1).type === T.LPAREN) {
+        this.advance(); // init
+        this.expect(T.LPAREN);
+        const params = this.parseFnParams();
+        this.expect(T.RPAREN);
+        this.expect(T.COLON);
+        const body = this.parseBlock();
+        init = { params, body };
+      } else {
+        fields.push(this.parseSchemaField());
+      }
       this.skipNewlines();
     }
     this.match(T.DEDENT);
 
+    if (parent || methods.length > 0 || init) {
+      return new ASTNode('ClassDecl', { name, parent, fields, methods, init });
+    }
     return new ASTNode('SchemaDecl', { name, fields });
   }
 

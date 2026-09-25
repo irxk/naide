@@ -45,6 +45,7 @@
       <option value="full">Full App</option>
       <option value="simple">Simple Syntax</option>
       <option value="builtins">Builtins</option>
+      <option value="modern">Modern Features</option>
     </select>
   </div>
 </header>
@@ -103,6 +104,10 @@ const examples = {
   builtins: {
     naide: `# Built-in Functions - No imports needed!\n\nlist items = [3, 1, 4, 1, 5, 9]\n\n# Collection ops\nint n = len(items)\nlist sorted = sort(items)\nlist uniq = unique(items)\nlist rev = reverse(items)\nlist r = range(10)\n\n# String ops\nstr hello = upper("hello")\nstr trimmed = trim("  hi  ")\nlist parts = split("a,b,c", ",")\nstr joined = join(parts, "-")\nbool has = contains("hello", "ell")\n\n# Math\nnum total = sum(items)\nnum sq = sqrt(16)\nnum p = pow(2, 10)\n\n# Type conversions\nstr s = str(42)\nint num = int("42")\n\n# JSON\nany data = json_parse("{}")\nstr j = json_str(data)\n\n# Time\nint now_ms = now()\nstr t = time()`,
     x: `# Built-in Functions\nl:items=[3,1,4,1,5,9]\n\ni:n=len(items)\nl:sorted=sort(items)\nl:uniq=unique(items)\nl:rev=reverse(items)\nl:r=range(10)\n\ns:hello=upper("hello")\ns:trimmed=trim("  hi  ")\nl:parts=split("a,b,c",",")\ns:joined=join(parts,"-")\nb:has=contains("hello","ell")\n\nn:total=sum(items)\nn:sq=sqrt(16)\nn:p=pow(2,10)\n\ns:s=str(42)\ni:num=int("42")\n\na:data=json_parse("{}")\ns:j=json_str(data)\n\ni:now_ms=now()\ns:t=time()`
+  },
+  modern: {
+    naide: `# Modern Features\n\n# auto type inference\nauto x = 42\nauto msg = "hello"\nmut auto counter = 0\n\n# Destructuring\nmap user = {name: "Alice", age: 25, role: "admin"}\nauto {name, age} = user\nauto {role, ...rest} = user\n\nlist coords = [10, 20, 30]\nauto [x2, y] = coords\nauto [head, ...tail] = coords\n\n# map / filter / reduce\nlist items = [1, 2, 3, 4, 5]\nlist doubled = map(items, (x) => x * 2)\nlist big = filter(items, (x) => x > 3)\nint total = reduce(items, (a, b) => a + b, 0)\nany found = find(items, (x) => x > 3)\nbool allPos = every(items, (x) => x > 0)\n\n# Pipe operator\nlist result = items\n  |> filter((x) => x > 2)\n  |> map((x) => x * 10)\n\n# Optional chaining + null coalescing\nany val = user?.name ?? "Anonymous"\n\n# Spread\nlist all = [...items, 6, 7, 8]\nmap merged = {...user, active: true}`,
+    x: `# Modern Features\n\nauto x=42\nauto msg="hello"\n~auto counter=0\n\nm:user={name:"Alice",age:25,role:"admin"}\nauto {name,age}=user\nauto {role,...rest}=user\n\nl:coords=[10,20,30]\nauto [x2,y]=coords\nauto [head,...tail]=coords\n\nl:items=[1,2,3,4,5]\nl:doubled=map(items,(x)=>x*2)\nl:big=filter(items,(x)=>x>3)\ni:total=reduce(items,(a,b)=>a+b,0)\na:found=find(items,(x)=>x>3)\nb:allPos=every(items,(x)=>x>0)\n\nl:result=items|>filter((x)=>x>2)|>map((x)=>x*10)\n\na:val=user?.name??"Anonymous"\n\nl:all=[...items,6,7,8]\nm:merged={...user,active:true}`
   }
 };
 
