@@ -25,7 +25,8 @@
   "scripts": {
     "test": "node --test test/test.js",
     "example": "node bin/naide.js examples/hello.naide",
-    "example:x": "node bin/naide.js examples/hello.nx"
+    "example:x": "node bin/naide.js examples/hello.nx",
+    "postinstall": "node bin/postinstall.js"
   },
   "keywords": [
     "ai",
