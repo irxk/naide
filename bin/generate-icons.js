@@ -1,13 +1,62 @@
 #!/usr/bin/env node
 
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import zlib from 'zlib';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function createPNG(width, height, pixels) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  function makeChunk(type, data) {
+    const buf = Buffer.alloc(4 + type.length + data.length + 4);
+    buf.writeUInt32BE(data.length, 0);
+    buf.write(type, 4);
+    data.copy(buf, 4 + type.length);
+    const crc = crc32(buf.slice(4, 4 + type.length + data.length));
+    buf.writeUInt32BE(crc, buf.length - 4);
+    return buf;
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const rawData = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y++) {
+    rawData[y * (1 + width * 4)] = 0;
+    for (let x = 0; x < width; x++) {
+      const si = (y * width + x) * 4;
+      const di = y * (1 + width * 4) + 1 + x * 4;
+      rawData[di + 0] = pixels[si + 0];
+      rawData[di + 1] = pixels[si + 1];
+      rawData[di + 2] = pixels[si + 2];
+      rawData[di + 3] = pixels[si + 3];
+    }
+  }
+  const compressed = zlib.deflateSync(rawData);
+
+  const ihdrChunk = makeChunk('IHDR', ihdr);
+  const idatChunk = makeChunk('IDAT', compressed);
+  const iendChunk = makeChunk('IEND', Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdrChunk, idatChunk, iendChunk]);
+}
+
 function createICO(sizes, renderFn) {
-  const images = sizes.map(s => createBMPImage(s, renderFn));
+  const images = sizes.map(s => {
+    const pixels = new Uint8Array(s * s * 4);
+    renderFn(pixels, s);
+    return { size: s, data: createPNG(s, s, pixels) };
+  });
+
   const headerSize = 6 + images.length * 16;
   let offset = headerSize;
 
@@ -34,131 +83,99 @@ function createICO(sizes, renderFn) {
   return Buffer.concat([header, ...entries, ...images.map(i => i.data)]);
 }
 
-function createBMPImage(size, renderFn) {
-  const pixels = new Uint8Array(size * size * 4);
-  renderFn(pixels, size);
-
-  const rowSize = size * 4;
-  const andRowSize = Math.ceil(size / 32) * 4;
-  const bmpInfoSize = 40;
-  const pixelDataSize = rowSize * size;
-  const andMaskSize = andRowSize * size;
-  const totalSize = bmpInfoSize + pixelDataSize + andMaskSize;
-
-  const buf = Buffer.alloc(totalSize);
-
-  buf.writeUInt32LE(40, 0);
-  buf.writeInt32LE(size, 4);
-  buf.writeInt32LE(size * 2, 8);
-  buf.writeUInt16LE(1, 12);
-  buf.writeUInt16LE(32, 14);
-  buf.writeUInt32LE(0, 16);
-  buf.writeUInt32LE(pixelDataSize + andMaskSize, 20);
-  buf.writeInt32LE(0, 24);
-  buf.writeInt32LE(0, 28);
-  buf.writeUInt32LE(0, 32);
-  buf.writeUInt32LE(0, 36);
-
-  for (let y = 0; y < size; y++) {
-    const srcRow = (size - 1 - y) * size * 4;
-    const dstRow = bmpInfoSize + y * rowSize;
-    for (let x = 0; x < size; x++) {
-      const si = srcRow + x * 4;
-      const di = dstRow + x * 4;
-      buf[di + 0] = pixels[si + 2];
-      buf[di + 1] = pixels[si + 1];
-      buf[di + 2] = pixels[si + 0];
-      buf[di + 3] = pixels[si + 3];
-    }
-  }
-
-  const andOffset = bmpInfoSize + pixelDataSize;
-  for (let y = 0; y < size; y++) {
-    const srcRow = (size - 1 - y) * size * 4;
-    for (let x = 0; x < size; x++) {
-      const alpha = pixels[srcRow + x * 4 + 3];
-      if (alpha < 128) {
-        const byteIdx = andOffset + y * andRowSize + Math.floor(x / 8);
-        buf[byteIdx] |= (0x80 >> (x % 8));
-      }
-    }
-  }
-
-  return { size, data: buf };
+const crcTable = new Uint32Array(256);
+for (let n = 0; n < 256; n++) {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+  crcTable[n] = c;
+}
+function crc32(buf) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) crc = crcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
 function setPixel(pixels, size, x, y, r, g, b, a = 255) {
   if (x < 0 || x >= size || y < 0 || y >= size) return;
   const i = (y * size + x) * 4;
-  if (a < 255 && pixels[i + 3] > 0) {
-    const sa = a / 255;
-    const da = 1 - sa;
-    pixels[i + 0] = Math.round(r * sa + pixels[i + 0] * da);
-    pixels[i + 1] = Math.round(g * sa + pixels[i + 1] * da);
-    pixels[i + 2] = Math.round(b * sa + pixels[i + 2] * da);
-    pixels[i + 3] = 255;
-  } else {
-    pixels[i + 0] = r;
-    pixels[i + 1] = g;
-    pixels[i + 2] = b;
-    pixels[i + 3] = a;
+  const sa = a / 255;
+  const da = (pixels[i + 3] / 255) * (1 - sa);
+  const oa = sa + da;
+  if (oa > 0) {
+    pixels[i + 0] = Math.round((r * sa + pixels[i + 0] * da) / oa);
+    pixels[i + 1] = Math.round((g * sa + pixels[i + 1] * da) / oa);
+    pixels[i + 2] = Math.round((b * sa + pixels[i + 2] * da) / oa);
+    pixels[i + 3] = Math.round(oa * 255);
   }
 }
 
-function fillRect(pixels, size, x0, y0, w, h, r, g, b, a = 255) {
-  for (let y = y0; y < y0 + h; y++)
-    for (let x = x0; x < x0 + w; x++)
-      setPixel(pixels, size, x, y, r, g, b, a);
+function fillRect(p, s, x0, y0, w, h, r, g, b, a = 255) {
+  for (let y = y0; y < y0 + h && y < s; y++)
+    for (let x = x0; x < x0 + w && x < s; x++)
+      setPixel(p, s, x, y, r, g, b, a);
 }
 
-function fillRoundRect(pixels, size, x0, y0, w, h, radius, r, g, b, a = 255) {
-  for (let y = y0; y < y0 + h; y++) {
-    for (let x = x0; x < x0 + w; x++) {
-      let inside = true;
-      const corners = [
-        [x0 + radius, y0 + radius],
-        [x0 + w - radius - 1, y0 + radius],
-        [x0 + radius, y0 + h - radius - 1],
-        [x0 + w - radius - 1, y0 + h - radius - 1],
-      ];
-      for (const [cx, cy] of corners) {
-        const inCornerX = (x < x0 + radius && cx === corners[0][0]) || (x > x0 + w - radius - 1 && cx === corners[1][0]);
-        const inCornerY = (y < y0 + radius && cy === corners[0][1]) || (y > y0 + h - radius - 1 && cy === corners[2][1]);
-        if (inCornerX && inCornerY) {
-          const dx = x - cx;
-          const dy = y - cy;
-          if (dx * dx + dy * dy > radius * radius) {
-            inside = false;
-            break;
-          }
-        }
+function fillCircle(p, s, cx, cy, radius, r, g, b, a = 255) {
+  const r2 = radius * radius;
+  for (let y = Math.floor(cy - radius); y <= Math.ceil(cy + radius); y++) {
+    for (let x = Math.floor(cx - radius); x <= Math.ceil(cx + radius); x++) {
+      const dx = x - cx + 0.5, dy = y - cy + 0.5;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= r2) {
+        const edge = Math.max(0, Math.min(1, (radius - Math.sqrt(d2)) * 1.5));
+        setPixel(p, s, x, y, r, g, b, Math.round(a * edge));
       }
-      if (inside) setPixel(pixels, size, x, y, r, g, b, a);
     }
   }
 }
 
-const GLYPH_N = [
-  [1,0,0,0,1],
-  [1,1,0,0,1],
-  [1,0,1,0,1],
-  [1,0,0,1,1],
-  [1,0,0,0,1],
-];
+function fillRoundRect(p, s, x0, y0, w, h, rad, r, g, b, a = 255) {
+  for (let y = y0; y < y0 + h; y++) {
+    for (let x = x0; x < x0 + w; x++) {
+      let draw = true;
+      if (x < x0 + rad && y < y0 + rad) {
+        const dx = x - (x0 + rad), dy = y - (y0 + rad);
+        if (dx * dx + dy * dy > rad * rad) draw = false;
+      } else if (x >= x0 + w - rad && y < y0 + rad) {
+        const dx = x - (x0 + w - rad - 1), dy = y - (y0 + rad);
+        if (dx * dx + dy * dy > rad * rad) draw = false;
+      } else if (x < x0 + rad && y >= y0 + h - rad) {
+        const dx = x - (x0 + rad), dy = y - (y0 + h - rad - 1);
+        if (dx * dx + dy * dy > rad * rad) draw = false;
+      } else if (x >= x0 + w - rad && y >= y0 + h - rad) {
+        const dx = x - (x0 + w - rad - 1), dy = y - (y0 + h - rad - 1);
+        if (dx * dx + dy * dy > rad * rad) draw = false;
+      }
+      if (draw) setPixel(p, s, x, y, r, g, b, a);
+    }
+  }
+}
 
-const GLYPH_X = [
-  [1,0,0,0,1],
-  [0,1,0,1,0],
-  [0,0,1,0,0],
-  [0,1,0,1,0],
-  [1,0,0,0,1],
-];
-
-function drawGlyph(pixels, size, glyph, ox, oy, scale, r, g, b) {
+function drawLetter(p, s, letter, ox, oy, scale, r, g, b) {
+  const glyphs = {
+    N: [
+      '##...##',
+      '###..##',
+      '####.##',
+      '##.####',
+      '##..###',
+      '##...##',
+    ],
+    X: [
+      '##...##',
+      '.##.##.',
+      '..###..',
+      '..###..',
+      '.##.##.',
+      '##...##',
+    ],
+  };
+  const glyph = glyphs[letter];
+  if (!glyph) return;
   for (let gy = 0; gy < glyph.length; gy++) {
     for (let gx = 0; gx < glyph[gy].length; gx++) {
-      if (glyph[gy][gx]) {
-        fillRect(pixels, size, ox + gx * scale, oy + gy * scale, scale, scale, r, g, b);
+      if (glyph[gy][gx] === '#') {
+        fillRect(p, s, ox + gx * scale, oy + gy * scale, scale, scale, r, g, b);
       }
     }
   }
@@ -166,43 +183,52 @@ function drawGlyph(pixels, size, glyph, ox, oy, scale, r, g, b) {
 
 function renderNaideIcon(pixels, size) {
   const s = size;
-  const r = Math.max(2, Math.round(s * 0.15));
-  fillRoundRect(pixels, s, 0, 0, s, s, r, 30, 110, 230);
-  fillRoundRect(pixels, s, 1, 1, s - 2, s - 2, r, 40, 130, 255);
+  const pad = Math.max(1, Math.round(s * 0.06));
+  const rad = Math.max(3, Math.round(s * 0.2));
 
-  const glyphScale = Math.max(1, Math.round(s / 10));
-  const gw = 5 * glyphScale;
-  const gh = 5 * glyphScale;
+  fillRoundRect(pixels, s, 0, 0, s, s, rad, 45, 80, 160);
+  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, rad - 1, 65, 120, 220);
+
+  const stripe = Math.max(1, Math.round(s * 0.06));
+  fillRect(pixels, s, 0, s - stripe * 3, s, stripe, 100, 180, 255, 120);
+
+  const sc = Math.max(1, Math.round(s / 14));
+  const gw = 7 * sc, gh = 6 * sc;
   const ox = Math.round((s - gw) / 2);
-  const oy = Math.round((s - gh) / 2);
-  drawGlyph(pixels, s, GLYPH_N, ox, oy, glyphScale, 255, 255, 255);
+  const oy = Math.round((s - gh) / 2) - Math.round(s * 0.02);
+  drawLetter(pixels, s, 'N', ox, oy, sc, 255, 255, 255);
+
+  const dotR = Math.max(1, Math.round(s * 0.06));
+  fillCircle(pixels, s, s - pad * 3 - dotR, s - pad * 3 - dotR, dotR, 130, 200, 255);
 }
 
 function renderNxIcon(pixels, size) {
   const s = size;
-  const r = Math.max(2, Math.round(s * 0.15));
-  fillRoundRect(pixels, s, 0, 0, s, s, r, 20, 170, 80);
-  fillRoundRect(pixels, s, 1, 1, s - 2, s - 2, r, 30, 200, 100);
+  const pad = Math.max(1, Math.round(s * 0.06));
+  const rad = Math.max(3, Math.round(s * 0.2));
 
-  const glyphScale = Math.max(1, Math.round(s / 10));
-  const gw = 5 * glyphScale;
-  const gh = 5 * glyphScale;
+  fillRoundRect(pixels, s, 0, 0, s, s, rad, 30, 120, 70);
+  fillRoundRect(pixels, s, pad, pad, s - pad * 2, s - pad * 2, rad - 1, 50, 170, 100);
+
+  const stripe = Math.max(1, Math.round(s * 0.06));
+  fillRect(pixels, s, 0, s - stripe * 3, s, stripe, 80, 220, 130, 120);
+
+  const sc = Math.max(1, Math.round(s / 14));
+  const gw = 7 * sc, gh = 6 * sc;
   const ox = Math.round((s - gw) / 2);
-  const oy = Math.round((s - gh) / 2);
-  drawGlyph(pixels, s, GLYPH_X, ox, oy, glyphScale, 255, 255, 255);
+  const oy = Math.round((s - gh) / 2) - Math.round(s * 0.02);
+  drawLetter(pixels, s, 'X', ox, oy, sc, 255, 255, 255);
+
+  const dotR = Math.max(1, Math.round(s * 0.06));
+  fillCircle(pixels, s, s - pad * 3 - dotR, s - pad * 3 - dotR, dotR, 100, 230, 150);
 }
 
-const naideIco = createICO([16, 32, 48, 64], renderNaideIcon);
-const nxIco = createICO([16, 32, 48, 64], renderNxIcon);
-
-const naideOut = resolve(__dirname, '..', 'assets', 'naide.ico');
-const nxOut = resolve(__dirname, '..', 'assets', 'nx.ico');
-
-import { mkdirSync } from 'fs';
 mkdirSync(resolve(__dirname, '..', 'assets'), { recursive: true });
 
-writeFileSync(naideOut, naideIco);
-writeFileSync(nxOut, nxIco);
+const naideIco = createICO([16, 32, 48, 256], renderNaideIcon);
+const nxIco = createICO([16, 32, 48, 256], renderNxIcon);
 
-console.log(`Generated: ${naideOut}`);
-console.log(`Generated: ${nxOut}`);
+writeFileSync(resolve(__dirname, '..', 'assets', 'naide.ico'), naideIco);
+writeFileSync(resolve(__dirname, '..', 'assets', 'nx.ico'), nxIco);
+
+console.log('Icons generated successfully.');
