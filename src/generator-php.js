@@ -103,6 +103,8 @@ export class PhpGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1366,6 +1368,12 @@ export class PhpGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     // Map global function calls
@@ -1572,5 +1580,66 @@ export class PhpGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`class ${node.name} {`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`const ${v} = ${i};`);
+    });
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`[$${a.replace('$','')}, $${b.replace('$','')}] = [$${b.replace('$','')}, $${a.replace('$','')}];`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `count(${args[0]})`;
+      case 'sort': return `(function($a) { sort($a); return $a; })(${args[0]})`;
+      case 'reverse': return `array_reverse(${args[0]})`;
+      case 'unique': return `array_values(array_unique(${args[0]}))`;
+      case 'upper': return `strtoupper(${args[0]})`;
+      case 'lower': return `strtolower(${args[0]})`;
+      case 'trim': return `trim(${args[0]})`;
+      case 'split': return `explode(${args[1] || '","'}, ${args[0]})`;
+      case 'join': return `implode(${args[1] || '","'}, ${args[0]})`;
+      case 'contains': return `in_array(${args[1]}, ${args[0]})`;
+      case 'replace': return `str_replace(${args[1]}, ${args[2]}, ${args[0]})`;
+      case 'keys': return `array_keys(${args[0]})`;
+      case 'values': return `array_values(${args[0]})`;
+      case 'entries': return `array_map(null, array_keys(${args[0]}), array_values(${args[0]}))`;
+      case 'range': return args.length >= 2 ? `range(${args[0]}, ${args[1]} - 1)` : `range(0, ${args[0]} - 1)`;
+      case 'abs': return `abs(${args[0]})`;
+      case 'round': return `round(${args[0]})`;
+      case 'ceil': return `ceil(${args[0]})`;
+      case 'floor': return `floor(${args[0]})`;
+      case 'sqrt': return `sqrt(${args[0]})`;
+      case 'pow': return `pow(${args[0]}, ${args[1]})`;
+      case 'sum': return `array_sum(${args[0]})`;
+      case 'flat': return `array_merge(...${args[0]})`;
+      case 'str': return `strval(${args[0]})`;
+      case 'int': return `intval(${args[0]})`;
+      case 'float': return `floatval(${args[0]})`;
+      case 'json_parse': return `json_decode(${args[0]}, true)`;
+      case 'json_str': return `json_encode(${args[0]})`;
+      case 'now': return `(int)(microtime(true) * 1000)`;
+      case 'time': return `date('c')`;
+      case 'exit': return `exit(${args[0] || '0'})`;
+      case 'sleep': return `usleep(${args[0]} * 1000)`;
+      case 'random': return args.length >= 2 ? `random_int(${args[0]}, ${args[1]})` : `(mt_rand() / mt_getrandmax())`;
+      case 'read': return `file_get_contents(${args[0]})`;
+      case 'write': return `file_put_contents(${args[0]}, ${args[1]})`;
+      case 'ask': return `readline(${args[0] || '""'})`;
+      case 'chunk': return `array_chunk(${args[0]}, ${args[1]})`;
+      case 'zip': return `array_map(null, ${args[0]}, ${args[1]})`;
+      default: return null;
+    }
   }
 }

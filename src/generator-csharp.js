@@ -178,6 +178,8 @@ export class CSharpGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1432,6 +1434,12 @@ export class CSharpGenerator {
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
+    if (node.callee.type === 'Identifier') {
       const name = node.callee.name;
       if (name === 'parseInt') return `int.Parse(${args})`;
       if (name === 'parseFloat') return `double.Parse(${args})`;
@@ -1629,5 +1637,64 @@ export class CSharpGenerator {
     this.classBody = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum ${node.name} {`);
+    this.indent++;
+    this.emit(node.values.join(', '));
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`(${a}, ${b}) = (${b}, ${a});`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.Count`;
+      case 'sort': return `${args[0]}.OrderBy(x => x).ToList()`;
+      case 'reverse': return `${args[0]}.AsEnumerable().Reverse().ToList()`;
+      case 'unique': return `${args[0]}.Distinct().ToList()`;
+      case 'upper': return `${args[0]}.ToUpper()`;
+      case 'lower': return `${args[0]}.ToLower()`;
+      case 'trim': return `${args[0]}.Trim()`;
+      case 'split': return `${args[0]}.Split(${args[1] || '","'}).ToList()`;
+      case 'join': return `string.Join(${args[1] || '","'}, ${args[0]})`;
+      case 'contains': return `${args[0]}.Contains(${args[1]})`;
+      case 'replace': return `${args[0]}.Replace(${args[1]}, ${args[2]})`;
+      case 'keys': return `${args[0]}.Keys.ToList()`;
+      case 'values': return `${args[0]}.Values.ToList()`;
+      case 'entries': return `${args[0]}.ToList()`;
+      case 'range': return args.length >= 2 ? `Enumerable.Range(${args[0]}, ${args[1]} - ${args[0]}).ToList()` : `Enumerable.Range(0, ${args[0]}).ToList()`;
+      case 'abs': return `Math.Abs(${args[0]})`;
+      case 'sqrt': return `Math.Sqrt(${args[0]})`;
+      case 'pow': return `Math.Pow(${args[0]}, ${args[1]})`;
+      case 'ceil': return `Math.Ceiling((double)${args[0]})`;
+      case 'floor': return `Math.Floor((double)${args[0]})`;
+      case 'round': return `Math.Round((double)${args[0]})`;
+      case 'sum': return `${args[0]}.Sum()`;
+      case 'flat': return `${args[0]}.SelectMany(x => x).ToList()`;
+      case 'zip': return `${args[0]}.Zip(${args[1]}).ToList()`;
+      case 'chunk': return `${args[0]}.Chunk(${args[1]}).Select(c => c.ToList()).ToList()`;
+      case 'str': return `${args[0]}.ToString()`;
+      case 'int': return `int.Parse(${args[0]})`;
+      case 'float': return `double.Parse(${args[0]})`;
+      case 'json_parse': return `System.Text.Json.JsonSerializer.Deserialize<object>(${args[0]})`;
+      case 'json_str': return `System.Text.Json.JsonSerializer.Serialize(${args[0]})`;
+      case 'now': return `DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()`;
+      case 'time': return `DateTime.Now.ToString("o")`;
+      case 'exit': return `Environment.Exit(${args[0] || '0'})`;
+      case 'sleep': return `Thread.Sleep(${args[0]})`;
+      case 'random': return args.length >= 2 ? `new Random().Next(${args[0]}, ${args[1]} + 1)` : `new Random().NextDouble()`;
+      case 'read': return `File.ReadAllText(${args[0]})`;
+      case 'write': return `File.WriteAllText(${args[0]}, ${args[1]})`;
+      case 'ask': return `(Console.Write(${args[0] || '""'}), Console.ReadLine() ?? "").Item2`;
+      default: return null;
+    }
   }
 }

@@ -162,6 +162,8 @@ export class DartGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1365,6 +1367,12 @@ export class DartGenerator {
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
+    if (node.callee.type === 'Identifier') {
       const name = node.callee.name;
       if (name === 'parseInt') return `int.parse(${args})`;
       if (name === 'parseFloat') return `double.parse(${args})`;
@@ -1565,5 +1573,66 @@ export class DartGenerator {
     this.indent = savedIndent;
     this.inFunction = wasInFunction;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum ${node.name} {`);
+    this.indent++;
+    node.values.forEach(v => {
+      this.emit(`${v.toLowerCase()},`);
+    });
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`{ final _tmp = ${a}; ${a} = ${b}; ${b} = _tmp; }`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.length`;
+      case 'sort': return `(List.from(${args[0]})..sort())`;
+      case 'reverse': return `${args[0]}.reversed.toList()`;
+      case 'unique': return `${args[0]}.toSet().toList()`;
+      case 'upper': return `${args[0]}.toUpperCase()`;
+      case 'lower': return `${args[0]}.toLowerCase()`;
+      case 'trim': return `${args[0]}.trim()`;
+      case 'split': return `${args[0]}.split(${args[1] || '","'})`;
+      case 'join': return `${args[0]}.join(${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.contains(${args[1]})`;
+      case 'replace': return `${args[0]}.replaceAll(${args[1]}, ${args[2]})`;
+      case 'keys': return `${args[0]}.keys.toList()`;
+      case 'values': return `${args[0]}.values.toList()`;
+      case 'entries': return `${args[0]}.entries.toList()`;
+      case 'range': return args.length >= 2 ? `List.generate(${args[1]} - ${args[0]}, (i) => i + ${args[0]})` : `List.generate(${args[0]}, (i) => i)`;
+      case 'abs': return `${args[0]}.abs()`;
+      case 'sqrt': { this.addImport('dart:math'); return `sqrt(${args[0]}.toDouble())`; }
+      case 'pow': { this.addImport('dart:math'); return `pow(${args[0]}, ${args[1]})`; }
+      case 'ceil': return `${args[0]}.ceil()`;
+      case 'floor': return `${args[0]}.floor()`;
+      case 'round': return `${args[0]}.round()`;
+      case 'sum': return `${args[0]}.reduce((a, b) => a + b)`;
+      case 'flat': return `${args[0]}.expand((x) => x).toList()`;
+      case 'zip': return `List.generate(${args[0]}.length, (i) => [${args[0]}[i], ${args[1]}[i]])`;
+      case 'chunk': return `[for (var i = 0; i < ${args[0]}.length; i += ${args[1]}) ${args[0]}.sublist(i, i + ${args[1]} > ${args[0]}.length ? ${args[0]}.length : i + ${args[1]})]`;
+      case 'str': return `${args[0]}.toString()`;
+      case 'int': return `int.parse(${args[0]})`;
+      case 'float': return `double.parse(${args[0]})`;
+      case 'json_parse': { this.addImport('dart:convert'); return `jsonDecode(${args[0]})`; }
+      case 'json_str': { this.addImport('dart:convert'); return `jsonEncode(${args[0]})`; }
+      case 'now': return `DateTime.now().millisecondsSinceEpoch`;
+      case 'time': return `DateTime.now().toIso8601String()`;
+      case 'exit': return `exit(${args[0] || '0'})`;
+      case 'sleep': return `await Future.delayed(Duration(milliseconds: ${args[0]}))`;
+      case 'random': { this.addImport('dart:math'); return args.length >= 2 ? `(Random().nextInt(${args[1]} - ${args[0]} + 1) + ${args[0]})` : `Random().nextDouble()`; }
+      case 'read': { this.addImport('dart:io'); return `File(${args[0]}).readAsStringSync()`; }
+      case 'write': { this.addImport('dart:io'); return `File(${args[0]}).writeAsStringSync(${args[1]})`; }
+      case 'ask': { this.addImport('dart:io'); return `((){stdout.write(${args[0] || '""'}); return stdin.readLineSync() ?? "";}())`; }
+      default: return null;
+    }
   }
 }

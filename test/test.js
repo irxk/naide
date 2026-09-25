@@ -2233,3 +2233,26 @@ describe('Builtin functions', () => {
     assert.ok(r.code.includes('a, b = b, a'));
   });
 });
+
+describe('Cross-target builtins', () => {
+  const targets = ['go', 'rust', 'java', 'cpp', 'c', 'php', 'ruby', 'kotlin', 'swift', 'dart', 'csharp'];
+
+  for (const t of targets) {
+    it(`compiles len() to ${t}`, async () => {
+      const r = await compileAsync('int n = len(items)', { target: t });
+      assert.ok(r.code, `${t} should produce output`);
+      assert.ok(r.code.length > 0);
+    });
+
+    it(`compiles enum to ${t}`, async () => {
+      const r = await compileAsync('enum Color:\n  RED\n  GREEN\n  BLUE', { target: t });
+      assert.ok(r.code.includes('Color'), `${t} enum should include Color`);
+      assert.ok(r.code.toLowerCase().includes('red'), `${t} enum should include RED/red`);
+    });
+
+    it(`compiles swap to ${t}`, async () => {
+      const r = await compileAsync('mut int a = 1\nmut int b = 2\nswap a, b', { target: t });
+      assert.ok(r.code.length > 0, `${t} swap should produce output`);
+    });
+  }
+});

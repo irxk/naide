@@ -186,6 +186,8 @@ export class CppGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -983,6 +985,10 @@ export class CppGenerator {
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+
       const name = node.callee.name;
       if (name === 'parseInt') return `stoi(${args})`;
       if (name === 'parseFloat') return `stod(${args})`;
@@ -1207,5 +1213,52 @@ export class CppGenerator {
     this.indent = savedIndent;
     this.inFunction = saved;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum class ${node.name} {`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`${v} = ${i},`);
+    });
+    this.indent--;
+    this.emit(`};`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    this.includes.add('<utility>');
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`std::swap(${a}, ${b});`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.size()`;
+      case 'sort': { this.includes.add('<algorithm>'); return `([&](){ auto _v = ${args[0]}; std::sort(_v.begin(), _v.end()); return _v; }())`; }
+      case 'reverse': { this.includes.add('<algorithm>'); return `([&](){ auto _v = ${args[0]}; std::reverse(_v.begin(), _v.end()); return _v; }())`; }
+      case 'contains': return `(std::find(${args[0]}.begin(), ${args[0]}.end(), ${args[1]}) != ${args[0]}.end())`;
+      case 'abs': { this.includes.add('<cmath>'); return `std::abs(${args[0]})`; }
+      case 'sqrt': { this.includes.add('<cmath>'); return `std::sqrt(${args[0]})`; }
+      case 'pow': { this.includes.add('<cmath>'); return `std::pow(${args[0]}, ${args[1]})`; }
+      case 'ceil': { this.includes.add('<cmath>'); return `std::ceil(${args[0]})`; }
+      case 'floor': { this.includes.add('<cmath>'); return `std::floor(${args[0]})`; }
+      case 'round': { this.includes.add('<cmath>'); return `std::round(${args[0]})`; }
+      case 'str': return `std::to_string(${args[0]})`;
+      case 'int': return `std::stoi(${args[0]})`;
+      case 'float': return `std::stof(${args[0]})`;
+      case 'upper': { this.includes.add('<algorithm>'); this.includes.add('<cctype>'); return `([&](){ auto _s = ${args[0]}; std::transform(_s.begin(), _s.end(), _s.begin(), ::toupper); return _s; }())`; }
+      case 'lower': { this.includes.add('<algorithm>'); this.includes.add('<cctype>'); return `([&](){ auto _s = ${args[0]}; std::transform(_s.begin(), _s.end(), _s.begin(), ::tolower); return _s; }())`; }
+      case 'trim': return `([&](){ auto _s = ${args[0]}; _s.erase(0, _s.find_first_not_of(" \\t\\n\\r")); _s.erase(_s.find_last_not_of(" \\t\\n\\r") + 1); return _s; }())`;
+      case 'keys': return `([&](){ std::vector<std::string> _k; for (auto& [k,v] : ${args[0]}) _k.push_back(k); return _k; }())`;
+      case 'values': return `([&](){ std::vector<auto> _v; for (auto& [k,v] : ${args[0]}) _v.push_back(v); return _v; }())`;
+      case 'exit': return `exit(${args[0] || '0'})`;
+      case 'sleep': { this.includes.add('<thread>'); this.includes.add('<chrono>'); return `std::this_thread::sleep_for(std::chrono::milliseconds(${args[0]}))`; }
+      case 'now': { this.includes.add('<chrono>'); return `std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()`; }
+      case 'random': { this.includes.add('<random>'); return args.length >= 2 ? `([](int a, int b){ std::random_device rd; std::mt19937 gen(rd()); std::uniform_int_distribution<> dis(a,b); return dis(gen); })(${args[0]}, ${args[1]})` : `([]{ std::random_device rd; return rd(); }())`; }
+      case 'sum': return `([&](){ auto _v = ${args[0]}; return std::accumulate(_v.begin(), _v.end(), 0); }())`;
+      default: return null;
+    }
   }
 }

@@ -137,6 +137,8 @@ export class KotlinGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1642,6 +1644,12 @@ export class KotlinGenerator {
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
+    if (node.callee.type === 'Identifier') {
       const name = node.callee.name;
       if (name === 'parseInt') return `(${args}).toInt()`;
       if (name === 'parseFloat') return `(${args}).toDouble()`;
@@ -1815,5 +1823,64 @@ export class KotlinGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum class ${node.name} {`);
+    this.indent++;
+    this.emit(node.values.join(', '));
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`${a} = ${b}.also { ${b} = ${a} }`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.size`;
+      case 'sort': return `${args[0]}.sorted()`;
+      case 'reverse': return `${args[0]}.reversed()`;
+      case 'unique': return `${args[0]}.distinct()`;
+      case 'upper': return `${args[0]}.uppercase()`;
+      case 'lower': return `${args[0]}.lowercase()`;
+      case 'trim': return `${args[0]}.trim()`;
+      case 'split': return `${args[0]}.split(${args[1] || '","'})`;
+      case 'join': return `${args[0]}.joinToString(${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.contains(${args[1]})`;
+      case 'replace': return `${args[0]}.replace(${args[1]}, ${args[2]})`;
+      case 'keys': return `${args[0]}.keys.toList()`;
+      case 'values': return `${args[0]}.values.toList()`;
+      case 'entries': return `${args[0]}.entries.toList()`;
+      case 'range': return args.length >= 2 ? `(${args[0]} until ${args[1]}).toList()` : `(0 until ${args[0]}).toList()`;
+      case 'abs': return `kotlin.math.abs(${args[0]})`;
+      case 'sqrt': return `kotlin.math.sqrt(${args[0]}.toDouble())`;
+      case 'pow': return `kotlin.math.pow(${args[0]}.toDouble(), ${args[1]}.toDouble())`;
+      case 'ceil': return `kotlin.math.ceil(${args[0]}.toDouble())`;
+      case 'floor': return `kotlin.math.floor(${args[0]}.toDouble())`;
+      case 'round': return `kotlin.math.round(${args[0]}.toDouble())`;
+      case 'sum': return `${args[0]}.sum()`;
+      case 'flat': return `${args[0]}.flatten()`;
+      case 'zip': return `${args[0]}.zip(${args[1]})`;
+      case 'chunk': return `${args[0]}.chunked(${args[1]})`;
+      case 'str': return `${args[0]}.toString()`;
+      case 'int': return `${args[0]}.toInt()`;
+      case 'float': return `${args[0]}.toDouble()`;
+      case 'json_parse': return `com.google.gson.Gson().fromJson(${args[0]}, Any::class.java)`;
+      case 'json_str': return `com.google.gson.Gson().toJson(${args[0]})`;
+      case 'now': return `System.currentTimeMillis()`;
+      case 'time': return `java.time.LocalDateTime.now().toString()`;
+      case 'exit': return `kotlin.system.exitProcess(${args[0] || '0'})`;
+      case 'sleep': return `Thread.sleep(${args[0]}.toLong())`;
+      case 'random': return args.length >= 2 ? `(${args[0]}..${args[1]}).random()` : `kotlin.random.Random.nextDouble()`;
+      case 'read': return `java.io.File(${args[0]}).readText()`;
+      case 'write': return `java.io.File(${args[0]}).writeText(${args[1]})`;
+      case 'ask': return `(print(${args[0] || '""'}); readLine() ?: "")`;
+      default: return null;
+    }
   }
 }

@@ -139,6 +139,8 @@ export class SwiftGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1555,6 +1557,12 @@ export class SwiftGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
@@ -1731,5 +1739,64 @@ export class SwiftGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum ${node.name}: Int, CaseIterable {`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`case ${v.toLowerCase()} = ${i}`);
+    });
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`swap(&${a}, &${b})`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.count`;
+      case 'sort': return `${args[0]}.sorted()`;
+      case 'reverse': return `${args[0]}.reversed()`;
+      case 'unique': return `Array(Set(${args[0]}))`;
+      case 'upper': return `${args[0]}.uppercased()`;
+      case 'lower': return `${args[0]}.lowercased()`;
+      case 'trim': return `${args[0]}.trimmingCharacters(in: .whitespacesAndNewlines)`;
+      case 'split': return `${args[0]}.components(separatedBy: ${args[1] || '","'})`;
+      case 'join': return `${args[0]}.joined(separator: ${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.contains(${args[1]})`;
+      case 'replace': return `${args[0]}.replacingOccurrences(of: ${args[1]}, with: ${args[2]})`;
+      case 'keys': return `Array(${args[0]}.keys)`;
+      case 'values': return `Array(${args[0]}.values)`;
+      case 'range': return args.length >= 2 ? `Array(${args[0]}..<${args[1]})` : `Array(0..<${args[0]})`;
+      case 'abs': return `abs(${args[0]})`;
+      case 'sqrt': { this.addImport('Foundation'); return `sqrt(Double(${args[0]}))`; }
+      case 'pow': { this.addImport('Foundation'); return `pow(Double(${args[0]}), Double(${args[1]}))`; }
+      case 'ceil': { this.addImport('Foundation'); return `ceil(Double(${args[0]}))`; }
+      case 'floor': { this.addImport('Foundation'); return `floor(Double(${args[0]}))`; }
+      case 'round': { this.addImport('Foundation'); return `round(Double(${args[0]}))`; }
+      case 'sum': return `${args[0]}.reduce(0, +)`;
+      case 'flat': return `${args[0]}.flatMap { $0 }`;
+      case 'zip': return `Array(zip(${args[0]}, ${args[1]}))`;
+      case 'chunk': return `stride(from: 0, to: ${args[0]}.count, by: ${args[1]}).map { Array(${args[0]}[$0..<min($0+${args[1]}, ${args[0]}.count)]) }`;
+      case 'str': return `String(${args[0]})`;
+      case 'int': return `Int(${args[0]}) ?? 0`;
+      case 'float': return `Double(${args[0]}) ?? 0.0`;
+      case 'json_parse': { this.addImport('Foundation'); return `try? JSONSerialization.jsonObject(with: ${args[0]}.data(using: .utf8)!, options: [])`; }
+      case 'json_str': { this.addImport('Foundation'); return `String(data: try! JSONSerialization.data(withJSONObject: ${args[0]}), encoding: .utf8)!`; }
+      case 'now': { this.addImport('Foundation'); return `Int(Date().timeIntervalSince1970 * 1000)`; }
+      case 'time': { this.addImport('Foundation'); return `ISO8601DateFormatter().string(from: Date())`; }
+      case 'exit': { this.addImport('Foundation'); return `exit(${args[0] || '0'})`; }
+      case 'sleep': { this.addImport('Foundation'); return `Thread.sleep(forTimeInterval: Double(${args[0]}) / 1000.0)`; }
+      case 'random': return args.length >= 2 ? `Int.random(in: ${args[0]}...${args[1]})` : `Double.random(in: 0...1)`;
+      case 'read': return `try! String(contentsOfFile: ${args[0]})`;
+      case 'write': return `try! ${args[1]}.write(toFile: ${args[0]}, atomically: true, encoding: .utf8)`;
+      default: return null;
+    }
   }
 }

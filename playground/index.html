@@ -43,6 +43,8 @@
       <option value="crud">CRUD API</option>
       <option value="auth">Auth + JWT</option>
       <option value="full">Full App</option>
+      <option value="simple">Simple Syntax</option>
+      <option value="builtins">Builtins</option>
     </select>
   </div>
 </header>
@@ -93,6 +95,14 @@ const examples = {
   full: {
     naide: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\nserver app port PORT:\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n\n  post "/api/auth/register" (req, res):\n    str hashed = hash(req.body.password)\n    user = UserStore.create({...req.body, password: hashed})\n    token = auth.sign({id: user.id})\n    ret {token, user}\n\n  get "/":\n    ret.html "<h1>API</h1>"`,
     x: `db "data/"\n\nenv:\n  PORT int default(3000)\n  JWT_SECRET str required\n\nschema User:\n  id auto\n  name str required min(2) max(50)\n  email str required email\n  password str required\n\n$app:PORT\n  cors "*"\n  cookie\n  auth JWT_SECRET:\n    protect "/api/*"\n    public "/api/auth/*"\n  crud "/api/users" User\n  validate "/api/users" User\n  openapi "/docs"\n  P"/api/auth/register"(req,res)\n    s:hashed=hash(req.body.password)\n    user=UserStore.create({...req.body,password:hashed})\n    token=auth.sign({id:user.id})\n    >{token,user}\n  G"/"\n    >.h "<h1>API</h1>"`
+  },
+  simple: {
+    naide: `# Syntax Sugar - Simpler than Python!\n\n# one-line functions\nfn double(int x) -> int = x * 2\nfn greet(str name) -> str = "Hello, {name}!"\n\n# unless / until / repeat\nunless x > 10:\n  print "small"\n\nmut int i = 0\nuntil i > 5:\n  i = i + 1\n\nrepeat 3 as n:\n  print n\n\n# enum\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n# swap\nmut int a = 1\nmut int b = 2\nswap a, b\n\n# is / isnt\nif a is 2:\n  print "swapped!"`,
+    x: `# Syntax Sugar\nf double(i:x)i=x*2\nf greet(s:name)s="Hello, {name}!"\n\nunless x>10\n  log "small"\n\nm i:i=0\nuntil i>5\n  i=i+1\n\nrepeat 3 as n\n  log n\n\nenum Color:\n  RED\n  GREEN\n  BLUE\n\nm i:a=1\nm i:b=2\nswap a,b\n\nif a is 2\n  log "swapped!"`
+  },
+  builtins: {
+    naide: `# Built-in Functions - No imports needed!\n\nlist items = [3, 1, 4, 1, 5, 9]\n\n# Collection ops\nint n = len(items)\nlist sorted = sort(items)\nlist uniq = unique(items)\nlist rev = reverse(items)\nlist r = range(10)\n\n# String ops\nstr hello = upper("hello")\nstr trimmed = trim("  hi  ")\nlist parts = split("a,b,c", ",")\nstr joined = join(parts, "-")\nbool has = contains("hello", "ell")\n\n# Math\nnum total = sum(items)\nnum sq = sqrt(16)\nnum p = pow(2, 10)\n\n# Type conversions\nstr s = str(42)\nint num = int("42")\n\n# JSON\nany data = json_parse("{}")\nstr j = json_str(data)\n\n# Time\nint now_ms = now()\nstr t = time()`,
+    x: `# Built-in Functions\nl:items=[3,1,4,1,5,9]\n\ni:n=len(items)\nl:sorted=sort(items)\nl:uniq=unique(items)\nl:rev=reverse(items)\nl:r=range(10)\n\ns:hello=upper("hello")\ns:trimmed=trim("  hi  ")\nl:parts=split("a,b,c",",")\ns:joined=join(parts,"-")\nb:has=contains("hello","ell")\n\nn:total=sum(items)\nn:sq=sqrt(16)\nn:p=pow(2,10)\n\ns:s=str(42)\ni:num=int("42")\n\na:data=json_parse("{}")\ns:j=json_str(data)\n\ni:now_ms=now()\ns:t=time()`
   }
 };
 

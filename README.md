@@ -1405,6 +1405,76 @@ naide pkg list                  # list installed NAIDE packages
 
 The `naide.pkg.json` manifest tracks NAIDE-specific metadata (main entry, exports, dependencies) while using npm as the underlying registry.
 
+## NAIDE vs Python — Side by Side
+
+**Read a file, process lines, write result:**
+
+```python
+# Python (8 lines)
+with open("input.txt") as f:
+    lines = f.read().strip().split("\n")
+upper_lines = [line.upper() for line in lines]
+result = "\n".join(upper_lines)
+with open("output.txt", "w") as f:
+    f.write(result)
+print(f"Processed {len(upper_lines)} lines")
+```
+
+```python
+# NAIDE (4 lines)
+list lines = split(trim(read("input.txt")), "\n")
+list upper_lines = [upper(line) for line in lines]
+write("output.txt", join(upper_lines, "\n"))
+print "Processed {len(upper_lines)} lines"
+```
+
+**Sort, deduplicate, and swap:**
+
+```python
+# Python (5 lines)
+items = [3, 1, 4, 1, 5]
+items = sorted(set(items))
+a, b = 1, 2
+a, b = b, a
+print(f"a={a}, b={b}")
+```
+
+```python
+# NAIDE (5 lines)
+list items = unique(sort([3, 1, 4, 1, 5]))
+mut int a = 1
+mut int b = 2
+swap a, b
+print "a={a}, b={b}"
+```
+
+**Simple API server:**
+
+```python
+# Python + Flask (12 lines)
+from flask import Flask, jsonify
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return jsonify({"message": "Hello"})
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
+app.run(port=3000)
+```
+
+```python
+# NAIDE (5 lines)
+server app port 3000:
+  get "/":
+    ret {message: "Hello"}
+  get "/health":
+    ret {status: "ok"}
+```
+
 ## Why NAIDE?
 
 AI code generation speed depends on:
@@ -1412,6 +1482,7 @@ AI code generation speed depends on:
 1. **Token count** — fewer output tokens = faster generation
 2. **Predictability** — one way to write everything = better next-token prediction
 3. **Context window** — shorter code = more room for complex projects
+4. **Simplicity** — built-in functions mean zero imports and less boilerplate
 
 NAIDE-X is designed as an **AI-internal representation** — the AI thinks in NAIDE-X, users receive standard JavaScript.
 

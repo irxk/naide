@@ -185,6 +185,8 @@ export class CGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -874,6 +876,12 @@ export class CGenerator {
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
+    if (node.callee.type === 'Identifier') {
       const name = node.callee.name;
       if (name === 'parseInt') return `atoi(${args})`;
       if (name === 'parseFloat') return `atof(${args})`;
@@ -972,6 +980,46 @@ export class CGenerator {
       }
     }
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`typedef enum {`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`${node.name}_${v} = ${i},`);
+    });
+    this.indent--;
+    this.emit(`} ${node.name};`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    const tmp = `_tmp_${a.replace(/[^a-zA-Z0-9]/g, '')}`;
+    this.emit(`{ typeof(${a}) ${tmp} = ${a}; ${a} = ${b}; ${b} = ${tmp}; }`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `(sizeof(${args[0]}) / sizeof(${args[0]}[0]))`;
+      case 'abs': return `abs(${args[0]})`;
+      case 'sqrt': { this.includes.add('<math.h>'); return `sqrt(${args[0]})`; }
+      case 'pow': { this.includes.add('<math.h>'); return `pow(${args[0]}, ${args[1]})`; }
+      case 'ceil': { this.includes.add('<math.h>'); return `ceil(${args[0]})`; }
+      case 'floor': { this.includes.add('<math.h>'); return `floor(${args[0]})`; }
+      case 'round': { this.includes.add('<math.h>'); return `round(${args[0]})`; }
+      case 'exit': { this.includes.add('<stdlib.h>'); return `exit(${args[0] || '0'})`; }
+      case 'str': return `snprintf(_buf, sizeof(_buf), "%d", ${args[0]})`;
+      case 'int': { this.includes.add('<stdlib.h>'); return `atoi(${args[0]})`; }
+      case 'float': { this.includes.add('<stdlib.h>'); return `atof(${args[0]})`; }
+      case 'upper': { this.includes.add('<ctype.h>'); return `toupper(${args[0]})`; }
+      case 'lower': { this.includes.add('<ctype.h>'); return `tolower(${args[0]})`; }
+      case 'sleep': { this.includes.add('<unistd.h>'); return `usleep(${args[0]} * 1000)`; }
+      case 'now': { this.includes.add('<time.h>'); return `(long long)time(NULL) * 1000`; }
+      case 'random': { this.includes.add('<stdlib.h>'); return args.length >= 2 ? `(rand() % (${args[1]} - ${args[0]} + 1) + ${args[0]})` : `rand()`; }
+      default: return null;
+    }
   }
 
   rawString(strData) {

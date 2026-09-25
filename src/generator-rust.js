@@ -207,6 +207,8 @@ export class RustGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1707,6 +1709,12 @@ export class RustGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     // Map common JS global functions to Rust
@@ -1883,5 +1891,58 @@ export class RustGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`#[derive(Debug, Clone, Copy, PartialEq)]`);
+    this.emit(`enum ${node.name} {`);
+    this.indent++;
+    node.values.forEach(v => {
+      this.emit(`${v},`);
+    });
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`std::mem::swap(&mut ${a}, &mut ${b});`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.len()`;
+      case 'str': return `${args[0]}.to_string()`;
+      case 'int': return `${args[0]}.parse::<i64>().unwrap_or(0)`;
+      case 'float': return `${args[0]}.parse::<f64>().unwrap_or(0.0)`;
+      case 'upper': return `${args[0]}.to_uppercase()`;
+      case 'lower': return `${args[0]}.to_lowercase()`;
+      case 'trim': return `${args[0]}.trim().to_string()`;
+      case 'split': return `${args[0]}.split(${args[1] || '","'}).collect::<Vec<&str>>()`;
+      case 'join': return `${args[0]}.join(${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.contains(${args[1]})`;
+      case 'replace': return `${args[0]}.replace(${args[1]}, ${args[2]})`;
+      case 'sort': return `{ let mut v = ${args[0]}.clone(); v.sort(); v }`;
+      case 'reverse': return `{ let mut v = ${args[0]}.clone(); v.reverse(); v }`;
+      case 'abs': return `${args[0]}.abs()`;
+      case 'sqrt': return `(${args[0]} as f64).sqrt()`;
+      case 'pow': return `(${args[0]} as f64).powi(${args[1]} as i32)`;
+      case 'ceil': return `(${args[0]} as f64).ceil()`;
+      case 'floor': return `(${args[0]} as f64).floor()`;
+      case 'round': return `(${args[0]} as f64).round()`;
+      case 'sum': return `${args[0]}.iter().sum::<i64>()`;
+      case 'unique': return `{ let mut v = ${args[0]}.clone(); v.sort(); v.dedup(); v }`;
+      case 'exit': return `std::process::exit(${args[0] || '0'})`;
+      case 'sleep': return `std::thread::sleep(std::time::Duration::from_millis(${args[0]} as u64))`;
+      case 'now': return `std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64`;
+      case 'random': return args.length >= 2 ? `rand::thread_rng().gen_range(${args[0]}..=${args[1]})` : `rand::random::<f64>()`;
+      case 'keys': return `${args[0]}.keys().cloned().collect::<Vec<_>>()`;
+      case 'values': return `${args[0]}.values().cloned().collect::<Vec<_>>()`;
+      case 'range': return args.length >= 2 ? `(${args[0]}..${args[1]}).collect::<Vec<_>>()` : `(0..${args[0]}).collect::<Vec<_>>()`;
+      case 'flat': return `${args[0]}.into_iter().flatten().collect::<Vec<_>>()`;
+      default: return null;
+    }
   }
 }

@@ -135,7 +135,18 @@ export class Parser {
 
   error(msg, tok) {
     const t = tok || this.peek();
-    return new Error(`[NAIDE Parse Error] ${msg} at line ${t.line}:${t.col}`);
+    let hint = '';
+    const v = t.value;
+    if (v === 'unless') hint = '\n  Hint: unless <condition>:';
+    else if (v === 'until') hint = '\n  Hint: until <condition>:';
+    else if (v === 'repeat') hint = '\n  Hint: repeat <count>:  or  repeat <count> as <var>:';
+    else if (v === 'swap') hint = '\n  Hint: swap <a>, <b>';
+    else if (v === 'enum') hint = '\n  Hint: enum <Name>:  then indent values';
+    else if (v === 'fn') hint = '\n  Hint: fn <name>(<params>) -> <type>:  or  fn <name>(<params>) -> <type> = <expr>';
+    else if (v === 'if') hint = '\n  Hint: if <condition>:';
+    else if (v === 'for') hint = '\n  Hint: for <var> in <iterable>:';
+    else if (v === 'while') hint = '\n  Hint: while <condition>:';
+    return new Error(`[NAIDE Parse Error] ${msg} at line ${t.line}:${t.col}${hint}`);
   }
 
   skipNewlines() {

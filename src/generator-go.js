@@ -116,6 +116,8 @@ export class GoGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`// unknown: ${node.type}`);
     }
@@ -1614,6 +1616,12 @@ export class GoGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     // Map common JS global functions to Go
@@ -1777,5 +1785,59 @@ export class GoGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`type ${node.name} int`);
+    this.emit(`const (`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      if (i === 0) {
+        this.emit(`${v} ${node.name} = iota`);
+      } else {
+        this.emit(`${v}`);
+      }
+    });
+    this.indent--;
+    this.emit(`)`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`${a}, ${b} = ${b}, ${a}`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `len(${args[0]})`;
+      case 'str': { this.addImport('strconv'); return `strconv.Itoa(${args[0]})`; }
+      case 'int': { this.addImport('strconv'); return `func() int { v, _ := strconv.Atoi(${args[0]}); return v }()`; }
+      case 'float': { this.addImport('strconv'); return `func() float64 { v, _ := strconv.ParseFloat(${args[0]}, 64); return v }()`; }
+      case 'upper': { this.addImport('strings'); return `strings.ToUpper(${args[0]})`; }
+      case 'lower': { this.addImport('strings'); return `strings.ToLower(${args[0]})`; }
+      case 'trim': { this.addImport('strings'); return `strings.TrimSpace(${args[0]})`; }
+      case 'split': { this.addImport('strings'); return `strings.Split(${args[0]}, ${args[1] || '","'})`; }
+      case 'join': { this.addImport('strings'); return `strings.Join(${args[0]}, ${args[1] || '","'})`; }
+      case 'contains': { this.addImport('strings'); return `strings.Contains(${args[0]}, ${args[1]})`; }
+      case 'replace': { this.addImport('strings'); return `strings.ReplaceAll(${args[0]}, ${args[1]}, ${args[2]})`; }
+      case 'abs': { this.addImport('math'); return `math.Abs(${args[0]})`; }
+      case 'sqrt': { this.addImport('math'); return `math.Sqrt(${args[0]})`; }
+      case 'pow': { this.addImport('math'); return `math.Pow(${args[0]}, ${args[1]})`; }
+      case 'ceil': { this.addImport('math'); return `math.Ceil(${args[0]})`; }
+      case 'floor': { this.addImport('math'); return `math.Floor(${args[0]})`; }
+      case 'round': { this.addImport('math'); return `math.Round(${args[0]})`; }
+      case 'exit': { this.addImport('os'); return `os.Exit(${args[0] || '0'})`; }
+      case 'sleep': { this.addImport('time'); return `time.Sleep(time.Duration(${args[0]}) * time.Millisecond)`; }
+      case 'now': { this.addImport('time'); return `time.Now().UnixMilli()`; }
+      case 'time': { this.addImport('time'); return `time.Now().Format(time.RFC3339)`; }
+      case 'json_parse': { this.addImport('encoding/json'); return `func() interface{} { var v interface{}; json.Unmarshal([]byte(${args[0]}), &v); return v }()`; }
+      case 'json_str': { this.addImport('encoding/json'); return `func() string { b, _ := json.Marshal(${args[0]}); return string(b) }()`; }
+      case 'random': { this.addImport('math/rand'); return args.length >= 2 ? `rand.Intn(${args[1]}-${args[0]}+1)+${args[0]}` : `rand.Float64()`; }
+      case 'sort': { this.addImport('sort'); return `func() []int { s := make([]int, len(${args[0]})); copy(s, ${args[0]}); sort.Ints(s); return s }()`; }
+      case 'reverse': return `func() []interface{} { s := make([]interface{}, len(${args[0]})); copy(s, ${args[0]}); for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 { s[i], s[j] = s[j], s[i] }; return s }()`;
+      default: return null;
+    }
   }
 }

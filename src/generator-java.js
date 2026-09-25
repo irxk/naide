@@ -226,6 +226,8 @@ export class JavaGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`/* unknown: ${node.type} */`);
     }
@@ -1598,6 +1600,12 @@ export class JavaGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     if (node.callee.type === 'Identifier') {
@@ -1810,5 +1818,58 @@ export class JavaGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`enum ${node.name} {`);
+    this.indent++;
+    this.emit(node.values.join(', ') + ';');
+    this.indent--;
+    this.emit(`}`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`{ var _tmp = ${a}; ${a} = ${b}; ${b} = _tmp; }`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.size()`;
+      case 'sort': return `${args[0]}.stream().sorted().collect(java.util.stream.Collectors.toList())`;
+      case 'reverse': return `{ var _l = new java.util.ArrayList<>(${args[0]}); java.util.Collections.reverse(_l); return _l; }`;
+      case 'contains': return `${args[0]}.contains(${args[1]})`;
+      case 'keys': return `new java.util.ArrayList<>(${args[0]}.keySet())`;
+      case 'values': return `new java.util.ArrayList<>(${args[0]}.values())`;
+      case 'entries': return `new java.util.ArrayList<>(${args[0]}.entrySet())`;
+      case 'abs': return `Math.abs(${args[0]})`;
+      case 'sqrt': return `Math.sqrt(${args[0]})`;
+      case 'pow': return `Math.pow(${args[0]}, ${args[1]})`;
+      case 'ceil': return `Math.ceil(${args[0]})`;
+      case 'floor': return `Math.floor(${args[0]})`;
+      case 'round': return `Math.round(${args[0]})`;
+      case 'random': return args.length >= 2 ? `new java.util.Random().nextInt(${args[1]} - ${args[0]} + 1) + ${args[0]}` : `Math.random()`;
+      case 'str': return `String.valueOf(${args[0]})`;
+      case 'int': return `Integer.parseInt(${args[0]})`;
+      case 'float': return `Double.parseDouble(${args[0]})`;
+      case 'upper': return `${args[0]}.toUpperCase()`;
+      case 'lower': return `${args[0]}.toLowerCase()`;
+      case 'trim': return `${args[0]}.trim()`;
+      case 'split': return `java.util.Arrays.asList(${args[0]}.split(${args[1] || '","'}))`;
+      case 'join': return `String.join(${args[1] || '","'}, ${args[0]})`;
+      case 'replace': return `${args[0]}.replace(${args[1]}, ${args[2]})`;
+      case 'sum': return `${args[0]}.stream().mapToInt(Integer::intValue).sum()`;
+      case 'unique': return `new java.util.ArrayList<>(new java.util.LinkedHashSet<>(${args[0]}))`;
+      case 'exit': return `System.exit(${args[0] || '0'})`;
+      case 'sleep': return `Thread.sleep(${args[0]})`;
+      case 'now': return `System.currentTimeMillis()`;
+      case 'time': return `java.time.LocalDateTime.now().toString()`;
+      case 'json_parse': return `new com.google.gson.Gson().fromJson(${args[0]}, Object.class)`;
+      case 'json_str': return `new com.google.gson.Gson().toJson(${args[0]})`;
+      case 'range': return args.length >= 2 ? `java.util.stream.IntStream.range(${args[0]}, ${args[1]}).boxed().collect(java.util.stream.Collectors.toList())` : `java.util.stream.IntStream.range(0, ${args[0]}).boxed().collect(java.util.stream.Collectors.toList())`;
+      default: return null;
+    }
   }
 }

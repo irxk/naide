@@ -111,6 +111,8 @@ export class RubyGenerator {
       case 'GrpcDecl': return this.visitGrpc(node);
       case 'WebrtcDecl': return this.visitWebrtc(node);
       case 'BlockchainDecl': return this.visitBlockchain(node);
+      case 'EnumDecl': return this.visitEnum(node);
+      case 'Swap': return this.visitSwap(node);
       default:
         this.emit(`# unknown: ${node.type}`);
     }
@@ -1330,6 +1332,12 @@ export class RubyGenerator {
   }
 
   generateCall(node) {
+    if (node.callee.type === 'Identifier') {
+      const argList = node.args.map(a => this.expr(a));
+      const b = this.generateBuiltin(node.callee.name, argList);
+      if (b) return b;
+    }
+
     const args = node.args.map(a => this.expr(a)).join(', ');
 
     // Map global function calls
@@ -1526,5 +1534,66 @@ export class RubyGenerator {
     this.output = saved;
     this.indent = savedIndent;
     return result;
+  }
+
+  visitEnum(node) {
+    this.emit(`module ${node.name}`);
+    this.indent++;
+    node.values.forEach((v, i) => {
+      this.emit(`${v} = ${i}`);
+    });
+    this.indent--;
+    this.emit(`end`);
+    this.emitRaw('');
+  }
+
+  visitSwap(node) {
+    const a = this.expr(node.a);
+    const b = this.expr(node.b);
+    this.emit(`${a}, ${b} = ${b}, ${a}`);
+  }
+
+  generateBuiltin(name, args) {
+    switch (name) {
+      case 'len': return `${args[0]}.length`;
+      case 'sort': return `${args[0]}.sort`;
+      case 'reverse': return `${args[0]}.reverse`;
+      case 'unique': return `${args[0]}.uniq`;
+      case 'upper': return `${args[0]}.upcase`;
+      case 'lower': return `${args[0]}.downcase`;
+      case 'trim': return `${args[0]}.strip`;
+      case 'split': return `${args[0]}.split(${args[1] || '","'})`;
+      case 'join': return `${args[0]}.join(${args[1] || '","'})`;
+      case 'contains': return `${args[0]}.include?(${args[1]})`;
+      case 'replace': return `${args[0]}.gsub(${args[1]}, ${args[2]})`;
+      case 'keys': return `${args[0]}.keys`;
+      case 'values': return `${args[0]}.values`;
+      case 'entries': return `${args[0]}.to_a`;
+      case 'range': return args.length >= 2 ? `(${args[0]}...${args[1]}).to_a` : `(0...${args[0]}).to_a`;
+      case 'abs': return `${args[0]}.abs`;
+      case 'round': return `${args[0]}.round`;
+      case 'ceil': return `${args[0]}.ceil`;
+      case 'floor': return `${args[0]}.floor`;
+      case 'sqrt': return `Math.sqrt(${args[0]})`;
+      case 'pow': return `${args[0]} ** ${args[1]}`;
+      case 'sum': return `${args[0]}.sum`;
+      case 'flat': return `${args[0]}.flatten`;
+      case 'zip': return `${args[0]}.zip(${args[1]})`;
+      case 'chunk': return `${args[0]}.each_slice(${args[1]}).to_a`;
+      case 'str': return `${args[0]}.to_s`;
+      case 'int': return `${args[0]}.to_i`;
+      case 'float': return `${args[0]}.to_f`;
+      case 'json_parse': return `JSON.parse(${args[0]})`;
+      case 'json_str': return `JSON.generate(${args[0]})`;
+      case 'now': return `(Time.now.to_f * 1000).to_i`;
+      case 'time': return `Time.now.iso8601`;
+      case 'exit': return `exit(${args[0] || '0'})`;
+      case 'sleep': return `sleep(${args[0]} / 1000.0)`;
+      case 'random': return args.length >= 2 ? `rand(${args[0]}..${args[1]})` : `rand`;
+      case 'read': return `File.read(${args[0]})`;
+      case 'write': return `File.write(${args[0]}, ${args[1]})`;
+      case 'ask': return `(print(${args[0] || '""'}); gets.chomp)`;
+      default: return null;
+    }
   }
 }
