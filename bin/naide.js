@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.24.0';
+const NAIDE_VERSION = '1.24.1';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -270,19 +270,28 @@ if (files[0] === 'gen' || files[0] === '~~') {
       result = generateProject(instruction);
     }
 
-    const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!flags.output && !isUpdate) dir = primaryName + '-app';
+    const isGame = result.analysis && result.analysis.gameType;
+    if (isGame && !flags.output && !isUpdate) {
+      dir = result.analysis.gameType + '-game';
+    } else {
+      const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!flags.output && !isUpdate) dir = primaryName + '-app';
+    }
     const finalDir = resolve(dir);
     if (!existsSync(finalDir)) mkdirSync(finalDir, { recursive: true });
     for (const f of result.files) {
       const fp = resolve(finalDir, f.path);
+      const fpDir = resolve(fp, '..');
+      if (!existsSync(fpDir)) mkdirSync(fpDir, { recursive: true });
       writeFileSync(fp, f.content, 'utf-8');
     }
     const a = result.analysis;
     const mode = result.action === 'removed' ? 'Removed' : isUpdate ? 'Updated' : 'Created';
     process.stderr.write(`\n  ── NAIDE Agent (${mode}) ────────────────────────────────\n`);
     process.stderr.write(`  Input:    "${a.instruction || instruction}"\n`);
-    if (a.entities.length > 0) {
+    if (a.gameType) {
+      process.stderr.write(`  Type:     Game (${a.gameType})\n`);
+    } else if (a.entities.length > 0) {
       process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
     }
     if (a.relationships && a.relationships.length > 0) {
@@ -300,7 +309,8 @@ if (files[0] === 'gen' || files[0] === '~~') {
     process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
     console.log(`  Project ${mode.toLowerCase()}: ${dir}/`);
     for (const f of result.files) console.log(`    ${f.path}`);
-    if (!isUpdate) console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
+    if (isGame && !isUpdate) console.log(`\n  Open ${dir}/index.html in a browser, or:\n  cd ${dir} && npm install && npm run dev\n`);
+    else if (!isUpdate) console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
     else console.log(`\n  Files regenerated. Run: npm run dev\n`);
     process.exit(0);
   }
@@ -1081,10 +1091,11 @@ if (flags.help) {
     -h, --help     Show this help
 
   ~~ Keyword Cheat Sheet:
-    Intent     server api rest bot cli page test database ai crud auth ws mail graphql
+    Intent     server api rest bot cli page test database ai crud auth ws mail graphql game
     Composite  todo blog chat shop fullstack board
+    Game       tapping quiz memory snake typing reaction breakout
     Platform   discord slack telegram line
-    JP Intent  サーバー 認証 ログイン 会員 CRUD 管理 データベース ボット テスト ページ
+    JP Intent  サーバー 認証 ログイン 会員 CRUD 管理 データベース ボット テスト ページ ゲーム
     JP Entity  ユーザー 商品 記事 タスク 注文 コメント イベント 問い合わせ 掲示板 決済
     Fields     "with name email age done" → auto-inferred types
 `);

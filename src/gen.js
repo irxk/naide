@@ -20,6 +20,7 @@ const INTENT_WORDS = {
   websocket: ['websocket', 'ws', 'realtime', 'real-time', 'socket', 'live', 'push-notification', 'pubsub', 'pub-sub'],
   mail:      ['mail', 'smtp', 'mailer', 'sendmail', 'newsletter', 'notification'],
   graphql:   ['graphql', 'gql', 'query', 'mutation', 'resolver', 'subscription'],
+  game:      ['game', 'arcade', 'play', 'score', 'highscore', 'player', 'level', 'gameover'],
 };
 
 const JA_INTENTS = {
@@ -40,6 +41,7 @@ const JA_INTENTS = {
   websocket: ['ウェブソケット', 'リアルタイム', 'ソケット', 'WebSocket', 'websocket',
               'リアルタイム通信', 'プッシュ通知', 'ライブ'],
   mail:      ['メール', 'メール送信', 'メール機能', 'SMTP', '通知メール', 'メール通知'],
+  game:      ['ゲーム', 'アーケード', 'プレイ', 'スコア', 'ハイスコア', 'ゲームオーバー'],
 };
 
 const JA_ENTITIES = {
@@ -90,12 +92,25 @@ const COMPOSITE_WORDS = {
   sns:       ['sns', 'SNS', 'ソーシャル', 'social', 'social-media', 'ソーシャルメディア'],
 };
 
+const GAME_TYPES = {
+  tapping:   ['tapping', 'tap', 'clicker', 'click', 'タップ', 'タッピング', 'クリッカー', '連打'],
+  quiz:      ['quiz', 'trivia', 'question', 'クイズ', 'トリビア', '問題'],
+  memory:    ['memory', 'matching', 'pairs', 'card', '神経衰弱', 'メモリー', 'カードゲーム'],
+  typing:    ['typing', 'タイピング', 'タイプ'],
+  reaction:  ['reaction', 'reflex', 'リアクション', '反射', '反応'],
+  snake:     ['snake', 'スネーク', 'ヘビ'],
+  breakout:  ['breakout', 'brick', 'block', 'ブロック崩し', 'ブレイクアウト'],
+};
+
 const NOISE = new Set([
   'a', 'an', 'the', 'for', 'with', 'and', 'or', 'on', 'at', 'to', 'of', 'in', 'by',
   'that', 'which', 'this', 'it', 'its', 'my', 'is', 'are', 'has', 'have', 'do', 'does',
   'make', 'create', 'build', 'generate', 'add', 'implement', 'simple', 'basic', 'new', 'remove', 'delete', 'drop',
   'please', 'want', 'need', 'like', 'just', 'some', 'using', 'use', 'based',
   'setup', 'set', 'up', 'get', 'should', 'can', 'could', 'would',
+  'game', 'play', 'player', 'score', 'level', 'arcade', 'highscore',
+  'tapping', 'tap', 'clicker', 'click', 'quiz', 'trivia', 'memory', 'matching', 'typing',
+  'reaction', 'reflex', 'snake', 'breakout', 'brick', 'block', 'pong', 'puzzle',
   'の', 'を', 'に', 'で', 'は', 'が', 'と', 'も', 'から', 'まで', 'より', 'って',
   'な', 'ような', 'みたいな', 'っぽい', 'ような感じ',
   '作って', '作る', '作成', '生成', '追加', '実装', 'ください', 'して', 'つけて',
@@ -103,6 +118,16 @@ const NOISE = new Set([
   '機能', '仕組み', 'もの', 'こと', 'やつ', '感じ', '的な',
   '簡単な', 'シンプルな', '基本的な', '新しい',
 ]);
+
+function detectGameType(words, raw) {
+  const lower = raw.toLowerCase();
+  for (const [type, kws] of Object.entries(GAME_TYPES)) {
+    for (const kw of kws) {
+      if (lower.includes(kw)) return type;
+    }
+  }
+  return 'tapping';
+}
 
 // ── Field Normalization ─────────────────────────────────────
 
@@ -493,6 +518,12 @@ function classify(words, raw) {
   if (intents.has('schema') && intents.has('server')) intents.add('database');
   if (intents.has('bot') && !mods.platform) mods.platform = 'discord';
 
+  // Game intent: don't auto-cascade into server/crud unless explicitly requested
+  if (intents.has('game') && !intents.has('server') && !intents.has('crud')) {
+    mods.gameType = detectGameType(words, raw);
+    mods.isGame = true;
+  }
+
   // Default fallback: if nothing detected, server + schema
   if (intents.size === 0) {
     intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('database');
@@ -506,6 +537,12 @@ function classify(words, raw) {
 function extractParams(words, raw, intents, mods) {
   const params = { port: 3000, schemaName: null, fields: [], entities: [], relationships: [],
     features: intents, platform: mods.platform || null, dbType: mods.dbType || null, commands: [] };
+
+  if (mods.isGame) {
+    params.gameType = mods.gameType;
+    params.gameTitle = raw.replace(/\b(make|create|build|generate|simple|basic|new|a|an|the)\b/gi, '').trim();
+    return params;
+  }
 
   // Extract port number
   for (let i = 0; i < words.length; i++) {
@@ -1159,7 +1196,8 @@ function validatedCreateRoute(entity) {
 function swaggerUIRoute() {
   return [
     `get "/docs" (req, res):`,
-    `  str html = "<!DOCTYPE html><html><head><title>API Docs</title><link rel=stylesheet href=https://unpkg.com/swagger-ui-dist/swagger-ui.css></head><body><div id=swagger-ui></div><script src=https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js></script><script>SwaggerUIBundle({url:'/api/openapi.json',dom_id:'#swagger-ui'})</script></body></html>"`,
+    `  str swaggerOpts = JSON.stringify({url:"/api/openapi.json",dom_id:"#swagger-ui"})`,
+    `  str html = "<!DOCTYPE html><html><head><title>API Docs</title><link rel=stylesheet href=https://unpkg.com/swagger-ui-dist/swagger-ui.css></head><body><div id=swagger-ui></div><script src=https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js></script><script>SwaggerUIBundle(" + swaggerOpts + ")</script></body></html>"`,
     `  res.type("html")`,
     `  ret html`,
   ];
@@ -1743,7 +1781,390 @@ function migrationFile(entities, relationships, m2mRels) {
 
 // ── Code Composer ───────────────────────────────────────────
 
+// ── Game HTML Generators ──────────────────────────────────
+
+const GAME_CSS_BASE = `*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a1a;--surface:#141428;--primary:#6C63FF;--secondary:#FF6584;--accent:#00D4AA;--text:#f0f0f0;--muted:#888}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.container{width:min(420px,92vw);text-align:center}
+h1{font-size:1.8rem;margin-bottom:.5rem;background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.score{font-size:3rem;font-weight:800;margin:.5rem 0;font-variant-numeric:tabular-nums}
+.btn{display:inline-block;padding:.75rem 2rem;border:none;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;transition:transform .1s,box-shadow .2s;color:#fff;background:linear-gradient(135deg,var(--primary),#8B5CF6)}
+.btn:active{transform:scale(.95)}
+.btn:hover{box-shadow:0 0 20px rgba(108,99,255,.4)}
+.stats{display:flex;gap:1.5rem;justify-content:center;margin:.75rem 0;font-size:.9rem;color:var(--muted)}
+.stats span{display:flex;flex-direction:column;align-items:center;gap:.2rem}
+.stats b{color:var(--text);font-size:1.1rem}
+.hidden{display:none!important}
+.high{color:var(--accent)}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}`;
+
+function tappingGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Tapping Game'}</title>
+<style>${GAME_CSS_BASE}
+.tap-area{width:min(320px,80vw);height:min(320px,80vw);border-radius:50%;background:radial-gradient(circle,var(--primary),#4338CA);display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;position:relative;transition:box-shadow .15s;font-size:4rem;font-weight:900}
+.tap-area:active{box-shadow:0 0 60px rgba(108,99,255,.6)}
+.tap-area.go{animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(108,99,255,.5)}50%{box-shadow:0 0 0 20px rgba(108,99,255,0)}}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.3);animation:rippleAnim .5s ease-out forwards;pointer-events:none}
+@keyframes rippleAnim{0%{width:0;height:0;opacity:.6}100%{width:200px;height:200px;opacity:0}}
+.combo{position:fixed;font-weight:800;font-size:1.5rem;color:var(--accent);pointer-events:none;animation:fadeUp .6s ease-out forwards}
+.timer-bar{width:100%;height:6px;background:var(--surface);border-radius:3px;margin:.5rem 0;overflow:hidden}
+.timer-bar .fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--primary));transition:width .1s linear;border-radius:3px}
+.result{font-size:1.2rem;line-height:2}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Tapping Game'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin-bottom:1.5rem">Tap as fast as you can!</p>
+<div class="stats"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
+<button class="btn" onclick="startGame()">Start</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="timer-bar"><div class="fill" id="bar" style="width:100%"></div></div>
+<div class="score" id="count">0</div>
+<div class="tap-area go" id="tap" ontouchstart="doTap(event)" onmousedown="doTap(event)">TAP</div>
+<div class="stats"><span>Combo<b id="combo">x1</b></span><span>TPS<b id="tps">0</b></span></div>
+</div>
+<div id="state-result" class="hidden">
+<div class="score" id="final">0</div>
+<div class="result" id="summary"></div>
+<button class="btn" style="margin-top:1rem" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const DURATION=10000;
+let taps,startT,timer,comboN,lastTap,best=+(localStorage.getItem('tap_best')||0);
+document.getElementById('best').textContent=best;
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function startGame(){taps=0;comboN=1;lastTap=0;startT=Date.now();document.getElementById('count').textContent='0';document.getElementById('combo').textContent='x1';document.getElementById('bar').style.width='100%';show('play');timer=requestAnimationFrame(tick)}
+function tick(){const el=Date.now()-startT,pct=Math.max(0,1-el/DURATION)*100;document.getElementById('bar').style.width=pct+'%';const sec=Math.max(0,(DURATION-el)/1000);document.getElementById('tps').textContent=(taps/Math.max(.1,(el/1000))).toFixed(1);if(el>=DURATION)return endGame();timer=requestAnimationFrame(tick)}
+function doTap(e){e.preventDefault();if(Date.now()-startT>DURATION)return;taps++;const now=Date.now(),gap=now-lastTap;if(gap<200)comboN=Math.min(comboN+1,99);else if(gap>500)comboN=1;lastTap=now;document.getElementById('count').textContent=taps;document.getElementById('combo').textContent='x'+comboN;document.getElementById('count').style.animation='none';void document.getElementById('count').offsetWidth;document.getElementById('count').style.animation='pop .15s';const r=document.createElement('div');r.className='ripple';const rect=document.getElementById('tap').getBoundingClientRect();const x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;const y=(e.touches?e.touches[0].clientY:e.clientY)-rect.top;r.style.left=x-100+'px';r.style.top=y-100+'px';document.getElementById('tap').appendChild(r);setTimeout(()=>r.remove(),500);if(comboN>=3){const c=document.createElement('div');c.className='combo';c.textContent='x'+comboN;c.style.left=Math.random()*60+20+'%';c.style.top=Math.random()*30+20+'%';document.body.appendChild(c);setTimeout(()=>c.remove(),600)}}
+function endGame(){cancelAnimationFrame(timer);const tps=(taps/(DURATION/1000)).toFixed(1);if(taps>best){best=taps;localStorage.setItem('tap_best',best);document.getElementById('best').textContent=best}document.getElementById('last').textContent=taps;document.getElementById('final').textContent=taps;const r=taps>=100?'Insane!':taps>=70?'Amazing!':taps>=50?'Great!':taps>=30?'Nice!':'Keep trying!';document.getElementById('summary').innerHTML=r+'<br>'+tps+' taps/sec'+(taps>=best?' <span class="high">★ New Best!</span>':'');show('result')}
+</script></body></html>`;
+}
+
+function quizGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Quiz Game'}</title>
+<style>${GAME_CSS_BASE}
+.question{font-size:1.3rem;margin:1.5rem 0;min-height:3em;line-height:1.5}
+.choices{display:flex;flex-direction:column;gap:.75rem;margin:1rem 0}
+.choice{padding:1rem;border:2px solid var(--surface);border-radius:12px;background:var(--surface);cursor:pointer;font-size:1rem;text-align:left;transition:border-color .2s,background .2s}
+.choice:hover{border-color:var(--primary)}
+.choice.correct{border-color:var(--accent);background:rgba(0,212,170,.15)}
+.choice.wrong{border-color:var(--secondary);background:rgba(255,101,132,.15)}
+.progress{display:flex;gap:4px;justify-content:center;margin-bottom:1rem}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--surface)}
+.dot.done{background:var(--accent)}.dot.fail{background:var(--secondary)}.dot.cur{background:var(--primary);box-shadow:0 0 8px var(--primary)}
+.timer{font-size:2.5rem;font-weight:800;font-variant-numeric:tabular-nums}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Quiz Game'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Test your knowledge — 10 questions, 15 seconds each</p>
+<div class="stats"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
+<button class="btn" onclick="startGame()">Start Quiz</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="progress" id="dots"></div>
+<div class="timer" id="timer">15</div>
+<div class="question" id="question"></div>
+<div class="choices" id="choices"></div>
+</div>
+<div id="state-result" class="hidden">
+<div class="score" id="final">0/10</div>
+<div class="result" id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const QUESTIONS=[
+{q:"What does HTML stand for?",a:["HyperText Markup Language","High Tech Modern Language","Home Tool Markup Language","Hyper Transfer Markup Language"],c:0},
+{q:"Which planet is closest to the Sun?",a:["Mercury","Venus","Mars","Earth"],c:0},
+{q:"What is the largest ocean on Earth?",a:["Pacific","Atlantic","Indian","Arctic"],c:0},
+{q:"In JavaScript, which keyword declares a constant?",a:["const","let","var","static"],c:0},
+{q:"What year did the World Wide Web become public?",a:["1991","1989","1995","2000"],c:0},
+{q:"What is the chemical symbol for gold?",a:["Au","Ag","Go","Gd"],c:0},
+{q:"How many bits are in a byte?",a:["8","4","16","32"],c:0},
+{q:"Which language is NAIDE designed to replace for AI coding?",a:["JavaScript","Python","Ruby","Go"],c:0},
+{q:"What does CSS stand for?",a:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Coded Style Sheets"],c:0},
+{q:"What is the speed of light (approx km/s)?",a:["300,000","150,000","500,000","1,000,000"],c:0},
+{q:"Which data structure uses FIFO?",a:["Queue","Stack","Tree","Graph"],c:0},
+{q:"What is the square root of 144?",a:["12","14","10","16"],c:0},
+{q:"Who painted the Mona Lisa?",a:["Da Vinci","Picasso","Van Gogh","Monet"],c:0},
+{q:"What gas do plants absorb?",a:["CO2","O2","N2","H2"],c:0},
+{q:"Which protocol is used for secure web browsing?",a:["HTTPS","FTP","SMTP","SSH"],c:0}
+];
+let cur,score,answers,tmr,timeLeft,best=+(localStorage.getItem('quiz_best')||0),pool;
+document.getElementById('best').textContent=best;
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function startGame(){pool=shuffle([...QUESTIONS]).slice(0,10);cur=0;score=0;answers=[];document.getElementById('dots').innerHTML=pool.map((_,i)=>'<div class="dot" id="d'+i+'"></div>').join('');show('play');showQ()}
+function showQ(){if(cur>=pool.length)return endGame();document.getElementById('d'+cur).classList.add('cur');const q=pool[cur];const mixed=q.a.map((t,i)=>({t,ok:i===q.c}));shuffle(mixed);document.getElementById('question').textContent=q.q;const ch=document.getElementById('choices');ch.innerHTML='';mixed.forEach((m,i)=>{const d=document.createElement('div');d.className='choice';d.textContent=m.t;d.onclick=()=>pick(d,m.ok,ch);ch.appendChild(d)});timeLeft=15;document.getElementById('timer').textContent=timeLeft;clearInterval(tmr);tmr=setInterval(()=>{timeLeft--;document.getElementById('timer').textContent=Math.max(0,timeLeft);if(timeLeft<=0){clearInterval(tmr);timeout()}},1000)}
+function pick(el,ok,ch){clearInterval(tmr);ch.querySelectorAll('.choice').forEach(c=>{c.onclick=null;if(c===el)c.classList.add(ok?'correct':'wrong');else if(!ok){const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('correct')}});const d=document.getElementById('d'+cur);d.classList.remove('cur');if(ok){score++;d.classList.add('done')}else{d.classList.add('fail')}answers.push(ok);cur++;setTimeout(showQ,800)}
+function timeout(){const ch=document.getElementById('choices');ch.querySelectorAll('.choice').forEach(c=>{c.onclick=null;const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('correct')});document.getElementById('d'+cur).classList.remove('cur');document.getElementById('d'+cur).classList.add('fail');answers.push(false);cur++;setTimeout(showQ,800)}
+function endGame(){clearInterval(tmr);if(score>best){best=score;localStorage.setItem('quiz_best',best);document.getElementById('best').textContent=best}document.getElementById('last').textContent=score;document.getElementById('final').textContent=score+'/'+pool.length;const pct=Math.round(score/pool.length*100);const r=pct===100?'Perfect!':pct>=80?'Excellent!':pct>=60?'Good!':pct>=40?'Not bad!':'Study more!';document.getElementById('summary').innerHTML=r+'<br>'+pct+'% correct'+(score>=best?' <span class="high">★ New Best!</span>':'');show('result')}
+</script></body></html>`;
+}
+
+function memoryGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Memory Game'}</title>
+<style>${GAME_CSS_BASE}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:1rem auto;width:min(360px,88vw)}
+.card{aspect-ratio:1;border-radius:12px;cursor:pointer;perspective:600px;-webkit-perspective:600px}
+.card .inner{position:relative;width:100%;height:100%;transition:transform .4s;transform-style:preserve-3d;-webkit-transform-style:preserve-3d}
+.card.flip .inner{transform:rotateY(180deg)}
+.card .front,.card .back{position:absolute;width:100%;height:100%;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:2rem;backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.card .front{background:linear-gradient(135deg,var(--primary),#4338CA)}
+.card .back{background:var(--surface);transform:rotateY(180deg);border:2px solid var(--primary)}
+.card.matched .front{background:linear-gradient(135deg,var(--accent),#059669)}
+.card.matched{pointer-events:none}
+.moves{font-size:2.5rem;font-weight:800}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Memory Game'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Match all pairs with fewest moves</p>
+<div class="stats"><span>Best<b id="best">-</b></span></div>
+<button class="btn" onclick="startGame()">Start</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="stats"><span>Moves<b id="moves">0</b></span><span>Pairs<b id="pairs">0/8</b></span><span>Time<b id="time">0s</b></span></div>
+<div class="grid" id="grid"></div>
+</div>
+<div id="state-result" class="hidden">
+<div class="moves" id="finalMoves">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">moves</p>
+<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const EMOJIS=['🎮','🎯','🚀','💎','🔥','⚡','🌟','🎵','🎨','🏆','🍕','🌈','🦊','🐙','🎃','🍀'];
+let cards,flipped,matched,moves,pairsN,tmr,startT,best=localStorage.getItem('mem_best');
+document.getElementById('best').textContent=best||'-';
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function startGame(){const pick=shuffle([...EMOJIS]).slice(0,8);cards=shuffle([...pick,...pick]);flipped=[];matched=0;moves=0;pairsN=8;document.getElementById('moves').textContent=0;document.getElementById('pairs').textContent='0/'+pairsN;const g=document.getElementById('grid');g.innerHTML='';cards.forEach((em,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<div class="inner"><div class="front">?</div><div class="back">'+em+'</div></div>';d.onclick=()=>flipCard(d,i);g.appendChild(d)});startT=Date.now();tmr=setInterval(()=>{document.getElementById('time').textContent=Math.floor((Date.now()-startT)/1000)+'s'},200);show('play')}
+function flipCard(el,i){if(flipped.length>=2||el.classList.contains('flip')||el.classList.contains('matched'))return;el.classList.add('flip');flipped.push({el,i,val:cards[i]});if(flipped.length===2){moves++;document.getElementById('moves').textContent=moves;const[a,b]=flipped;if(a.val===b.val){a.el.classList.add('matched');b.el.classList.add('matched');matched++;document.getElementById('pairs').textContent=matched+'/'+pairsN;flipped=[];if(matched===pairsN)endGame()}else{setTimeout(()=>{a.el.classList.remove('flip');b.el.classList.remove('flip');flipped=[]},700)}}}
+function endGame(){clearInterval(tmr);const sec=Math.floor((Date.now()-startT)/1000);if(!best||moves<+best){best=moves;localStorage.setItem('mem_best',best);document.getElementById('best').textContent=best}document.getElementById('finalMoves').textContent=moves;const r=moves<=pairsN+2?'Perfect memory!':moves<=pairsN*2?'Great!':moves<=pairsN*3?'Good!':'Keep practicing!';document.getElementById('summary').innerHTML=r+'<br>Completed in '+sec+'s'+(moves<=+best?' <span class="high">★ New Best!</span>':'');show('result')}
+</script></body></html>`;
+}
+
+function snakeGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Snake Game'}</title>
+<style>${GAME_CSS_BASE}
+canvas{border-radius:12px;background:var(--surface);display:block;margin:1rem auto;image-rendering:pixelated;touch-action:none}
+.controls{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(2,56px);gap:6px;justify-content:center;margin:1rem auto}
+.controls button{border:none;border-radius:10px;background:var(--surface);color:var(--text);font-size:1.4rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.controls button:active{background:var(--primary)}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Snake'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Arrow keys or swipe to control</p>
+<div class="stats"><span>Best<b id="best">0</b></span></div>
+<button class="btn" onclick="startGame()">Play</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="stats"><span>Score<b id="score">0</b></span><span>Best<b id="hiscore">0</b></span></div>
+<canvas id="cv" width="320" height="320"></canvas>
+<div class="controls">
+<div></div><button ontouchstart="setDir(0,-1)" onclick="setDir(0,-1)">▲</button><div></div>
+<button ontouchstart="setDir(-1,0)" onclick="setDir(-1,0)">◀</button><button ontouchstart="setDir(0,1)" onclick="setDir(0,1)">▼</button><button ontouchstart="setDir(1,0)" onclick="setDir(1,0)">▶</button>
+</div>
+</div>
+<div id="state-result" class="hidden">
+<div class="score" id="final">0</div>
+<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const S=20,W=16,cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let snake,dir,food,sc,best=+(localStorage.getItem('snake_best')||0),loop,nextDir;
+document.getElementById('best').textContent=best;document.getElementById('hiscore').textContent=best;
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function rand(){let p;do{p={x:Math.floor(Math.random()*W),y:Math.floor(Math.random()*W)}}while(snake.some(s=>s.x===p.x&&s.y===p.y));return p}
+function startGame(){snake=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nextDir={x:1,y:0};food=rand();sc=0;document.getElementById('score').textContent=0;show('play');clearInterval(loop);loop=setInterval(tick,120)}
+function setDir(x,y){if(x===-dir.x&&y===-dir.y)return;nextDir={x,y}}
+function tick(){dir=nextDir;const h={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(h.x<0||h.x>=W||h.y<0||h.y>=W||snake.some(s=>s.x===h.x&&s.y===h.y))return endGame();snake.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;document.getElementById('score').textContent=sc;food=rand()}else{snake.pop()}draw()}
+function draw(){ctx.fillStyle='#141428';ctx.fillRect(0,0,320,320);ctx.fillStyle='#FF6584';ctx.beginPath();ctx.arc(food.x*S+S/2,food.y*S+S/2,S/2-2,0,Math.PI*2);ctx.fill();snake.forEach((s,i)=>{const t=i/snake.length;ctx.fillStyle=i===0?'#6C63FF':'hsl('+(260+t*40)+',70%,'+(60-t*15)+'%)';ctx.beginPath();ctx.roundRect(s.x*S+1,s.y*S+1,S-2,S-2,4);ctx.fill()})}
+function endGame(){clearInterval(loop);if(sc>best){best=sc;localStorage.setItem('snake_best',best);document.getElementById('best').textContent=best;document.getElementById('hiscore').textContent=best}document.getElementById('final').textContent=sc;const r=sc>=30?'Legend!':sc>=20?'Amazing!':sc>=10?'Great!':sc>=5?'Good!':'Try again!';document.getElementById('summary').innerHTML=r+(sc>=best&&sc>0?' <span class="high">★ New Best!</span>':'');show('result')}
+document.addEventListener('keydown',e=>{if(e.key==='ArrowUp')setDir(0,-1);if(e.key==='ArrowDown')setDir(0,1);if(e.key==='ArrowLeft')setDir(-1,0);if(e.key==='ArrowRight')setDir(1,0)});
+let tx,ty;cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+cv.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)>Math.abs(dy)){setDir(dx>0?1:-1,0)}else{setDir(0,dy>0?1:-1)}},{passive:true});
+</script></body></html>`;
+}
+
+function reactionGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Reaction Test'}</title>
+<style>${GAME_CSS_BASE}
+.zone{width:min(340px,85vw);height:min(340px,85vw);border-radius:24px;display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;font-size:1.2rem;font-weight:600;transition:background .2s}
+.zone.wait{background:var(--surface)}
+.zone.ready{background:var(--secondary);color:#fff}
+.zone.go{background:var(--accent);color:var(--bg)}
+.zone.early{background:#EF4444}
+.times{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:1rem 0}
+.times span{background:var(--surface);padding:.3rem .6rem;border-radius:6px;font-size:.85rem;font-variant-numeric:tabular-nums}
+.ms{font-size:3.5rem;font-weight:900;font-variant-numeric:tabular-nums}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Reaction Test'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Tap when the color turns green — 5 rounds</p>
+<div class="stats"><span>Best Avg<b id="best">-</b></span></div>
+<button class="btn" onclick="startGame()">Start</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="stats"><span>Round<b id="round">1/5</b></span><span>Avg<b id="avg">-</b></span></div>
+<div class="zone wait" id="zone" onmousedown="tap()" ontouchstart="tap()">
+<span id="zoneText">Wait...</span>
+</div>
+<div class="times" id="times"></div>
+</div>
+<div id="state-result" class="hidden">
+<div class="ms" id="finalMs">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">ms average</p>
+<div id="summary" style="margin:1rem 0"></div>
+<div class="times" id="finalTimes"></div>
+<button class="btn" style="margin-top:1rem" onclick="startGame()">Try Again</button>
+</div>
+</div>
+<script>
+const ROUNDS=5;
+let round,results,phase,greenAt,tmr,best=localStorage.getItem('react_best');
+document.getElementById('best').textContent=best?best+'ms':'-';
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function startGame(){round=0;results=[];document.getElementById('times').innerHTML='';show('play');nextRound()}
+function nextRound(){if(round>=ROUNDS)return endGame();document.getElementById('round').textContent=(round+1)+'/'+ROUNDS;const z=document.getElementById('zone');z.className='zone ready';document.getElementById('zoneText').textContent='Wait for green...';phase='wait';const delay=1500+Math.random()*3000;clearTimeout(tmr);tmr=setTimeout(()=>{z.className='zone go';document.getElementById('zoneText').textContent='TAP NOW!';greenAt=Date.now();phase='go'},delay)}
+function tap(){if(phase==='wait'){clearTimeout(tmr);const z=document.getElementById('zone');z.className='zone early';document.getElementById('zoneText').textContent='Too early! Tap to retry';phase='early'}else if(phase==='early'){nextRound()}else if(phase==='go'){const ms=Date.now()-greenAt;results.push(ms);const t=document.createElement('span');t.textContent=ms+'ms';document.getElementById('times').appendChild(t);const avg=Math.round(results.reduce((a,b)=>a+b,0)/results.length);document.getElementById('avg').textContent=avg+'ms';round++;phase='done';setTimeout(nextRound,600)}}
+function endGame(){const avg=Math.round(results.reduce((a,b)=>a+b,0)/results.length);if(!best||avg<+best){best=avg;localStorage.setItem('react_best',best);document.getElementById('best').textContent=best+'ms'}document.getElementById('finalMs').textContent=avg;document.getElementById('finalTimes').innerHTML=results.map((r,i)=>'<span>R'+(i+1)+': '+r+'ms</span>').join('');const r=avg<=200?'Superhuman!':avg<=250?'Lightning!':avg<=300?'Fast!':avg<=400?'Average':'Keep practicing!';document.getElementById('summary').innerHTML='<span style="font-size:1.2rem">'+r+'</span>'+(avg<=+best?' <span class="high">★ New Best!</span>':'');show('result')}
+</script></body></html>`;
+}
+
+function typingGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Typing Game'}</title>
+<style>${GAME_CSS_BASE}
+.word-display{font-size:2rem;font-weight:700;letter-spacing:.1em;margin:1.5rem 0;min-height:3rem;display:flex;justify-content:center;gap:2px;flex-wrap:wrap}
+.word-display .ch{transition:color .1s}
+.word-display .correct{color:var(--accent)}
+.word-display .wrong{color:var(--secondary)}
+.word-display .cursor{border-bottom:3px solid var(--primary);animation:blink 1s step-end infinite}
+@keyframes blink{50%{border-color:transparent}}
+input.type-input{background:var(--surface);border:2px solid var(--primary);border-radius:12px;padding:.75rem 1rem;font-size:1.2rem;color:var(--text);width:100%;text-align:center;outline:none;caret-color:var(--primary)}
+.word-queue{color:var(--muted);font-size:1rem;margin:.5rem 0;height:2em;overflow:hidden;display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Typing Speed'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Type as many words as you can in 30 seconds</p>
+<div class="stats"><span>Best WPM<b id="best">0</b></span></div>
+<button class="btn" onclick="startGame()">Start</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="stats"><span>Time<b id="timer">30</b></span><span>Words<b id="words">0</b></span><span>WPM<b id="wpm">0</b></span></div>
+<div class="timer-bar"><div class="fill" id="bar" style="width:100%"></div></div>
+<div class="word-display" id="display"></div>
+<div class="word-queue" id="queue"></div>
+<input class="type-input" id="inp" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type here...">
+</div>
+<div id="state-result" class="hidden">
+<div class="score" id="finalWpm">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">WPM</p>
+<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const WORDS=["the","be","to","of","and","in","that","have","it","for","not","on","with","he","as","you","do","at","this","but","his","by","from","they","we","say","her","she","or","an","will","my","one","all","would","there","their","what","so","up","out","if","about","who","get","which","go","me","when","make","can","like","time","no","just","him","know","take","people","into","year","your","good","some","could","them","see","other","than","then","now","look","only","come","its","over","think","also","back","after","use","two","how","our","work","first","well","way","even","new","want","give","most","find","here","thing","many","code","fast","type","game","play","next","open","read","test","data","file","line","word","text","long","name","part","best","help","made","move","hand","high","keep","last","same","tell","does","set","each","much","head","turn","real","show","full","form","left","start","might","run","need","home","life","old","big","end","point","still","call","live","away","right","hard","plan","team","late","mind","wait","stop","must","land","close","draw","press","mark","step","pick","rock","blue","deep","dark","hold","four","week","room","free","fall","base","rest","less","note","hear","ever"];
+const DUR=30000;let pool,cur,pos,done,startT,tmr,best=+(localStorage.getItem('type_best')||0);
+document.getElementById('best').textContent=best;
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function startGame(){pool=shuffle([...WORDS]);cur=0;pos=0;done=0;startT=Date.now();document.getElementById('words').textContent=0;document.getElementById('wpm').textContent=0;const inp=document.getElementById('inp');inp.value='';show('play');inp.focus();renderWord();tmr=setInterval(tick,100)}
+function renderWord(){const w=pool[cur%pool.length];const d=document.getElementById('display');d.innerHTML=w.split('').map((c,i)=>{let cls=i<pos?(document.getElementById('inp').value[i]===c?'correct':'wrong'):'';if(i===pos)cls+=' cursor';return '<span class="ch '+cls+'">'+c+'</span>'}).join('');const q=document.getElementById('queue');q.innerHTML='';for(let i=1;i<=5;i++){const nw=pool[(cur+i)%pool.length];q.innerHTML+='<span>'+nw+'</span>'}}
+function tick(){const el=Date.now()-startT;const pct=Math.max(0,1-el/DUR)*100;document.getElementById('bar').style.width=pct+'%';document.getElementById('timer').textContent=Math.max(0,Math.ceil((DUR-el)/1000));if(el>=DUR)endGame()}
+document.getElementById('inp').addEventListener('input',function(){if(Date.now()-startT>DUR)return;const w=pool[cur%pool.length];const v=this.value;pos=v.length;if(v.endsWith(' ')||v.length>=w.length){if(v.trim()===w){done++;document.getElementById('words').textContent=done;const wpm=Math.round(done/((Date.now()-startT)/60000));document.getElementById('wpm').textContent=wpm}cur++;pos=0;this.value=''}renderWord()});
+function endGame(){clearInterval(tmr);document.getElementById('inp').blur();const wpm=Math.round(done/((DUR)/60000));if(wpm>best){best=wpm;localStorage.setItem('type_best',best);document.getElementById('best').textContent=best}document.getElementById('finalWpm').textContent=wpm;const r=wpm>=80?'Blazing fast!':wpm>=60?'Excellent!':wpm>=40?'Good!':wpm>=20?'Decent!':'Keep practicing!';document.getElementById('summary').innerHTML=r+'<br>'+done+' words in 30s'+(wpm>=best&&wpm>0?' <span class="high">★ New Best!</span>':'');show('result')}
+</script></body></html>`;
+}
+
+function breakoutGameHTML(title) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Breakout'}</title>
+<style>${GAME_CSS_BASE}
+canvas{border-radius:12px;background:var(--surface);display:block;margin:1rem auto;touch-action:none}
+</style></head><body>
+<div class="container">
+<h1>${title || 'Breakout'}</h1>
+<div id="state-menu">
+<p style="color:var(--muted);margin:1rem 0">Move the paddle to break all blocks</p>
+<div class="stats"><span>Best<b id="best">0</b></span></div>
+<button class="btn" onclick="startGame()">Play</button>
+</div>
+<div id="state-play" class="hidden">
+<div class="stats"><span>Score<b id="score">0</b></span><span>Lives<b id="lives">3</b></span></div>
+<canvas id="cv" width="360" height="480"></canvas>
+</div>
+<div id="state-result" class="hidden">
+<div class="score" id="final">0</div>
+<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="startGame()">Play Again</button>
+</div>
+</div>
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),W=360,H=480;
+const COLS=8,ROWS=5,BW=W/COLS-4,BH=18,PAD_W=70,PAD_H=12,BR=6;
+let px,ball,dx,dy,bricks,sc,lives,best=+(localStorage.getItem('brk_best')||0),raf;
+document.getElementById('best').textContent=best;
+function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
+const COLORS=['#6C63FF','#8B5CF6','#A78BFA','#FF6584','#00D4AA'];
+function initBricks(){bricks=[];for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)bricks.push({x:c*(BW+4)+2,y:r*(BH+4)+40,w:BW,h:BH,color:COLORS[r],alive:true})}
+function startGame(){px=W/2;ball={x:W/2,y:H-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5;sc=0;lives=3;initBricks();document.getElementById('score').textContent=0;document.getElementById('lives').textContent=3;show('play');cancelAnimationFrame(raf);tick()}
+function tick(){update();draw();if(lives>0&&bricks.some(b=>b.alive))raf=requestAnimationFrame(tick);else endGame()}
+function update(){ball.x+=dx;ball.y+=dy;if(ball.x<=BR||ball.x>=W-BR)dx=-dx;if(ball.y<=BR)dy=-dy;if(ball.y>=H-PAD_H-BR-8&&ball.y<=H-8&&ball.x>=px-PAD_W/2&&ball.x<=px+PAD_W/2){dy=-Math.abs(dy);dx+=((ball.x-px)/(PAD_W/2))*2}if(ball.y>H){lives--;document.getElementById('lives').textContent=lives;if(lives>0){ball={x:W/2,y:H-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5}}for(const b of bricks){if(!b.alive)continue;if(ball.x+BR>b.x&&ball.x-BR<b.x+b.w&&ball.y+BR>b.y&&ball.y-BR<b.y+b.h){b.alive=false;dy=-dy;sc+=10;document.getElementById('score').textContent=sc}}}
+function draw(){ctx.clearRect(0,0,W,H);for(const b of bricks){if(!b.alive)continue;ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,4);ctx.fill()}ctx.fillStyle='#6C63FF';ctx.beginPath();ctx.roundRect(px-PAD_W/2,H-PAD_H-8,PAD_W,PAD_H,6);ctx.fill();ctx.fillStyle='#FF6584';ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,Math.PI*2);ctx.fill()}
+function endGame(){cancelAnimationFrame(raf);const won=!bricks.some(b=>b.alive);if(sc>best){best=sc;localStorage.setItem('brk_best',best);document.getElementById('best').textContent=best}document.getElementById('final').textContent=sc;document.getElementById('summary').innerHTML=(won?'You cleared it!':'Game Over')+(sc>=best&&sc>0?' <span class="high">★ New Best!</span>':'');show('result')}
+cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();px=Math.max(PAD_W/2,Math.min(W-PAD_W/2,(e.clientX-r.left)*(W/r.width)))});
+cv.addEventListener('touchmove',e=>{e.preventDefault();const r=cv.getBoundingClientRect();px=Math.max(PAD_W/2,Math.min(W-PAD_W/2,(e.touches[0].clientX-r.left)*(W/r.width)))},{passive:false});
+document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')px=Math.max(PAD_W/2,px-20);if(e.key==='ArrowRight')px=Math.min(W-PAD_W/2,px+20)});
+</script></body></html>`;
+}
+
+const GAME_GENERATORS = {
+  tapping: tappingGameHTML,
+  quiz: quizGameHTML,
+  memory: memoryGameHTML,
+  snake: snakeGameHTML,
+  reaction: reactionGameHTML,
+  typing: typingGameHTML,
+  breakout: breakoutGameHTML,
+};
+
+function gameHTML(type, title) {
+  const gen = GAME_GENERATORS[type] || tappingGameHTML;
+  return gen(title);
+}
+
+function gameNaideCode(title, port) {
+  return `server game port ${port}:
+  cors "*"
+
+  get "/" (req, res):
+    res.sendFile("index.html", {root: "."})
+
+  get "/api/health" (req, res):
+    ret {status: "ok", game: "${title || 'game'}"}
+`;
+}
+
 function compose(intents, params) {
+  // Game intent: generate minimal server code (game HTML is generated separately in project mode)
+  if (params.gameType && intents.has('game') && !intents.has('crud')) {
+    return gameNaideCode(params.gameTitle || params.gameType, params.port);
+  }
+
   const sections = [];
   const entities = params.entities.length > 0 ? params.entities : [{ name: params.schemaName || 'Item', fields: params.fields }];
   const primaryName = entities[0].name;
@@ -2071,8 +2492,9 @@ function heal(code, err) {
 // ── Suggestions ─────────────────────────────────────────────
 
 const KEYWORD_CHEATSHEET = {
-  'Intent':    'server, api, rest, bot, cli, page, test, database, ai, crud, auth, websocket, mail, graphql',
+  'Intent':    'server, api, rest, bot, cli, page, test, database, ai, crud, auth, websocket, mail, graphql, game',
   'Composite': 'todo, blog, chat, shop, fullstack, board, crm, inventory, booking, sns',
+  'Game':      'tapping, quiz, memory, snake, typing, reaction, breakout',
   'Platform':  'discord, slack, telegram, line',
   'DB':        'sqlite, postgres',
   'Japanese':  'サーバー, 認証, ログイン, 会員, CRUD, 管理, データベース, ボット, テスト, ページ',
@@ -2094,6 +2516,31 @@ export function generateProject(instruction, options = {}) {
   const result = generate(instruction, options);
   const files = [];
   const intents = new Set(result.intents);
+
+  // Game project: generate standalone HTML game
+  if (intents.has('game') && result.analysis && result.analysis.gameType) {
+    const gt = result.analysis.gameType;
+    const title = result.analysis.gameTitle || gt;
+    const projectName = safeName(gt) + '-game';
+    const html = gameHTML(gt, title);
+
+    files.push({ path: 'index.html', content: html });
+    files.push({ path: 'app.naide', content: result.code });
+    files.push({ path: 'package.json', content: JSON.stringify({
+      name: projectName, version: '1.0.0', type: 'module',
+      scripts: { dev: 'naide app.naide', start: 'naide app.naide', open: 'start index.html' },
+      dependencies: { express: '^4.21.0', naider: '^1.21.0' },
+    }, null, 2) + '\n' });
+    files.push({ path: '.gitignore', content: 'node_modules/\n' });
+    files.push({ path: 'README.md', content: `# ${title}\n\nGenerated by NAIDE Agent Coder (~~)\n\n## Play\n\nOpen \`index.html\` directly in a browser, or:\n\n\`\`\`bash\nnpm install && npm run dev\n\`\`\`\n\nThen visit http://localhost:${result.port}\n` });
+
+    return {
+      ...result,
+      files,
+      analysis: { ...result.analysis, plan: [`Game: ${gt}`, `Standalone HTML + CSS + JS`, `High scores saved in localStorage`, `Touch & keyboard support`, `Server on port ${result.port}`] },
+    };
+  }
+
   const entities = result.entities || [];
   const primaryName = (entities[0] || 'app').toLowerCase();
   const projectName = safeName(primaryName) + '-app';
@@ -2577,6 +3024,22 @@ export function expandDirectives(source) {
 
 function buildAnalysis(instruction, intents, params) {
   const plan = [];
+
+  if (params.gameType) {
+    plan.push(`Game: ${params.gameType}`);
+    plan.push('Standalone HTML + CSS + JS');
+    plan.push('High scores saved in localStorage');
+    plan.push('Touch & keyboard support');
+    return {
+      instruction,
+      entities: [],
+      relationships: [],
+      features: [...intents],
+      plan,
+      gameType: params.gameType,
+      gameTitle: params.gameTitle,
+    };
+  }
 
   if (params.entities.length > 0) {
     for (const e of params.entities) {
