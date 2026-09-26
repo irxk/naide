@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.21.1';
+const NAIDE_VERSION = '1.23.0';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -279,22 +279,26 @@ if (files[0] === 'gen' || files[0] === '~~') {
       writeFileSync(fp, f.content, 'utf-8');
     }
     const a = result.analysis;
-    const mode = isUpdate ? 'Updated' : 'Created';
+    const mode = result.action === 'removed' ? 'Removed' : isUpdate ? 'Updated' : 'Created';
     process.stderr.write(`\n  ── NAIDE Agent (${mode}) ────────────────────────────────\n`);
-    process.stderr.write(`  Input:    "${a.instruction}"\n`);
+    process.stderr.write(`  Input:    "${a.instruction || instruction}"\n`);
     if (a.entities.length > 0) {
       process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
     }
     if (a.relationships && a.relationships.length > 0) {
       for (const r of a.relationships) process.stderr.write(`  Relation: ${r.parent} 1→N ${r.child} (${r.fk})\n`);
     }
+    if (result.removed && result.removed.length > 0) {
+      process.stderr.write(`  Removed:  ${result.removed.join(', ')}\n`);
+    }
     if (a.added && a.added.length > 0) {
       process.stderr.write(`  Added:    ${a.added.join(', ')}\n`);
     }
     process.stderr.write(`  Plan:\n`);
     for (const step of a.plan) process.stderr.write(`    + ${step}\n`);
+    process.stderr.write(`  Files:    ${result.files.length} generated\n`);
     process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
-    console.log(`  Project ${isUpdate ? 'updated' : 'created'}: ${dir}/`);
+    console.log(`  Project ${mode.toLowerCase()}: ${dir}/`);
     for (const f of result.files) console.log(`    ${f.path}`);
     if (!isUpdate) console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
     else console.log(`\n  Files regenerated. Run: npm run dev\n`);
