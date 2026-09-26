@@ -77,6 +77,9 @@ naide pkg install <name>      # Install a NAIDE package
 naide pkg publish             # Publish package to npm
 naide -w <file>               # Watch mode (auto-restart on changes)
 naide -d <file>               # Debug mode (Node.js inspector)
+naide ~~ "instruction"        # Generate NAIDE code from natural language
+naide gen "instruction"       # Same as ~~ (alias)
+naide --expand <file>         # Show ~~ directive expansion results
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
 naide --mid <file.nx>         # Show intermediate NAIDE v1 (debug X mode)
@@ -84,11 +87,95 @@ naide --ast <file>            # Print AST
 naide --tokens <file>         # Print token stream
 ```
 
+### Code Generation (`~~`)
+
+Generate valid NAIDE code from natural language instructions — no AI, no network, no dependencies. Pure pattern matching + template composition with self-healing parser validation. Runs in microseconds.
+
+```bash
+# CLI
+naide ~~ "REST API for users with auth"
+naide ~~ "todo app with database"
+naide ~~ "Discord bot with hello command"
+naide ~~ "blog app with auth and websocket"
+naide ~~ "CLI tool"
+naide gen "chat app"
+
+# Japanese
+naide ~~ "ユーザー管理APIを認証付きで"
+naide ~~ "掲示板アプリ"
+naide ~~ "商品管理のフルスタックアプリ"
+```
+
+Output example:
+
+```python
+# naide ~~ "REST API for users with auth"
+
+schema User:
+  id       auto
+  name     str required
+  email    str required email
+  password str required min(8)
+
+db "data/"
+
+server user port 3000:
+  cors "*"
+  crud "/api/users" User
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/auth/*"
+
+  get "/api/health" (req, res):
+    ret {status: "ok", users: UserStore.count()}
+```
+
+Inline in `.naide` files — expands at compile time:
+
+```python
+# app.naide
+~~ "REST API for users with auth"
+```
+
+```bash
+naide --expand app.naide    # debug: show what ~~ expanded to
+```
+
+API usage:
+
+```javascript
+import { generate } from 'naider';
+const result = generate("REST API for users with auth");
+console.log(result.code);     // generated NAIDE code
+console.log(result.valid);    // true (parser-validated)
+console.log(result.intents);  // ['server', 'schema', 'crud', 'auth', 'database']
+console.log(result.repairs);  // [] (auto-fix log, if any)
+```
+
+**Self-healing**: Generated code is validated against the actual NAIDE parser. Parse errors are auto-fixed (up to 5 retries) — missing colons, indent issues, reserved keyword conflicts.
+
+**Field normalization**: Smart aliases — `e-mail` → `email`, `pwd` → `password`, `tel` → `phone`, `desc` → `description`. Field types are auto-inferred from names (`email` → `str + email`, `age` → `int`, `done` → `bool`).
+
+<details>
+<summary>Keyword Cheat Sheet</summary>
+
+| Category | Keywords |
+|----------|----------|
+| Intent | `server` `api` `rest` `bot` `cli` `page` `test` `database` `ai` `crud` `auth` `websocket` `mail` `graphql` |
+| Composite | `todo` `blog` `chat` `shop` `fullstack` `board` |
+| Platform | `discord` `slack` `telegram` `line` |
+| DB Type | `sqlite` `postgres` |
+| JP Intent | `サーバー` `認証` `ログイン` `会員` `CRUD` `管理` `データベース` `ボット` `テスト` `ページ` `メール` |
+| JP Entity | `ユーザー` `商品` `記事` `タスク` `注文` `コメント` `イベント` `問い合わせ` `通知` `カテゴリ` `掲示板` `決済` |
+| Fields | `"with name email age"` — auto-inferred types & validators |
+
+</details>
+
 ### REPL
 
 ```
 $ naide
-NAIDE REPL v1.11.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.20.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
