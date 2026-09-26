@@ -1497,7 +1497,7 @@ export class Parser {
 
     const modifiers = [];
     while (!this.at(T.NEWLINE) && !this.at(T.DEDENT) && !this.at(T.EOF)) {
-      if (this.at(T.IDENT) || this.at(T.IDENT)) {
+      if (this.isIdentLike(this.peek().type)) {
         const modName = this.advance().value;
         if (this.at(T.LPAREN)) {
           this.advance();
