@@ -3,7 +3,7 @@ import { Parser } from './parser.js';
 import { Generator } from './generator.js';
 import { preprocess } from './preprocess.js';
 import { TypeChecker } from './typechecker.js';
-import { generate, expandDirectives } from './gen.js';
+import { generate, generateProject, updateProject, expandDirectives } from './gen.js';
 
 async function getGenerator(target, options) {
   switch (target) {
@@ -162,4 +162,4 @@ export function transpile(source, opts) {
   return compile(source, opts).js;
 }
 
-export { preprocess, generate };
+export { preprocess, generate, generateProject, updateProject };

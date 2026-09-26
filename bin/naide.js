@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.21.0';
+const NAIDE_VERSION = '1.21.1';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -171,7 +171,13 @@ if (files[0] === 'gen' || files[0] === '~~') {
   Project Mode (--project):
     naide ~~ "e-commerce app with auth" --project
     # Creates: app.naide, package.json, .env, .gitignore,
-    #          Dockerfile, .dockerignore, README.md
+    #          Dockerfile, .dockerignore, README.md, openapi.json,
+    #          admin.html, client.mjs
+
+  Update existing project (re-run --project in same dir):
+    naide ~~ "add users with auth" --project -o my-app
+    naide ~~ "add products" --project -o my-app
+    # Merges new entities, regenerates all supporting files
 
   File Write Mode:
     naide ~~ "add auth" app.naide              # merge into existing file
@@ -213,7 +219,7 @@ if (files[0] === 'gen' || files[0] === '~~') {
     process.exit(0);
   }
 
-  const { generate, generateProject, writeToFile } = await import('../src/gen.js');
+  const { generate, generateProject, updateProject, writeToFile } = await import('../src/gen.js');
 
   // Write mode: inject into existing .naide/.nx file
   const targetFile = instruction.match(/\S+\.(?:naide|nx)$/)?.[0];
@@ -235,32 +241,63 @@ if (files[0] === 'gen' || files[0] === '~~') {
     process.exit(0);
   }
 
-  // Project mode: generate full project directory
+  // Project mode: generate or update project directory
   if (flags.project) {
-    const result = generateProject(instruction);
-    const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const dir = flags.output || (primaryName + '-app');
+    const isCurrentDir = instruction === '.' || instruction === './';
+    let dir, result;
+
+    if (isCurrentDir) {
+      // naide gen . --project  → update current directory
+      dir = '.';
+      const outDir = resolve(dir);
+      if (!existsSync(resolve(outDir, 'app.naide'))) {
+        process.stderr.write('  Error: no app.naide found in current directory.\n');
+        process.stderr.write('  Use naide ~~ "instruction" --project to create a new project.\n');
+        process.exit(1);
+      }
+      process.stderr.write('  Error: use naide ~~ "instruction" --project in an existing project dir to update.\n');
+      process.exit(1);
+    }
+
+    const primaryGuess = instruction.split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9]/g, '') || 'app';
+    dir = flags.output || (primaryGuess + '-app');
     const outDir = resolve(dir);
-    if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+    const isUpdate = existsSync(resolve(outDir, 'app.naide'));
+
+    if (isUpdate) {
+      result = updateProject(outDir, instruction);
+    } else {
+      result = generateProject(instruction);
+    }
+
+    const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!flags.output && !isUpdate) dir = primaryName + '-app';
+    const finalDir = resolve(dir);
+    if (!existsSync(finalDir)) mkdirSync(finalDir, { recursive: true });
     for (const f of result.files) {
-      const fp = resolve(outDir, f.path);
+      const fp = resolve(finalDir, f.path);
       writeFileSync(fp, f.content, 'utf-8');
     }
     const a = result.analysis;
-    process.stderr.write('\n  ── NAIDE Agent ──────────────────────────────────────────\n');
+    const mode = isUpdate ? 'Updated' : 'Created';
+    process.stderr.write(`\n  ── NAIDE Agent (${mode}) ────────────────────────────────\n`);
     process.stderr.write(`  Input:    "${a.instruction}"\n`);
     if (a.entities.length > 0) {
       process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
     }
-    if (a.relationships.length > 0) {
+    if (a.relationships && a.relationships.length > 0) {
       for (const r of a.relationships) process.stderr.write(`  Relation: ${r.parent} 1→N ${r.child} (${r.fk})\n`);
+    }
+    if (a.added && a.added.length > 0) {
+      process.stderr.write(`  Added:    ${a.added.join(', ')}\n`);
     }
     process.stderr.write(`  Plan:\n`);
     for (const step of a.plan) process.stderr.write(`    + ${step}\n`);
     process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
-    console.log(`  Project created: ${dir}/`);
+    console.log(`  Project ${isUpdate ? 'updated' : 'created'}: ${dir}/`);
     for (const f of result.files) console.log(`    ${f.path}`);
-    console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
+    if (!isUpdate) console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
+    else console.log(`\n  Files regenerated. Run: npm run dev\n`);
     process.exit(0);
   }
 
