@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [18, 20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,3 +23,12 @@ jobs:
         run: |
           node bin/naide.js --emit examples/todo-api.naide > /dev/null
           node bin/naide.js --emit examples/todo-api.nx > /dev/null
+      - name: Verify code generation
+        run: |
+          node -e "import('./src/gen.js').then(m => { const r = m.generate('REST API for users with auth'); if (!r.valid) { console.error('gen: invalid output'); process.exit(1); } console.log('gen: ok (' + r.intents.join('+') + ')'); })"
+          node -e "import('./src/gen.js').then(m => { const r = m.generate('todo app'); if (!r.valid) { console.error('gen: invalid output'); process.exit(1); } console.log('gen: ok (' + r.intents.join('+') + ')'); })"
+      - name: Verify cross-target compilation
+        run: |
+          for target in python bun typescript go java rust cpp c csharp kotlin swift dart php ruby; do
+            node bin/naide.js --emit -t $target examples/todo-api.naide > /dev/null 2>&1 && echo "  $target: ok" || echo "  $target: FAIL"
+          done

@@ -8,6 +8,42 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
+const NAIDE_VERSION = '1.19.0';
+
+function crashReport(err, context = {}) {
+  const info = [
+    `NAIDE v${NAIDE_VERSION}`,
+    `Node ${process.version}`,
+    `${process.platform} ${process.arch}`,
+  ];
+  if (context.file) info.push(`File: ${context.file}`);
+  if (context.target) info.push(`Target: ${context.target}`);
+
+  console.error(`\n  ┌─ NAIDE Internal Error ───────────────────────────`);
+  console.error(`  │ ${err.message}`);
+  console.error(`  │`);
+  console.error(`  │ ${info.join(' | ')}`);
+  if (err.stack) {
+    const frames = err.stack.split('\n').slice(1, 4).map(l => l.trim());
+    for (const f of frames) console.error(`  │   ${f}`);
+  }
+  console.error(`  │`);
+  console.error(`  │ This is a compiler bug, not a syntax error.`);
+  console.error(`  │ Report: https://github.com/irxk/naide/issues/new`);
+  console.error(`  │   Include the .naide file and the info above.`);
+  console.error(`  └──────────────────────────────────────────────────\n`);
+}
+
+process.on('uncaughtException', (err) => {
+  crashReport(err);
+  process.exit(99);
+});
+
+process.on('unhandledRejection', (reason) => {
+  crashReport(reason instanceof Error ? reason : new Error(String(reason)));
+  process.exit(99);
+});
+
 function checkDependencies(jsCode) {
   const depMap = {
     "from 'express'": { pkg: 'express', reason: 'server' },
@@ -77,6 +113,7 @@ const flags = {
   debug: false,
   check: false,
   target: 'node',
+  expand: false,
 };
 
 const files = [];
@@ -95,6 +132,7 @@ for (let i = 0; i < args.length; i++) {
     case '--debug': case '-d': flags.debug = true; break;
     case '--check': flags.check = true; flags.run = false; break;
     case '--target': case '-t': flags.target = args[++i]; break;
+    case '--expand': flags.expand = true; flags.run = false; break;
     default: files.push(arg);
   }
 }
@@ -121,15 +159,36 @@ if (files[0] === 'gen' || files[0] === '~~') {
     naide ~~ "CLI tool"
     naide ~~ "chat app with websocket"
     naide ~~ "user management fullstack app"
+    naide ~~ "ユーザー管理APIを認証付きで"
+    naide ~~ "掲示板アプリ"
 
   In .naide files:
     ~~ "REST API for users with auth"
     # Expands at compile time to full NAIDE code
 
+  Debug:
+    naide --expand app.naide     Show ~~ expansion results
+
   API:
     import { generate } from 'naider';
     const result = generate("REST API for users");
     console.log(result.code);
+
+  ── Keyword Cheat Sheet ──────────────────────────────────────
+
+  Intent     server, api, rest, bot, cli, page, test, database,
+             ai, crud, auth, websocket, mail, graphql
+  Composite  todo, blog, chat, shop, fullstack, board
+  Platform   discord, slack, telegram, line
+  DB Type    sqlite, postgres
+  JP Intent  サーバー, 認証, ログイン, 会員, CRUD, 管理, データベース,
+             ボット, テスト, ページ, メール, リアルタイム
+  JP Entity  ユーザー, 商品, 記事, タスク, 注文, コメント, イベント,
+             問い合わせ, 通知, カテゴリ, プロジェクト, 掲示板, 決済
+  Fields     "with name email age" — auto-inferred types & validators
+  Field Alias  e-mail→email, pwd→password, tel→phone, desc→description
+
+  ────────────────────────────────────────────────────────────
 `);
     process.exit(0);
   }
@@ -142,7 +201,35 @@ if (files[0] === 'gen' || files[0] === '~~') {
     console.log(`  Generated: ${flags.output} (${result.intents.join(' + ')})`);
   } else {
     console.log(result.code);
-    process.stderr.write(`\n  ── gen ~~ [${ result.intents.join(' + ')}]${result.schema ? ` → ${result.schema}` : ''} ── valid: ${result.valid}${result.fixed ? ' (auto-fixed)' : ''}\n`);
+    const meta = [`[${result.intents.join(' + ')}]`];
+    if (result.schema) meta.push(`→ ${result.schema}`);
+    meta.push(`valid: ${result.valid}`);
+    if (result.fixed) meta.push('(auto-fixed)');
+    process.stderr.write(`\n  ── gen ~~ ${meta.join(' ')} ──\n`);
+    if (result.repairs.length > 0) {
+      process.stderr.write('  Repairs:\n');
+      for (const r of result.repairs) process.stderr.write(`    - ${r}\n`);
+    }
+    if (result.suggestion) {
+      process.stderr.write(`\n${result.suggestion}\n`);
+    }
+  }
+  process.exit(0);
+}
+
+// ── Expand Debug ──
+if (flags.expand && files.length > 0) {
+  const { expandDirectives } = await import('../src/gen.js');
+  for (const file of files) {
+    const filePath = resolve(file);
+    const source = readFileSync(filePath, 'utf-8');
+    const { source: expanded, expanded: didExpand } = expandDirectives(source);
+    if (didExpand) {
+      console.log(`  ── ${file} (expanded) ──\n`);
+      console.log(expanded);
+    } else {
+      console.log(`  ${file}: no ~~ directives found`);
+    }
   }
   process.exit(0);
 }
@@ -405,24 +492,67 @@ if (files[0] === 'build') {
 
   console.log(`\n  NAIDE build — ${sourceFiles.length} file(s)\n`);
   let errors = 0;
+  const schemaMap = {};
+  const routeMap = {};
+
   for (const srcFile of sourceFiles) {
     const rel = relative(dir, srcFile);
     const mode = srcFile.endsWith('.nx') ? 'x' : 'naide';
     try {
       const source = readFileSync(srcFile, 'utf-8');
-      const { js } = compile(source, { mode });
+      const { js, ast } = compile(source, { mode });
       const outName = rel.replace(/\.(naide|nx)$/, '.mjs');
       const outPath = outDir ? join(outDir, outName) : join(dir, outName);
       const outDirPath = resolve(outPath, '..');
       if (!existsSync(outDirPath)) mkdirSync(outDirPath, { recursive: true });
       writeFileSync(outPath, js);
       console.log(`  ${rel} → ${outDir ? join(relative('.', outDir), outName) : outName}`);
+
+      if (ast && ast.body) {
+        for (const node of ast.body) {
+          if (node.type === 'SchemaDecl' && node.name) {
+            (schemaMap[node.name] = schemaMap[node.name] || []).push(rel);
+          }
+          if (node.type === 'Server' && node.routes) {
+            for (const s of node.routes) {
+              if (s.type === 'CrudDecl' && s.path) {
+                const key = `CRUD ${s.path.raw || s.path}`;
+                (routeMap[key] = routeMap[key] || []).push(rel);
+              }
+              if (s.type === 'Route' && s.path) {
+                const key = `${(s.method || 'get').toUpperCase()} ${s.path.raw || s.path}`;
+                (routeMap[key] = routeMap[key] || []).push(rel);
+              }
+            }
+          }
+        }
+      }
     } catch (e) {
-      console.error(`  FAIL ${rel}: ${e.message.split('\n')[0]}`);
+      const isSyntaxErr = e.message.includes('line ') || e.message.includes('Unexpected') || e.message.includes('Expected');
+      if (isSyntaxErr) {
+        console.error(`  FAIL ${rel}: ${e.message.split('\n')[0]}`);
+      } else {
+        crashReport(e, { file: rel });
+      }
       errors++;
     }
   }
-  console.log(`\n  Done. ${sourceFiles.length - errors} compiled, ${errors} failed.`);
+
+  let warnings = 0;
+  for (const [name, files] of Object.entries(schemaMap)) {
+    if (files.length > 1) {
+      console.error(`  WARN: schema "${name}" defined in ${files.length} files: ${files.join(', ')}`);
+      warnings++;
+    }
+  }
+  for (const [route, files] of Object.entries(routeMap)) {
+    if (files.length > 1) {
+      console.error(`  WARN: route ${route} defined in ${files.length} files: ${files.join(', ')}`);
+      warnings++;
+    }
+  }
+
+  console.log(`\n  Done. ${sourceFiles.length - errors} compiled, ${errors} failed${warnings > 0 ? `, ${warnings} warning(s)` : ''}.`);
   process.exit(errors > 0 ? 1 : 0);
 }
 
@@ -736,6 +866,7 @@ if (flags.help) {
   Code Generation (~~):
     naide ~~ "instruction"       Generate code from instruction (no AI)
     naide gen "instruction"      Alias for ~~
+    naide --expand <file>        Show ~~ directive expansion results
     In .naide files: ~~ "instruction" expands at compile time
 
   Targets (15):
@@ -768,9 +899,18 @@ if (flags.help) {
     -t, --target   Compile target: node (default), bun, python/py
     --check        Type-check files without running
     --mid          Show intermediate NAIDE v1 (X mode only)
+    --expand       Show ~~ directive expansion (debug)
     --ast          Print AST
     --tokens       Print tokens
     -h, --help     Show this help
+
+  ~~ Keyword Cheat Sheet:
+    Intent     server api rest bot cli page test database ai crud auth ws mail graphql
+    Composite  todo blog chat shop fullstack board
+    Platform   discord slack telegram line
+    JP Intent  サーバー 認証 ログイン 会員 CRUD 管理 データベース ボット テスト ページ
+    JP Entity  ユーザー 商品 記事 タスク 注文 コメント イベント 問い合わせ 掲示板 決済
+    Fields     "with name email age done" → auto-inferred types
 `);
   process.exit(0);
 }
@@ -939,7 +1079,12 @@ for (const file of files) {
       } catch {}
     }
   } catch (err) {
-    console.error(`\n${err.message}`);
+    const isSyntaxErr = err.message.includes('line ') || err.message.includes('Unexpected') || err.message.includes('Expected');
+    if (isSyntaxErr) {
+      console.error(`\n${err.message}`);
+    } else {
+      crashReport(err, { file, target: flags.target });
+    }
     if (process.env.NAIDE_DEBUG) console.error(err.stack);
     process.exit(1);
   }
