@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.24.4';
+const NAIDE_VERSION = '1.24.5';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -1093,7 +1093,7 @@ if (flags.help) {
   ~~ Keyword Cheat Sheet:
     Intent     server api rest bot cli page test database ai crud auth ws mail graphql game
     Composite  todo blog chat shop fullstack board
-    Game       tapping quiz memory snake typing reaction breakout
+    Game       tapping quiz memory snake typing reaction breakout dodge color pong
     Platform   discord slack telegram line
     JP Intent  サーバー 認証 ログイン 会員 CRUD 管理 データベース ボット テスト ページ ゲーム
     JP Entity  ユーザー 商品 記事 タスク 注文 コメント イベント 問い合わせ 掲示板 決済

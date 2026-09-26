@@ -100,6 +100,9 @@ const GAME_TYPES = {
   reaction:  ['reaction', 'reflex', 'リアクション', '反射', '反応'],
   snake:     ['snake', 'スネーク', 'ヘビ'],
   breakout:  ['breakout', 'brick', 'block', 'ブロック崩し', 'ブレイクアウト'],
+  dodge:     ['dodge', 'avoid', 'escape', '避け', 'ドッジ', '回避'],
+  color:     ['color', 'colour', 'stroop', 'カラー', '色'],
+  pong:      ['pong', 'paddle', 'ポン', 'パドル', 'ピンポン'],
 };
 
 const NOISE = new Set([
@@ -111,6 +114,7 @@ const NOISE = new Set([
   'game', 'play', 'player', 'score', 'level', 'arcade', 'highscore',
   'tapping', 'tap', 'clicker', 'click', 'quiz', 'trivia', 'memory', 'matching', 'typing',
   'reaction', 'reflex', 'snake', 'breakout', 'brick', 'block', 'pong', 'puzzle',
+  'dodge', 'avoid', 'escape', 'color', 'colour', 'stroop', 'paddle',
   'の', 'を', 'に', 'で', 'は', 'が', 'と', 'も', 'から', 'まで', 'より', 'って',
   'な', 'ような', 'みたいな', 'っぽい', 'ような感じ',
   '作って', '作る', '作成', '生成', '追加', '実装', 'ください', 'して', 'つけて',
@@ -1791,6 +1795,9 @@ const GAME_PALETTES = {
   typing:   { bg:'#0a192f', sf:'#112240', pr:'#64FFDA', sc:'#00B4D8', ac:'#CCD6F6', tx:'#CCD6F6', mt:'#5c7a8a' },
   reaction: { bg:'#18181b', sf:'#27272a', pr:'#F87171', sc:'#EF4444', ac:'#4ADE80', tx:'#fafafa', mt:'#71717a' },
   breakout: { bg:'#0c0a1d', sf:'#1c1833', pr:'#A78BFA', sc:'#8B5CF6', ac:'#F59E0B', tx:'#f0f0ff', mt:'#8f85a3' },
+  dodge:    { bg:'#1a0005', sf:'#2d0a12', pr:'#FF4757', sc:'#FF6B81', ac:'#2ED573', tx:'#fff',    mt:'#a88a8f' },
+  color:    { bg:'#0a1628', sf:'#132240', pr:'#FF6348', sc:'#FFA502', ac:'#7BED9F', tx:'#f5f6fa', mt:'#778ca3' },
+  pong:     { bg:'#0a0a0a', sf:'#1a1a2e', pr:'#00FF87', sc:'#60EFFF', ac:'#FFE66D', tx:'#f0f0f0', mt:'#666680' },
 };
 
 function extractGameOpts(raw) {
@@ -1812,7 +1819,7 @@ function cssVars(p) {
 function cssBase(p) {
   return `*{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:${p.bg};color:${p.tx};min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-.ct{width:min(420px,92vw);text-align:center}
+.ct{width:min(420px,92vw);text-align:center;position:relative}
 h1{font-size:1.8rem;margin-bottom:.5rem;background:linear-gradient(135deg,${p.pr},${p.sc});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .sc{font-size:3rem;font-weight:800;margin:.5rem 0;font-variant-numeric:tabular-nums}
 .btn{display:inline-block;padding:.75rem 2rem;border:none;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;transition:transform .1s,box-shadow .2s;color:#fff;background:linear-gradient(135deg,${p.pr},${p.sc})}
@@ -1820,13 +1827,42 @@ h1{font-size:1.8rem;margin-bottom:.5rem;background:linear-gradient(135deg,${p.pr
 .st{display:flex;gap:1.5rem;justify-content:center;margin:.75rem 0;font-size:.9rem;color:${p.mt}}
 .st span{display:flex;flex-direction:column;align-items:center;gap:.2rem}.st b{color:${p.tx};font-size:1.1rem}
 .hd{display:none!important}.hi{color:${p.ac}}
+.cdwn{position:fixed;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:6rem;font-weight:900;color:${p.pr};z-index:99;pointer-events:none;animation:cdPop .6s ease-out}
+@keyframes cdPop{0%{transform:scale(3);opacity:0}30%{opacity:1}100%{transform:scale(1);opacity:0}}
 @keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
-@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}`;
+@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.pcv{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:90}`;
 }
 
 function cssTimerBar(p) {
   return `.bar{width:100%;height:6px;background:${p.sf};border-radius:3px;margin:.5rem 0;overflow:hidden}
 .bar .fl{height:100%;background:linear-gradient(90deg,${p.ac},${p.pr});transition:width .1s linear;border-radius:3px}`;
+}
+
+function jsSfx() {
+  return `const _ax=new(window.AudioContext||window.webkitAudioContext)();
+function sfx(freq,type,dur,vol){const o=_ax.createOscillator(),g=_ax.createGain();o.type=type||'sine';o.frequency.value=freq;g.gain.value=vol||.15;g.gain.exponentialRampToValueAtTime(.001,_ax.currentTime+(dur||.15));o.connect(g);g.connect(_ax.destination);o.start();o.stop(_ax.currentTime+(dur||.15))}
+function sfxTap(){sfx(800,'square',.06,.12)}
+function sfxHit(){sfx(520,'sine',.1,.15)}
+function sfxScore(){sfx(660,'sine',.08,.12);setTimeout(()=>sfx(880,'sine',.08,.12),60)}
+function sfxWin(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>sfx(f,'sine',.2,.1),i*100))}
+function sfxFail(){sfx(200,'sawtooth',.3,.1)}
+function sfxTick(){sfx(1200,'sine',.03,.08)}
+function sfxCombo(){sfx(1000,'square',.05,.1);setTimeout(()=>sfx(1400,'square',.05,.1),50)}`;
+}
+
+function jsParticles(color1, color2) {
+  return `const _pcv=document.createElement('canvas');_pcv.className='pcv';document.body.appendChild(_pcv);const _pctx=_pcv.getContext('2d');
+let _pts=[];function _pResize(){_pcv.width=innerWidth;_pcv.height=innerHeight}window.addEventListener('resize',_pResize);_pResize();
+function emitParticles(x,y,count,c1,c2){for(let i=0;i<(count||12);i++){const a=Math.random()*Math.PI*2,sp=2+Math.random()*4;_pts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,life:1,sz:2+Math.random()*4,c:Math.random()>.5?(c1||'${color1}'):(c2||'${color2}')})}}
+function _pTick(){_pctx.clearRect(0,0,_pcv.width,_pcv.height);_pts=_pts.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life-=.025;if(p.life<=0)return false;_pctx.globalAlpha=p.life;_pctx.fillStyle=p.c;_pctx.beginPath();_pctx.arc(p.x,p.y,p.sz*p.life,0,Math.PI*2);_pctx.fill();return true});_pctx.globalAlpha=1;requestAnimationFrame(_pTick)}_pTick();
+function burstAt(el,n){const r=el.getBoundingClientRect();emitParticles(r.left+r.width/2,r.top+r.height/2,n||16)}
+function shakeEl(el){el.style.animation='shake .2s';setTimeout(()=>el.style.animation='',200)}`;
+}
+
+function jsCountdown(cb) {
+  return `function countdown(fn){let n=3;const t=()=>{if(n>0){const d=document.createElement('div');d.className='cdwn';d.textContent=n;document.body.appendChild(d);sfxTick();setTimeout(()=>d.remove(),600);n--;setTimeout(t,600)}else{const d=document.createElement('div');d.className='cdwn';d.textContent='GO!';d.style.color='var(--ac)';document.body.appendChild(d);sfxScore();setTimeout(()=>d.remove(),500);fn()}};t()}`;
 }
 
 function jsCore(storageKey) {
@@ -1867,7 +1903,7 @@ function buildTapping(title, opts) {
   const dur = opts.duration || 10;
 
   const css = [cssVars(p), cssBase(p), cssTimerBar(p),
-    `.tap{width:min(300px,75vw);height:min(300px,75vw);border-radius:50%;background:radial-gradient(circle at 35% 35%,${p.pr},${p.sc});display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;position:relative;font-size:3.5rem;font-weight:900;transition:box-shadow .15s;letter-spacing:-.05em}`,
+    `.tap{width:min(300px,75vw);height:min(300px,75vw);border-radius:50%;background:radial-gradient(circle at 35% 35%,${p.pr},${p.sc});display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;position:relative;font-size:3.5rem;font-weight:900;transition:box-shadow .15s;letter-spacing:-.05em;overflow:hidden}`,
     `.tap:active{box-shadow:0 0 60px ${p.pr}88}`,
     `.tap.on{animation:pulse 1s infinite}`,
     `@keyframes pulse{0%,100%{box-shadow:0 0 0 0 ${p.pr}66}50%{box-shadow:0 0 0 20px ${p.pr}00}}`,
@@ -1890,12 +1926,13 @@ function buildTapping(title, opts) {
 <div id="msg" style="font-size:1.2rem;line-height:2"></div>
 <button class="btn" style="margin-top:1rem" onclick="go()">Again</button></div>`;
 
-  const js = [jsCore('tap_best'),
+  const js = [jsCore('tap_best'), jsSfx(), jsParticles(p.pr, p.ac), jsCountdown(),
     `const DUR=${dur*1000};let taps,t0,raf,combo,lh;`,
-    `function go(){taps=0;combo=1;lh=0;t0=Date.now();$('cnt').textContent='0';$('cmb').textContent='x1';$('bar').style.width='100%';show('play');raf=requestAnimationFrame(tick)}`,
+    `function go(){show('play');countdown(startGame)}`,
+    `function startGame(){taps=0;combo=1;lh=0;t0=Date.now();$('cnt').textContent='0';$('cmb').textContent='x1';$('bar').style.width='100%';raf=requestAnimationFrame(tick)}`,
     `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('tps').textContent=(taps/Math.max(.1,e/1000)).toFixed(1);if(e>=DUR)return end();raf=requestAnimationFrame(tick)}`,
-    `function hit(ev){ev.preventDefault();if(Date.now()-t0>DUR)return;taps++;const now=Date.now(),gap=now-lh;combo=gap<200?Math.min(combo+1,99):gap>500?1:combo;lh=now;$('cnt').textContent=taps;$('cmb').textContent='x'+combo;$('cnt').style.animation='none';void $('cnt').offsetWidth;$('cnt').style.animation='pop .15s';const el=$('tap'),rc=el.getBoundingClientRect(),cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-rc.left,cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-rc.top;const r=document.createElement('div');r.className='rp';r.style.cssText='left:'+(cx-100)+'px;top:'+(cy-100)+'px';el.appendChild(r);setTimeout(()=>r.remove(),500);if(combo>=3){const c=document.createElement('div');c.className='cb';c.textContent='x'+combo;c.style.cssText='left:'+Math.random()*60+20+'%;top:'+Math.random()*30+20+'%';document.body.appendChild(c);setTimeout(()=>c.remove(),600)}}`,
-    `function end(){cancelAnimationFrame(raf);const tps=(taps/(DUR/1000)).toFixed(1);const nb=saveBest(taps);$('last').textContent=taps;$('fin').textContent=taps;const r=taps>=100?'Insane!':taps>=70?'Amazing!':taps>=50?'Great!':taps>=30?'Nice!':'Keep trying!';$('msg').innerHTML=r+'<br>'+tps+' taps/sec'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function hit(ev){ev.preventDefault();if(!t0||Date.now()-t0>DUR)return;taps++;sfxTap();const now=Date.now(),gap=now-lh;combo=gap<200?Math.min(combo+1,99):gap>500?1:combo;lh=now;$('cnt').textContent=taps;$('cmb').textContent='x'+combo;$('cnt').style.animation='none';void $('cnt').offsetWidth;$('cnt').style.animation='pop .15s';const el=$('tap'),rc=el.getBoundingClientRect(),cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-rc.left,cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-rc.top;const r=document.createElement('div');r.className='rp';r.style.cssText='left:'+(cx-100)+'px;top:'+(cy-100)+'px';el.appendChild(r);setTimeout(()=>r.remove(),500);emitParticles((ev.touches?ev.touches[0].clientX:ev.clientX),(ev.touches?ev.touches[0].clientY:ev.clientY),combo>=3?10:4);if(combo>=3){sfxCombo();shakeEl($('cnt'));const c=document.createElement('div');c.className='cb';c.textContent='x'+combo;c.style.cssText='left:'+Math.random()*60+20+'%;top:'+Math.random()*30+20+'%';document.body.appendChild(c);setTimeout(()=>c.remove(),600)}}`,
+    `function end(){cancelAnimationFrame(raf);const tps=(taps/(DUR/1000)).toFixed(1);const nb=saveBest(taps);$('last').textContent=taps;$('fin').textContent=taps;if(nb&&taps>0){sfxWin();burstAt($('fin'),30)}else sfxFail();const r=taps>=100?'Insane!':taps>=70?'Amazing!':taps>=50?'Great!':taps>=30?'Nice!':'Keep trying!';$('msg').innerHTML=r+'<br>'+tps+' taps/sec'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -1934,15 +1971,15 @@ function buildQuiz(title, opts) {
 <div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
 <button class="btn" onclick="go()">Play Again</button></div>`;
 
-  const js = [jsCore('quiz_best'),
-    `const QS=[{q:"What does HTML stand for?",a:["HyperText Markup Language","High Tech Modern Language","Home Tool Markup Language","Hyper Transfer Markup Language"],c:0},{q:"Which planet is closest to the Sun?",a:["Mercury","Venus","Mars","Earth"],c:0},{q:"What is the largest ocean on Earth?",a:["Pacific","Atlantic","Indian","Arctic"],c:0},{q:"In JavaScript, which keyword declares a constant?",a:["const","let","var","static"],c:0},{q:"What year did the World Wide Web go public?",a:["1991","1989","1995","2000"],c:0},{q:"What is the chemical symbol for gold?",a:["Au","Ag","Go","Gd"],c:0},{q:"How many bits are in a byte?",a:["8","4","16","32"],c:0},{q:"What does CSS stand for?",a:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Coded Style Sheets"],c:0},{q:"What is the speed of light (approx km/s)?",a:["300,000","150,000","500,000","1,000,000"],c:0},{q:"Which data structure uses FIFO?",a:["Queue","Stack","Tree","Graph"],c:0},{q:"What is the square root of 144?",a:["12","14","10","16"],c:0},{q:"Who painted the Mona Lisa?",a:["Da Vinci","Picasso","Van Gogh","Monet"],c:0},{q:"What gas do plants absorb?",a:["CO2","O2","N2","H2"],c:0},{q:"Which protocol is used for secure browsing?",a:["HTTPS","FTP","SMTP","SSH"],c:0},{q:"What is 2^10?",a:["1024","512","2048","4096"],c:0}];`,
-    `const PER_Q=${perQ};let cur,score,pool,tmr,tl;`,
+  const js = [jsCore('quiz_best'), jsSfx(), jsParticles(p.pr, p.ac),
+    `const QS=[{q:"What does HTML stand for?",a:["HyperText Markup Language","High Tech Modern Language","Home Tool Markup Language","Hyper Transfer Markup Language"],c:0},{q:"Which planet is closest to the Sun?",a:["Mercury","Venus","Mars","Earth"],c:0},{q:"What is the largest ocean on Earth?",a:["Pacific","Atlantic","Indian","Arctic"],c:0},{q:"In JavaScript, which keyword declares a constant?",a:["const","let","var","static"],c:0},{q:"What year did the World Wide Web go public?",a:["1991","1989","1995","2000"],c:0},{q:"What is the chemical symbol for gold?",a:["Au","Ag","Go","Gd"],c:0},{q:"How many bits are in a byte?",a:["8","4","16","32"],c:0},{q:"What does CSS stand for?",a:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Coded Style Sheets"],c:0},{q:"What is the speed of light (approx km/s)?",a:["300,000","150,000","500,000","1,000,000"],c:0},{q:"Which data structure uses FIFO?",a:["Queue","Stack","Tree","Graph"],c:0},{q:"What is the square root of 144?",a:["12","14","10","16"],c:0},{q:"Who painted the Mona Lisa?",a:["Da Vinci","Picasso","Van Gogh","Monet"],c:0},{q:"What gas do plants absorb?",a:["CO2","O2","N2","H2"],c:0},{q:"Which protocol is used for secure browsing?",a:["HTTPS","FTP","SMTP","SSH"],c:0},{q:"What is 2^10?",a:["1024","512","2048","4096"],c:0},{q:"What is the binary representation of 10?",a:["1010","1100","1001","0110"],c:0},{q:"Which HTTP status code means Not Found?",a:["404","500","403","301"],c:0},{q:"What is the capital of Japan?",a:["Tokyo","Osaka","Kyoto","Nagoya"],c:0},{q:"How many continents are there?",a:["7","6","5","8"],c:0},{q:"What does API stand for?",a:["Application Programming Interface","Advanced Program Integration","Application Process Interface","Automated Programming Interface"],c:0}];`,
+    `const PER_Q=${perQ};let cur,score,pool,tmr,tl,streak=0;`,
     `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
-    `function go(){pool=shuf([...QS]).slice(0,10);cur=0;score=0;$('dots').innerHTML=pool.map((_,i)=>'<div class="dot" id="d'+i+'"></div>').join('');show('play');next()}`,
-    `function next(){if(cur>=pool.length)return end();$('d'+cur).classList.add('now');const q=pool[cur],mx=q.a.map((t,i)=>({t,ok:i===q.c}));shuf(mx);$('qtext').textContent=q.q;const ch=$('choices');ch.innerHTML='';mx.forEach(m=>{const d=document.createElement('div');d.textContent=m.t;d.onclick=()=>pick(d,m.ok,ch);ch.appendChild(d)});tl=PER_Q;$('timer').textContent=tl;clearInterval(tmr);tmr=setInterval(()=>{tl--;$('timer').textContent=Math.max(0,tl);if(tl<=0){clearInterval(tmr);timeout()}},1000)}`,
-    `function pick(el,ok,ch){clearInterval(tmr);ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c===el)c.classList.add(ok?'ok':'no');else if(!ok){const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('ok')}});$('d'+cur).classList.remove('now');$('d'+cur).classList.add(ok?'pass':'fail');if(ok)score++;cur++;setTimeout(next,800)}`,
-    `function timeout(){const ch=$('choices');ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c.textContent===pool[cur].a[pool[cur].c])c.classList.add('ok')});$('d'+cur).classList.remove('now');$('d'+cur).classList.add('fail');cur++;setTimeout(next,800)}`,
-    `function end(){clearInterval(tmr);const nb=saveBest(score);$('last').textContent=score;$('fin').textContent=score+'/'+pool.length;const pc=Math.round(score/pool.length*100);const r=pc===100?'Perfect!':pc>=80?'Excellent!':pc>=60?'Good!':pc>=40?'Not bad!':'Study more!';$('msg').innerHTML=r+'<br>'+pc+'% correct'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function go(){pool=shuf([...QS]).slice(0,10);cur=0;score=0;streak=0;$('dots').innerHTML=pool.map((_,i)=>'<div class="dot" id="d'+i+'"></div>').join('');show('play');next()}`,
+    `function next(){if(cur>=pool.length)return end();$('d'+cur).classList.add('now');const q=pool[cur],mx=q.a.map((t,i)=>({t,ok:i===q.c}));shuf(mx);$('qtext').textContent=q.q;const ch=$('choices');ch.innerHTML='';mx.forEach(m=>{const d=document.createElement('div');d.textContent=m.t;d.onclick=()=>pick(d,m.ok,ch);ch.appendChild(d)});tl=PER_Q;$('timer').textContent=tl;clearInterval(tmr);tmr=setInterval(()=>{tl--;$('timer').textContent=Math.max(0,tl);if(tl<=3&&tl>0)sfxTick();if(tl<=0){clearInterval(tmr);timeout()}},1000)}`,
+    `function pick(el,ok,ch){clearInterval(tmr);ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c===el)c.classList.add(ok?'ok':'no');else if(!ok){const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('ok')}});$('d'+cur).classList.remove('now');$('d'+cur).classList.add(ok?'pass':'fail');if(ok){score++;streak++;sfxScore();burstAt(el,streak>=3?20:8)}else{streak=0;sfxFail();shakeEl($('qtext'))}cur++;setTimeout(next,800)}`,
+    `function timeout(){sfxFail();const ch=$('choices');ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c.textContent===pool[cur].a[pool[cur].c])c.classList.add('ok')});$('d'+cur).classList.remove('now');$('d'+cur).classList.add('fail');streak=0;cur++;setTimeout(next,800)}`,
+    `function end(){clearInterval(tmr);const nb=saveBest(score);$('last').textContent=score;$('fin').textContent=score+'/'+pool.length;if(nb&&score>0){sfxWin();burstAt($('fin'),30)}const pc=Math.round(score/pool.length*100);const r=pc===100?'Perfect!':pc>=80?'Excellent!':pc>=60?'Good!':pc>=40?'Not bad!':'Study more!';$('msg').innerHTML=r+'<br>'+pc+'% correct'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -1980,13 +2017,13 @@ function buildMemory(title, opts) {
 <div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
 <button class="btn" onclick="go()">Play Again</button></div>`;
 
-  const js = [jsCore('mem_best'),
+  const js = [jsCore('mem_best'), jsSfx(), jsParticles(p.pr, p.ac),
     `const EM=['🎮','🎯','🚀','💎','🔥','⚡','🌟','🎵','🎨','🏆','🍕','🌈','🦊','🐙','🎃','🍀','🎲','🌸'];`,
-    `const PAIRS=${pairs};let cards,flp,done,moves,tmr,t0;`,
+    `const PAIRS=${pairs};let cards,flp,done,moves,tmr,t0,cstrk=0;`,
     `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
-    `function go(){const pick=shuf([...EM]).slice(0,PAIRS);cards=shuf([...pick,...pick]);flp=[];done=0;moves=0;$('mv').textContent=0;$('pr').textContent='0/'+PAIRS;const g=$('grid');g.innerHTML='';cards.forEach((em,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<div class="inn"><div class="fr">?</div><div class="bk">'+em+'</div></div>';d.onclick=()=>flip(d,i);g.appendChild(d)});t0=Date.now();tmr=setInterval(()=>{$('tm').textContent=Math.floor((Date.now()-t0)/1000)+'s'},200);show('play')}`,
-    `function flip(el,i){if(flp.length>=2||el.classList.contains('flip')||el.classList.contains('done'))return;el.classList.add('flip');flp.push({el,i,v:cards[i]});if(flp.length===2){moves++;$('mv').textContent=moves;const[a,b]=flp;if(a.v===b.v){a.el.classList.add('done');b.el.classList.add('done');done++;$('pr').textContent=done+'/'+PAIRS;flp=[];if(done===PAIRS)end()}else{setTimeout(()=>{a.el.classList.remove('flip');b.el.classList.remove('flip');flp=[]},700)}}}`,
-    `function end(){clearInterval(tmr);const sec=Math.floor((Date.now()-t0)/1000);const nb=saveBest(moves);$('fin').textContent=moves;const r=moves<=PAIRS+2?'Perfect memory!':moves<=PAIRS*2?'Great!':moves<=PAIRS*3?'Good!':'Keep practicing!';$('msg').innerHTML=r+'<br>Completed in '+sec+'s'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function go(){const pick=shuf([...EM]).slice(0,PAIRS);cards=shuf([...pick,...pick]);flp=[];done=0;moves=0;cstrk=0;$('mv').textContent=0;$('pr').textContent='0/'+PAIRS;const g=$('grid');g.innerHTML='';cards.forEach((em,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<div class="inn"><div class="fr">?</div><div class="bk">'+em+'</div></div>';d.onclick=()=>flip(d,i);g.appendChild(d)});t0=Date.now();tmr=setInterval(()=>{$('tm').textContent=Math.floor((Date.now()-t0)/1000)+'s'},200);show('play')}`,
+    `function flip(el,i){if(flp.length>=2||el.classList.contains('flip')||el.classList.contains('done'))return;sfxTap();el.classList.add('flip');flp.push({el,i,v:cards[i]});if(flp.length===2){moves++;$('mv').textContent=moves;const[a,b]=flp;if(a.v===b.v){cstrk++;if(cstrk>=2)sfxCombo();else sfxScore();a.el.classList.add('done');b.el.classList.add('done');burstAt(a.el,cstrk>=2?16:8);burstAt(b.el,cstrk>=2?16:8);done++;$('pr').textContent=done+'/'+PAIRS;flp=[];if(done===PAIRS)end()}else{cstrk=0;sfxHit();setTimeout(()=>{a.el.classList.remove('flip');b.el.classList.remove('flip');flp=[]},700)}}}`,
+    `function end(){clearInterval(tmr);const sec=Math.floor((Date.now()-t0)/1000);const nb=saveBest(moves);if(nb)sfxWin();$('fin').textContent=moves;burstAt($('fin'),30);const r=moves<=PAIRS+2?'Perfect memory!':moves<=PAIRS*2?'Great!':moves<=PAIRS*3?'Good!':'Keep practicing!';$('msg').innerHTML=r+'<br>Completed in '+sec+'s'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -2021,16 +2058,17 @@ function buildSnake(title, opts) {
 <div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
 <button class="btn" onclick="go()">Play Again</button></div>`;
 
-  const js = [jsCore('snake_best'),
-    `const GS=${S},GW=${W},cv=$('cv'),ctx=cv.getContext('2d');`,
-    `let sn,dir,nd,food,sc,lp;$('hi').textContent=best;`,
+  const js = [jsCore('snake_best'), jsSfx(), jsParticles(p.pr, p.ac), jsCountdown(),
+    `const GS=${S},GW=${W},cv=$('cv'),ctx=cv.getContext('2d'),BASE_SPD=${spd};`,
+    `let sn,dir,nd,food,sc,lp,spd;$('hi').textContent=best;`,
     `function rnd(){let p;do{p={x:Math.floor(Math.random()*GW),y:Math.floor(Math.random()*GW)}}while(sn.some(s=>s.x===p.x&&s.y===p.y));return p}`,
-    `function go(){sn=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};food=rnd();sc=0;$('score').textContent=0;show('play');clearInterval(lp);lp=setInterval(tick,${spd})}`,
+    `function go(){show('play');countdown(startGame)}`,
+    `function startGame(){sn=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};food=rnd();sc=0;spd=BASE_SPD;$('score').textContent=0;clearInterval(lp);lp=setInterval(tick,spd)}`,
     `function sd(x,y){if(x===-dir.x&&y===-dir.y)return;nd={x,y}}`,
-    `function tick(){dir=nd;const h={x:sn[0].x+dir.x,y:sn[0].y+dir.y};if(h.x<0||h.x>=GW||h.y<0||h.y>=GW||sn.some(s=>s.x===h.x&&s.y===h.y))return end();sn.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;$('score').textContent=sc;food=rnd()}else sn.pop();draw()}`,
-    `function draw(){ctx.fillStyle='${p.sf}';ctx.fillRect(0,0,GW*GS,GW*GS);ctx.fillStyle='${p.ac}';ctx.beginPath();ctx.arc(food.x*GS+GS/2,food.y*GS+GS/2,GS/2-2,0,Math.PI*2);ctx.fill();sn.forEach((s,i)=>{const t=i/sn.length;ctx.fillStyle=i===0?'${p.pr}':'hsl('+(140+t*40)+',70%,'+(55-t*20)+'%)';ctx.beginPath();ctx.roundRect(s.x*GS+1,s.y*GS+1,GS-2,GS-2,4);ctx.fill()})}`,
-    `function end(){clearInterval(lp);const nb=saveBest(sc);$('hi').textContent=best;$('fin').textContent=sc;const r=sc>=30?'Legend!':sc>=20?'Amazing!':sc>=10?'Great!':sc>=5?'Good!':'Try again!';$('msg').innerHTML=r+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
-    `document.addEventListener('keydown',e=>{if(e.key==='ArrowUp')sd(0,-1);if(e.key==='ArrowDown')sd(0,1);if(e.key==='ArrowLeft')sd(-1,0);if(e.key==='ArrowRight')sd(1,0)});`,
+    `function tick(){dir=nd;const h={x:sn[0].x+dir.x,y:sn[0].y+dir.y};if(h.x<0||h.x>=GW||h.y<0||h.y>=GW||sn.some(s=>s.x===h.x&&s.y===h.y))return end();sn.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;sfxScore();$('score').textContent=sc;const rc=cv.getBoundingClientRect();emitParticles(rc.left+food.x*GS*(rc.width/(GW*GS))+GS/2,rc.top+food.y*GS*(rc.height/(GW*GS))+GS/2,10);food=rnd();if(sc%5===0&&spd>50){spd-=8;clearInterval(lp);lp=setInterval(tick,spd)}}else sn.pop();draw()}`,
+    `function draw(){ctx.fillStyle='${p.sf}';ctx.fillRect(0,0,GW*GS,GW*GS);for(let x=0;x<GW;x++)for(let y=0;y<GW;y++){ctx.fillStyle='rgba(255,255,255,.015)';if((x+y)%2===0)ctx.fillRect(x*GS,y*GS,GS,GS)}ctx.fillStyle='${p.ac}';ctx.beginPath();ctx.arc(food.x*GS+GS/2,food.y*GS+GS/2,GS/2-2+Math.sin(Date.now()/200)*2,0,Math.PI*2);ctx.fill();ctx.shadowColor='${p.ac}';ctx.shadowBlur=8;ctx.fill();ctx.shadowBlur=0;sn.forEach((s,i)=>{const t=i/sn.length;ctx.fillStyle=i===0?'${p.pr}':'hsl('+(140+t*40)+',70%,'+(55-t*20)+'%)';ctx.beginPath();ctx.roundRect(s.x*GS+1,s.y*GS+1,GS-2,GS-2,4);ctx.fill();if(i===0){ctx.fillStyle='${p.bg}';const ex=dir.x===1?GS-6:dir.x===-1?4:dir.y===0?GS/2:dir.y===1?GS-6:4;const ey=dir.y===1?GS-6:dir.y===-1?4:dir.x===0?GS/2:dir.x===1?GS/2-2:GS/2-2;ctx.beginPath();ctx.arc(s.x*GS+ex,s.y*GS+ey,2,0,Math.PI*2);ctx.fill()}})}`,
+    `function end(){clearInterval(lp);sfxFail();const nb=saveBest(sc);$('hi').textContent=best;$('fin').textContent=sc;if(nb&&sc>0){sfxWin();burstAt($('fin'),30)}const r=sc>=30?'Legend!':sc>=20?'Amazing!':sc>=10?'Great!':sc>=5?'Good!':'Try again!';$('msg').innerHTML=r+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `document.addEventListener('keydown',e=>{if(e.key==='ArrowUp'){e.preventDefault();sd(0,-1)}if(e.key==='ArrowDown'){e.preventDefault();sd(0,1)}if(e.key==='ArrowLeft')sd(-1,0);if(e.key==='ArrowRight')sd(1,0)});`,
     `let tx,ty;cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});cv.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)>Math.abs(dy))sd(dx>0?1:-1,0);else sd(0,dy>0?1:-1)},{passive:true});`,
   ].join('\n');
 
@@ -2069,13 +2107,13 @@ function buildReaction(title, opts) {
 <div class="times" id="ftimes"></div>
 <button class="btn" style="margin-top:1rem" onclick="go()">Try Again</button></div>`;
 
-  const js = [jsCore('react_best'),
+  const js = [jsCore('react_best'), jsSfx(), jsParticles(p.pr, p.ac),
     `if(best)$('best').textContent=best+'ms';`,
     `const RDS=${rounds};let rd,res,phase,gAt,tmr;`,
     `function go(){rd=0;res=[];$('times').innerHTML='';show('play');nr()}`,
-    `function nr(){if(rd>=RDS)return end();$('rnd').textContent=(rd+1)+'/'+RDS;const z=$('zone');z.className='zone ready';$('ztxt').textContent='Wait for green...';phase='wait';clearTimeout(tmr);tmr=setTimeout(()=>{z.className='zone go';$('ztxt').textContent='TAP NOW!';gAt=Date.now();phase='go'},1500+Math.random()*3000)}`,
-    `function tap(){if(phase==='wait'){clearTimeout(tmr);$('zone').className='zone early';$('ztxt').textContent='Too early! Tap to retry';phase='early'}else if(phase==='early'){nr()}else if(phase==='go'){const ms=Date.now()-gAt;res.push(ms);const t=document.createElement('span');t.textContent=ms+'ms';$('times').appendChild(t);$('avg').textContent=Math.round(res.reduce((a,b)=>a+b,0)/res.length)+'ms';rd++;phase='done';setTimeout(nr,600)}}`,
-    `function end(){const avg=Math.round(res.reduce((a,b)=>a+b,0)/res.length);const nb=saveBest(avg);if(nb)$('best').textContent=avg+'ms';$('fin').textContent=avg;$('ftimes').innerHTML=res.map((r,i)=>'<span>R'+(i+1)+': '+r+'ms</span>').join('');const r=avg<=200?'Superhuman!':avg<=250?'Lightning!':avg<=300?'Fast!':avg<=400?'Average':'Keep practicing!';$('msg').innerHTML='<span style="font-size:1.2rem">'+r+'</span>'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function nr(){if(rd>=RDS)return end();$('rnd').textContent=(rd+1)+'/'+RDS;const z=$('zone');z.className='zone ready';$('ztxt').textContent='Wait for green...';phase='wait';clearTimeout(tmr);tmr=setTimeout(()=>{z.className='zone go';$('ztxt').textContent='TAP NOW!';sfxTick();gAt=Date.now();phase='go'},1500+Math.random()*3000)}`,
+    `function tap(){if(phase==='wait'){clearTimeout(tmr);sfxFail();shakeEl($('zone'));$('zone').className='zone early';$('ztxt').textContent='Too early! Tap to retry';phase='early'}else if(phase==='early'){nr()}else if(phase==='go'){const ms=Date.now()-gAt;res.push(ms);sfxScore();burstAt($('zone'),ms<=250?20:8);const t=document.createElement('span');t.textContent=ms+'ms';if(ms<=200)t.style.color='${p.ac}';$('times').appendChild(t);$('avg').textContent=Math.round(res.reduce((a,b)=>a+b,0)/res.length)+'ms';rd++;phase='done';setTimeout(nr,600)}}`,
+    `function end(){const avg=Math.round(res.reduce((a,b)=>a+b,0)/res.length);const nb=saveBest(avg);if(nb){$('best').textContent=avg+'ms';sfxWin();burstAt($('fin'),30)}$('fin').textContent=avg;$('ftimes').innerHTML=res.map((r,i)=>'<span>R'+(i+1)+': '+r+'ms</span>').join('');const r=avg<=200?'Superhuman!':avg<=250?'Lightning!':avg<=300?'Fast!':avg<=400?'Average':'Keep practicing!';$('msg').innerHTML='<span style="font-size:1.2rem">'+r+'</span>'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -2112,15 +2150,15 @@ function buildTyping(title, opts) {
 <div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
 <button class="btn" onclick="go()">Play Again</button></div>`;
 
-  const js = [jsCore('type_best'),
+  const js = [jsCore('type_best'), jsSfx(), jsParticles(p.pr, p.ac), jsCountdown(),
     `const WDS=["the","be","to","and","in","that","have","for","not","with","you","this","but","from","they","say","she","or","will","my","one","all","would","there","what","so","up","out","if","about","who","get","which","go","when","make","can","like","time","just","know","take","people","into","year","good","some","could","them","see","other","than","then","now","look","only","come","its","over","think","also","back","after","use","two","how","work","first","well","even","new","want","give","most","find","here","thing","code","fast","type","game","play","next","open","read","test","data","file","line","word","text","long","name","part","best","help","made","move","hand","high","keep","last","same","tell","set","each","much","turn","real","show","full","form","left","start","might","run","need","home","life","old","big","end","point","still","call","live","away","right","hard","plan","team","late","mind","wait","stop","must","land","close","draw","press","mark","step","pick","rock","blue","deep","dark","hold","four","week","room","free","fall","base","rest","less","note","hear"];`,
-    `const DUR=${dur*1000};let pool,ci,pos,done,t0,tmr;`,
+    `const DUR=${dur*1000};let pool,ci,pos,done,t0,tmr,tried=0,streak=0;`,
     `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
-    `function go(){pool=shuf([...WDS]);ci=0;pos=0;done=0;t0=Date.now();$('wc').textContent=0;$('wpm').textContent=0;$('inp').value='';show('play');$('inp').focus();render();tmr=setInterval(tick,100)}`,
+    `function go(){show('play');countdown(()=>{pool=shuf([...WDS]);ci=0;pos=0;done=0;tried=0;streak=0;t0=Date.now();$('wc').textContent=0;$('wpm').textContent=0;$('inp').value='';$('inp').focus();render();tmr=setInterval(tick,100)})}`,
     `function render(){const w=pool[ci%pool.length];const v=$('inp').value;$('disp').innerHTML=w.split('').map((c,i)=>{let cl=i<pos?(v[i]===c?'y':'n'):'';if(i===pos)cl+=' cur';return'<span class="c '+cl+'">'+c+'</span>'}).join('');$('queue').innerHTML='';for(let i=1;i<=5;i++)$('queue').innerHTML+='<span>'+pool[(ci+i)%pool.length]+'</span>'}`,
-    `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('timer').textContent=Math.max(0,Math.ceil((DUR-e)/1000));if(e>=DUR)end()}`,
-    `$('inp').addEventListener('input',function(){if(Date.now()-t0>DUR)return;const w=pool[ci%pool.length],v=this.value;pos=v.length;if(v.endsWith(' ')||v.length>=w.length){if(v.trim()===w){done++;$('wc').textContent=done;$('wpm').textContent=Math.round(done/((Date.now()-t0)/60000))}ci++;pos=0;this.value=''}render()});`,
-    `function end(){clearInterval(tmr);$('inp').blur();const wpm=Math.round(done/(DUR/60000));const nb=saveBest(wpm);$('fin').textContent=wpm;const r=wpm>=80?'Blazing!':wpm>=60?'Excellent!':wpm>=40?'Good!':wpm>=20?'Decent!':'Keep practicing!';$('msg').innerHTML=r+'<br>'+done+' words in ${dur}s'+(nb&&wpm>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('timer').textContent=Math.max(0,Math.ceil((DUR-e)/1000));$('wpm').textContent=Math.round(done/Math.max(.01,(e/60000)));if(e>=DUR)end()}`,
+    `$('inp').addEventListener('input',function(){if(!t0||Date.now()-t0>DUR)return;const w=pool[ci%pool.length],v=this.value;pos=v.length;if(v.endsWith(' ')||v.length>=w.length){tried++;if(v.trim()===w){done++;streak++;sfxScore();if(streak>=3){sfxCombo();burstAt($('disp'),12)}$('wc').textContent=done}else{streak=0;sfxHit();shakeEl($('disp'))}ci++;pos=0;this.value=''}render()});`,
+    `function end(){clearInterval(tmr);$('inp').blur();const wpm=Math.round(done/(DUR/60000));const acc=tried>0?Math.round(done/tried*100):0;const nb=saveBest(wpm);if(nb&&wpm>0){sfxWin();burstAt($('fin'),30)}else sfxFail();$('fin').textContent=wpm;const r=wpm>=80?'Blazing!':wpm>=60?'Excellent!':wpm>=40?'Good!':wpm>=20?'Decent!':'Keep practicing!';$('msg').innerHTML=r+'<br>'+done+' words in ${dur}s — '+acc+'% accuracy'+(nb&&wpm>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -2149,19 +2187,153 @@ function buildBreakout(title, opts) {
 <button class="btn" onclick="go()">Play Again</button></div>`;
 
   const brickColors = `['${p.pr}','${p.sc}','#A78BFA','${p.ac}','#EC4899']`;
-  const js = [jsCore('brk_best'),
+  const js = [jsCore('brk_best'), jsSfx(), jsParticles(p.pr, p.ac),
     `const cv=$('cv'),ctx=cv.getContext('2d'),CW=360,CH=480,COLS=${COLS},ROWS=${ROWS},BW=CW/COLS-4,BH=18,PW=70,PH=12,BR=6;`,
     `const BC=${brickColors};`,
-    `let px,ball,dx,dy,bricks,sc,lives,raf;`,
+    `let px,ball,dx,dy,bricks,sc,lives,raf,cmb=0;`,
     `function mkBricks(){bricks=[];for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)bricks.push({x:c*(BW+4)+2,y:r*(BH+4)+40,w:BW,h:BH,color:BC[r%BC.length],alive:true})}`,
-    `function go(){px=CW/2;ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5;sc=0;lives=3;mkBricks();$('score').textContent=0;$('lives').textContent=3;show('play');cancelAnimationFrame(raf);tick()}`,
+    `function go(){px=CW/2;ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5;sc=0;lives=3;cmb=0;mkBricks();$('score').textContent=0;$('lives').textContent=3;show('play');cancelAnimationFrame(raf);tick()}`,
     `function tick(){update();draw();if(lives>0&&bricks.some(b=>b.alive))raf=requestAnimationFrame(tick);else end()}`,
-    `function update(){ball.x+=dx;ball.y+=dy;if(ball.x<=BR||ball.x>=CW-BR)dx=-dx;if(ball.y<=BR)dy=-dy;if(ball.y>=CH-PH-BR-8&&ball.y<=CH-8&&ball.x>=px-PW/2&&ball.x<=px+PW/2){dy=-Math.abs(dy);dx+=((ball.x-px)/(PW/2))*2}if(ball.y>CH){lives--;$('lives').textContent=lives;if(lives>0){ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5}}for(const b of bricks){if(!b.alive)continue;if(ball.x+BR>b.x&&ball.x-BR<b.x+b.w&&ball.y+BR>b.y&&ball.y-BR<b.y+b.h){b.alive=false;dy=-dy;sc+=10;$('score').textContent=sc}}}`,
-    `function draw(){ctx.clearRect(0,0,CW,CH);for(const b of bricks){if(!b.alive)continue;ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,4);ctx.fill()}ctx.fillStyle='${p.pr}';ctx.beginPath();ctx.roundRect(px-PW/2,CH-PH-8,PW,PH,6);ctx.fill();ctx.fillStyle='${p.ac}';ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,Math.PI*2);ctx.fill()}`,
-    `function end(){cancelAnimationFrame(raf);const won=!bricks.some(b=>b.alive);const nb=saveBest(sc);$('fin').textContent=sc;$('msg').innerHTML=(won?'You cleared it!':'Game Over')+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `function update(){ball.x+=dx;ball.y+=dy;if(ball.x<=BR||ball.x>=CW-BR)dx=-dx;if(ball.y<=BR)dy=-dy;if(ball.y>=CH-PH-BR-8&&ball.y<=CH-8&&ball.x>=px-PW/2&&ball.x<=px+PW/2){dy=-Math.abs(dy);dx+=((ball.x-px)/(PW/2))*2;sfxTap();cmb=0}if(ball.y>CH){lives--;sfxFail();$('lives').textContent=lives;cmb=0;if(lives>0){ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5}}let hitAny=false;for(const b of bricks){if(!b.alive)continue;if(ball.x+BR>b.x&&ball.x-BR<b.x+b.w&&ball.y+BR>b.y&&ball.y-BR<b.y+b.h){b.alive=false;dy=-dy;cmb++;const pts=10*(cmb>=5?3:cmb>=3?2:1);sc+=pts;hitAny=true;sfxHit();const rc=cv.getBoundingClientRect();emitParticles(rc.left+b.x*(rc.width/CW)+BW/2,rc.top+b.y*(rc.height/CH)+BH/2,cmb>=3?12:6,b.color);$('score').textContent=sc;if(cmb>=5){const sp=Math.sqrt(dx*dx+dy*dy);if(sp<7){dx*=1.05;dy*=1.05}}}}}`,
+    `function draw(){ctx.clearRect(0,0,CW,CH);for(const b of bricks){if(!b.alive)continue;ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,4);ctx.fill();ctx.fillStyle='rgba(255,255,255,.15)';ctx.fillRect(b.x+2,b.y+2,b.w-4,BH/3)}ctx.fillStyle='${p.pr}';ctx.shadowColor='${p.pr}';ctx.shadowBlur=10;ctx.beginPath();ctx.roundRect(px-PW/2,CH-PH-8,PW,PH,6);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='${p.ac}';ctx.shadowColor='${p.ac}';ctx.shadowBlur=6;ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}`,
+    `function end(){cancelAnimationFrame(raf);const won=!bricks.some(b=>b.alive);const nb=saveBest(sc);if(won||nb)sfxWin();$('fin').textContent=sc;if(nb&&sc>0)burstAt($('fin'),30);$('msg').innerHTML=(won?'You cleared it!':'Game Over')+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
     `cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.clientX-r.left)*(CW/r.width)))});`,
     `cv.addEventListener('touchmove',e=>{e.preventDefault();const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.touches[0].clientX-r.left)*(CW/r.width)))},{passive:false});`,
     `document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')px=Math.max(PW/2,px-20);if(e.key==='ArrowRight')px=Math.min(CW-PW/2,px+20)});`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Dodge Game Builder ──
+
+function buildDodge(title, opts) {
+  const p = GAME_PALETTES.dodge;
+  const spd = opts.difficulty === 'hard' ? 1.4 : opts.difficulty === 'easy' ? 0.7 : 1.0;
+
+  const css = [cssVars(p), cssBase(p),
+    `canvas{border-radius:12px;background:${p.sf};display:block;margin:1rem auto;touch-action:none}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Move to dodge the falling obstacles!</p>
+<div class="st"><span>Best<b id="best">0</b></span></div>
+<button class="btn" onclick="go()">Play</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Score<b id="score">0</b></span><span>Best<b id="hi">0</b></span></div>
+<canvas id="cv" width="360" height="520"></canvas></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const js = [jsCore('dodge_best'), jsSfx(), jsParticles(p.pr, p.ac), jsCountdown(),
+    `const cv=$('cv'),ctx=cv.getContext('2d'),CW=360,CH=520,PW=30,PH=30,SPD_MUL=${spd};`,
+    `let px,py,obs,sc,raf,t0,spd,spawnT,alive;$('hi').textContent=best;`,
+    `function go(){show('play');countdown(startGame)}`,
+    `function startGame(){px=CW/2;py=CH-60;obs=[];sc=0;spd=2*SPD_MUL;spawnT=0;alive=true;t0=Date.now();$('score').textContent=0;cancelAnimationFrame(raf);tick()}`,
+    `function tick(){if(!alive)return;update();draw();raf=requestAnimationFrame(tick)}`,
+    `function update(){spawnT++;const diff=Math.min(30,Math.floor((Date.now()-t0)/5000));if(spawnT%(Math.max(8,30-diff*2))===0){const w=20+Math.random()*30;obs.push({x:Math.random()*(CW-w),y:-30,w,h:20+Math.random()*10,s:spd+Math.random()*2+diff*0.3,c:['${p.pr}','${p.sc}','#FF4757','#FF6B81','#FFA502'][Math.floor(Math.random()*5)]})}obs.forEach(o=>o.y+=o.s);obs=obs.filter(o=>{if(o.y>CH){sc++;$('score').textContent=sc;if(sc%10===0)sfxScore();return false}return true});for(const o of obs){if(px+PW/2>o.x&&px-PW/2<o.x+o.w&&py+PH/2>o.y&&py-PH/2<o.y+o.h){alive=false;sfxFail();const rc=cv.getBoundingClientRect();emitParticles(rc.left+px*(rc.width/CW),rc.top+py*(rc.height/CH),25);end();return}}spd=2*SPD_MUL+Math.floor((Date.now()-t0)/10000)*0.5}`,
+    `function draw(){ctx.fillStyle='${p.sf}';ctx.fillRect(0,0,CW,CH);for(let i=0;i<CW;i+=40)for(let j=0;j<CH;j+=40){ctx.fillStyle='rgba(255,255,255,.01)';if((Math.floor(i/40)+Math.floor(j/40))%2===0)ctx.fillRect(i,j,40,40)}obs.forEach(o=>{ctx.fillStyle=o.c;ctx.beginPath();ctx.roundRect(o.x,o.y,o.w,o.h,4);ctx.fill()});ctx.fillStyle='${p.ac}';ctx.shadowColor='${p.ac}';ctx.shadowBlur=12;ctx.beginPath();ctx.arc(px,py,PW/2,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='${p.bg}';ctx.beginPath();ctx.arc(px-5,py-4,3,0,Math.PI*2);ctx.arc(px+5,py-4,3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='${p.bg}';ctx.lineWidth=2;ctx.beginPath();ctx.arc(px,py+2,6,0,Math.PI);ctx.stroke()}`,
+    `function end(){cancelAnimationFrame(raf);const nb=saveBest(sc);$('hi').textContent=best;$('fin').textContent=sc;if(nb&&sc>0){sfxWin();burstAt($('fin'),30)}const r=sc>=100?'Untouchable!':sc>=60?'Amazing!':sc>=30?'Great!':sc>=15?'Good!':'Keep dodging!';$('msg').innerHTML=r+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `let keys={};document.addEventListener('keydown',e=>{keys[e.key]=true;e.preventDefault()});document.addEventListener('keyup',e=>keys[e.key]=false);`,
+    `setInterval(()=>{if(!alive)return;const s=5;if(keys.ArrowLeft||keys.a)px=Math.max(PW/2,px-s);if(keys.ArrowRight||keys.d)px=Math.min(CW-PW/2,px+s);if(keys.ArrowUp||keys.w)py=Math.max(PH/2,py-s);if(keys.ArrowDown||keys.s)py=Math.min(CH-PH/2,py+s)},16);`,
+    `let dragging=false;cv.addEventListener('touchstart',e=>{dragging=true;const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.touches[0].clientX-r.left)*(CW/r.width)));py=Math.max(PH/2,Math.min(CH-PH/2,(e.touches[0].clientY-r.top)*(CH/r.height)))},{passive:true});`,
+    `cv.addEventListener('touchmove',e=>{e.preventDefault();if(!dragging)return;const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.touches[0].clientX-r.left)*(CW/r.width)));py=Math.max(PH/2,Math.min(CH-PH/2,(e.touches[0].clientY-r.top)*(CH/r.height)))},{passive:false});`,
+    `cv.addEventListener('touchend',()=>dragging=false,{passive:true});`,
+    `cv.addEventListener('mousemove',e=>{if(!alive)return;const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.clientX-r.left)*(CW/r.width)));py=Math.max(PH/2,Math.min(CH-PH/2,(e.clientY-r.top)*(CH/r.height)))});`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Color Match Game Builder ──
+
+function buildColor(title, opts) {
+  const p = GAME_PALETTES.color;
+  const dur = opts.duration || 30;
+  const COLORS = [
+    {name:'Red',hex:'#FF4757'},{name:'Blue',hex:'#3742FA'},{name:'Green',hex:'#2ED573'},
+    {name:'Yellow',hex:'#FFA502'},{name:'Purple',hex:'#8854D0'},{name:'Orange',hex:'#FF6348'},
+    {name:'Pink',hex:'#FF6B81'},{name:'Cyan',hex:'#18DCFF'},
+  ];
+
+  const css = [cssVars(p), cssBase(p), cssTimerBar(p),
+    `.clr-name{font-size:2.8rem;font-weight:900;margin:1.5rem 0;letter-spacing:.05em;transition:transform .1s}`,
+    `.opts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:1rem 0}`,
+    `.opts div{padding:1.2rem;border-radius:14px;cursor:pointer;font-size:1.1rem;font-weight:700;text-align:center;transition:transform .1s,box-shadow .2s;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4)}`,
+    `.opts div:active{transform:scale(.93)}`,
+    `.strk{font-size:.95rem;color:${p.ac};min-height:1.5em;font-weight:700}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Tap the color shown, not the word! ${dur}s</p>
+<div class="st"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
+<button class="btn" onclick="go()">Start</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Score<b id="sc">0</b></span><span>Time<b id="timer">${dur}</b></span><span>Streak<b id="strk">0</b></span></div>
+<div class="bar"><div class="fl" id="bar" style="width:100%"></div></div>
+<div class="clr-name" id="word">-</div>
+<div class="strk" id="stxt"></div>
+<div class="opts" id="opts"></div></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const colorsJS = JSON.stringify(COLORS);
+  const js = [jsCore('color_best'), jsSfx(), jsParticles(p.pr, p.ac), jsCountdown(),
+    `const CS=${colorsJS};`,
+    `const DUR=${dur*1000};let sc,t0,tmr,streak,correct;`,
+    `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
+    `function go(){show('play');countdown(startGame)}`,
+    `function startGame(){sc=0;streak=0;t0=Date.now();$('sc').textContent=0;$('strk').textContent=0;$('stxt').textContent='';tmr=setInterval(tick,100);nextRound()}`,
+    `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('timer').textContent=Math.max(0,Math.ceil((DUR-e)/1000));if(e>=DUR)end()}`,
+    `function nextRound(){const pool=shuf([...CS]);const ans=pool[0];const fakeText=pool[1+Math.floor(Math.random()*(pool.length-1))];correct=ans.name;$('word').textContent=fakeText.name;$('word').style.color=ans.hex;const choices=shuf([ans,...shuf(pool.filter(c=>c.name!==ans.name)).slice(0,3)]);const o=$('opts');o.innerHTML='';choices.forEach(c=>{const d=document.createElement('div');d.textContent=c.name;d.style.background=c.hex;d.onclick=()=>pick(c.name===correct,d);o.appendChild(d)})}`,
+    `function pick(ok,el){if(Date.now()-t0>DUR)return;$('opts').querySelectorAll('div').forEach(d=>d.onclick=null);if(ok){sc++;streak++;sfxScore();$('sc').textContent=sc;$('strk').textContent=streak;burstAt(el,streak>=5?20:8);if(streak>=3){sfxCombo();$('stxt').textContent=streak>=10?'ON FIRE!':streak>=5?'AMAZING!':'STREAK!'}}else{streak=0;sfxFail();shakeEl($('word'));$('strk').textContent=0;$('stxt').textContent=''}setTimeout(nextRound,ok?300:600)}`,
+    `function end(){clearInterval(tmr);const nb=saveBest(sc);$('last').textContent=sc;$('fin').textContent=sc;if(nb&&sc>0){sfxWin();burstAt($('fin'),30)}const r=sc>=50?'Color Master!':sc>=35?'Amazing!':sc>=20?'Great!':sc>=10?'Good!':'Keep trying!';$('msg').innerHTML=r+'<br>'+sc+' in ${dur}s'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Pong Game Builder ──
+
+function buildPong(title, opts) {
+  const p = GAME_PALETTES.pong;
+  const winScore = opts.difficulty === 'hard' ? 11 : 7;
+
+  const css = [cssVars(p), cssBase(p),
+    `canvas{border-radius:12px;background:${p.bg};display:block;margin:1rem auto;touch-action:none;border:2px solid ${p.sf}}`,
+    `.vs{display:flex;justify-content:center;gap:3rem;font-size:2.5rem;font-weight:900;font-variant-numeric:tabular-nums;margin:.5rem 0}`,
+    `.vs span:first-child{color:${p.pr}}.vs span:last-child{color:${p.sc}}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">First to ${winScore} wins — you vs AI</p>
+<div class="st"><span>Wins<b id="best">0</b></span></div>
+<button class="btn" onclick="go()">Play</button></div>
+<div id="s-play" class="hd">
+<div class="vs"><span id="p1">0</span><span id="p2">0</span></div>
+<canvas id="cv" width="360" height="420"></canvas>
+<p style="color:${p.mt};font-size:.8rem;margin:.5rem">Move mouse/touch or arrow keys</p></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">WIN</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Rematch</button></div>`;
+
+  const js = [jsCore('pong_best'), jsSfx(), jsParticles(p.pr, p.ac),
+    `const cv=$('cv'),ctx=cv.getContext('2d'),CW=360,CH=420,PW=70,PH=10,BR=7,WIN=${winScore};`,
+    `let py,ay,bx,by,bdx,bdy,s1,s2,raf,aiSpd;`,
+    `function go(){py=CW/2;ay=CW/2;bx=CW/2;by=CH/2;bdx=3*(Math.random()>.5?1:-1);bdy=3*(Math.random()>.5?1:-1);s1=0;s2=0;aiSpd=3;$('p1').textContent=0;$('p2').textContent=0;show('play');cancelAnimationFrame(raf);tick()}`,
+    `function tick(){update();draw();if(s1<WIN&&s2<WIN)raf=requestAnimationFrame(tick);else end()}`,
+    `function update(){bx+=bdx;by+=bdy;if(bx<=BR||bx>=CW-BR)bdx=-bdx;if(by<=PH+BR+4&&bx>=ay-PW/2&&bx<=ay+PW/2){bdy=Math.abs(bdy);bdx+=((bx-ay)/(PW/2))*1.5;sfxTap();const rc=cv.getBoundingClientRect();emitParticles(rc.left+bx*(rc.width/CW),rc.top+by*(rc.height/CH),4,'${p.sc}')}if(by>=CH-PH-BR-4&&bx>=py-PW/2&&bx<=py+PW/2){bdy=-Math.abs(bdy);bdx+=((bx-py)/(PW/2))*1.5;sfxHit();const rc=cv.getBoundingClientRect();emitParticles(rc.left+bx*(rc.width/CW),rc.top+by*(rc.height/CH),4,'${p.pr}')}if(by<0){s2++;sfxScore();$('p1').textContent=s2;reset()}if(by>CH){s1++;sfxFail();$('p2').textContent=s1;reset()}const diff=bx-ay;ay+=Math.min(aiSpd,Math.abs(diff))*(diff>0?1:-1)*(0.7+Math.random()*0.3);ay=Math.max(PW/2,Math.min(CW-PW/2,ay));aiSpd=3+Math.max(s1,s2)*0.3}`,
+    `function reset(){bx=CW/2;by=CH/2;bdx=3*(Math.random()>.5?1:-1);bdy=3*(Math.random()>.5?1:-1)}`,
+    `function draw(){ctx.fillStyle='${p.bg}';ctx.fillRect(0,0,CW,CH);ctx.setLineDash([6,6]);ctx.strokeStyle='${p.sf}';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,CH/2);ctx.lineTo(CW,CH/2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='${p.sc}';ctx.shadowColor='${p.sc}';ctx.shadowBlur=8;ctx.beginPath();ctx.roundRect(ay-PW/2,4,PW,PH,4);ctx.fill();ctx.fillStyle='${p.pr}';ctx.shadowColor='${p.pr}';ctx.beginPath();ctx.roundRect(py-PW/2,CH-PH-4,PW,PH,4);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='${p.ac}';ctx.shadowColor='${p.ac}';ctx.shadowBlur=10;ctx.beginPath();ctx.arc(bx,by,BR,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}`,
+    `function end(){cancelAnimationFrame(raf);const won=s1<s2;if(won){sfxWin();saveBest(best+1);$('fin').textContent='YOU WIN!';$('fin').style.color='${p.ac}';burstAt($('fin'),30)}else{sfxFail();$('fin').textContent='AI WINS';$('fin').style.color='${p.pr}'}$('msg').innerHTML=s2+' - '+s1+(won?' — Great match!':' — Try again!');show('end')}`,
+    `cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();py=Math.max(PW/2,Math.min(CW-PW/2,(e.clientX-r.left)*(CW/r.width)))});`,
+    `cv.addEventListener('touchmove',e=>{e.preventDefault();const r=cv.getBoundingClientRect();py=Math.max(PW/2,Math.min(CW-PW/2,(e.touches[0].clientX-r.left)*(CW/r.width)))},{passive:false});`,
+    `document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')py=Math.max(PW/2,py-20);if(e.key==='ArrowRight')py=Math.min(CW-PW/2,py+20)});`,
   ].join('\n');
 
   return htmlWrap(title, css, html, js);
@@ -2172,6 +2344,7 @@ function buildBreakout(title, opts) {
 const GAME_BUILDERS = {
   tapping: buildTapping, quiz: buildQuiz, memory: buildMemory,
   snake: buildSnake, reaction: buildReaction, typing: buildTyping, breakout: buildBreakout,
+  dodge: buildDodge, color: buildColor, pong: buildPong,
 };
 
 function gameHTML(type, title, rawInstruction) {
