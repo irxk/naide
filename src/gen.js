@@ -1,5 +1,6 @@
 import { Lexer } from './lexer.js';
 import { Parser } from './parser.js';
+import { readFileSync as _readFS, writeFileSync as _writeFS, existsSync as _existsFS } from 'node:fs';
 
 // ── Vocabulary ──────────────────────────────────────────────
 
@@ -81,8 +82,12 @@ const COMPOSITE_WORDS = {
   todo:      ['todo', 'todos', 'to-do', 'タスク管理', 'todoアプリ', 'やることリスト', 'todo管理'],
   blog:      ['blog', 'ブログ', '記事管理', '投稿管理', 'ブログサイト', 'ブログアプリ'],
   chat:      ['chat', 'チャットアプリ', 'メッセンジャー', 'チャット機能', 'チャットルーム'],
-  shop:      ['shop', 'ecommerce', 'e-commerce', 'ショップ', 'ストア', '通販', 'ECサイト', 'EC', 'オンラインショップ'],
+  shop:      ['shop', 'ecommerce', 'e-commerce', 'ショップ', 'ストア', '通販', 'ECサイト', 'EC', 'オンラインショップ', '通販サイト'],
   board:     ['board', '掲示板', 'フォーラム', 'BBS', 'bbs'],
+  crm:       ['crm', 'CRM', '顧客管理', '顧客管理システム', 'カスタマー管理'],
+  inventory: ['inventory', '在庫管理', '倉庫管理', '在庫システム'],
+  booking:   ['booking', 'reservation', '予約システム', '予約管理', '予約アプリ', '予約サイト'],
+  sns:       ['sns', 'SNS', 'ソーシャル', 'social', 'social-media', 'ソーシャルメディア'],
 };
 
 const NOISE = new Set([
@@ -220,6 +225,47 @@ function defaultFields(schemaName) {
   ];
 }
 
+// ── Relationship Detection ─────────────────────────────────
+
+const PARENT_CHILD = {
+  User:     ['Post', 'Comment', 'Order', 'Message', 'Review', 'Task', 'Notification', 'File',
+             'Payment', 'Ticket', 'Note', 'Reservation', 'Activity', 'Log', 'Thread', 'Recipe'],
+  Category: ['Product', 'Post', 'Item'],
+  Product:  ['Order', 'Review', 'Inventory'],
+  Post:     ['Comment', 'Review'],
+  Project:  ['Task', 'Ticket'],
+  Team:     ['Employee', 'Staff', 'Project'],
+  Order:    ['Payment'],
+  Event:    ['Reservation'],
+};
+
+function detectRelationships(entities) {
+  const rels = [];
+  const names = entities.map(e => e.name);
+  for (let i = 0; i < names.length; i++) {
+    for (let j = 0; j < names.length; j++) {
+      if (i === j) continue;
+      const children = PARENT_CHILD[names[i]];
+      if (children && children.includes(names[j])) {
+        rels.push({ parent: names[i], child: names[j], fk: names[i].toLowerCase() + '_id' });
+      }
+    }
+  }
+  return rels;
+}
+
+function applyRelationships(entities, relationships) {
+  for (const rel of relationships) {
+    const child = entities.find(e => e.name === rel.child);
+    if (child && !child.fields.some(f => f.name === rel.fk)) {
+      const insertIdx = child.fields.findIndex(f => f.type !== 'auto' || f.name !== 'id');
+      const fkField = { name: rel.fk, type: 'int', modifiers: ['required'] };
+      if (insertIdx > 0) child.fields.splice(insertIdx, 0, fkField);
+      else child.fields.push(fkField);
+    }
+  }
+}
+
 // ── Utilities ───────────────────────────────────────────────
 
 function singularize(w) {
@@ -302,16 +348,20 @@ function classify(words, raw) {
     }
   }
 
-  // Composite detection
+  // Composite detection (match both lowercase and original for mixed JP/EN keywords)
   for (const [comp, kws] of Object.entries(COMPOSITE_WORDS)) {
-    if (kws.some(k => lower.includes(k))) {
+    if (kws.some(k => lower.includes(k.toLowerCase()) || raw.includes(k))) {
       matchStrength += 2;
       if (comp === 'fullstack') { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('database'); }
       if (comp === 'todo')      { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('database'); mods.preset = 'todo'; }
       if (comp === 'blog')      { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('database'); mods.preset = 'post'; }
       if (comp === 'chat')      { intents.add('server'); intents.add('schema'); intents.add('websocket'); intents.add('database'); mods.preset = 'message'; }
-      if (comp === 'shop')      { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('database'); mods.preset = 'product'; }
+      if (comp === 'shop')      { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('database'); mods.preset = 'product'; mods.multiEntity = ['User', 'Product', 'Order']; }
       if (comp === 'board')     { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('database'); mods.preset = 'post'; }
+      if (comp === 'crm')       { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('database'); mods.multiEntity = ['Customer', 'Contact', 'Note']; }
+      if (comp === 'inventory') { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('database'); mods.multiEntity = ['Product', 'Inventory']; }
+      if (comp === 'booking')   { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('database'); mods.multiEntity = ['User', 'Reservation']; }
+      if (comp === 'sns')       { intents.add('server'); intents.add('schema'); intents.add('crud'); intents.add('auth'); intents.add('websocket'); intents.add('database'); mods.multiEntity = ['User', 'Post', 'Comment']; }
     }
   }
 
@@ -331,6 +381,33 @@ function classify(words, raw) {
     const wl = w.toLowerCase();
     return !NOISE.has(wl) && !allKnown.has(wl) && !/^\d+$/.test(wl) && wl.length > 2 && /^[a-z]+s?$/i.test(wl);
   }) || Object.keys(JA_ENTITIES).some(ja => raw.includes(ja));
+
+  // Complex NL phrase detection
+  if (/(?:users?\s+can\s+(?:comment|post|review|write)|コメントできる|投稿できる|レビューできる)/i.test(raw)) {
+    intents.add('auth'); intents.add('crud');
+  }
+  if (/(?:admin.*(?:delete|manage|moderate|ban)|管理者.*(?:削除|管理|モデレート))/i.test(raw)) {
+    intents.add('auth');
+    mods.needsAdmin = true;
+  }
+  if (/(?:upload|file\s+upload|画像.*アップ|ファイル.*アップ)/i.test(raw)) {
+    intents.add('crud');
+  }
+  if (/(?:search|検索|フィルタ|filter|sort|ソート)/i.test(raw)) {
+    intents.add('crud');
+  }
+  if (/(?:notification|通知|push|プッシュ|alert|アラート)/i.test(raw) && !intents.has('mail')) {
+    intents.add('websocket');
+  }
+  if (/(?:deploy|デプロイ|docker|コンテナ|container)/i.test(raw)) {
+    mods.needsDocker = true;
+  }
+  if (/(?:pagina|ページネーション|ページ送り|一覧表示)/i.test(raw)) {
+    intents.add('crud');
+  }
+  if (/(?:seed|初期データ|サンプルデータ|テストデータ|ダミーデータ)/i.test(raw)) {
+    mods.needsSeed = true;
+  }
 
   // "for X" pattern implies schema + crud
   if (hasEntity && intents.has('server')) {
@@ -358,7 +435,8 @@ function classify(words, raw) {
 }
 
 function extractParams(words, raw, intents, mods) {
-  const params = { port: 3000, schemaName: null, fields: [], features: intents, platform: mods.platform || null, dbType: mods.dbType || null, commands: [] };
+  const params = { port: 3000, schemaName: null, fields: [], entities: [], relationships: [],
+    features: intents, platform: mods.platform || null, dbType: mods.dbType || null, commands: [] };
 
   // Extract port number
   for (let i = 0; i < words.length; i++) {
@@ -370,55 +448,98 @@ function extractParams(words, raw, intents, mods) {
     }
   }
 
-  // Extract entity name — Japanese first (longest match wins)
-  const jaEntries = Object.entries(JA_ENTITIES).sort((a, b) => b[0].length - a[0].length);
-  for (const [ja, en] of jaEntries) {
-    if (raw.includes(ja)) { params.schemaName = en; break; }
-  }
+  // ── Multi-entity extraction ──
+  const entityNames = [];
 
-  // Extract entity name — English (find nouns that aren't keywords)
-  if (!params.schemaName) {
-    const allKnown = new Set([...Object.values(INTENT_WORDS).flat(), ...Object.values(PLATFORM_WORDS).flat(),
-      ...Object.values(COMPOSITE_WORDS).flat()]);
-    for (const w of words) {
-      const wl = w.toLowerCase();
-      if (NOISE.has(wl) || allKnown.has(wl) || /^\d+$/.test(wl) || wl.length <= 2) continue;
-      params.schemaName = capitalize(singularize(wl));
-      break;
+  // Japanese entities (longest match first, collect ALL matches)
+  const jaEntries = Object.entries(JA_ENTITIES).sort((a, b) => b[0].length - a[0].length);
+  const jaUsed = new Set();
+  for (const [ja, en] of jaEntries) {
+    if (raw.includes(ja) && !jaUsed.has(en)) {
+      entityNames.push(en);
+      jaUsed.add(en);
     }
   }
 
-  // Preset override
-  if (mods.preset && !params.schemaName) {
-    params.schemaName = capitalize(mods.preset);
-  }
-
-  // Default schema name
-  if (!params.schemaName && intents.has('schema')) params.schemaName = 'Item';
-
-  // Extract fields from "with" clause
-  const lower = raw.toLowerCase();
-  const withIdx = lower.indexOf(' with ');
-  if (withIdx !== -1) {
-    const afterWith = lower.slice(withIdx + 6);
-    const stopWords = new Set(Object.values(INTENT_WORDS).flat());
-    const fieldNames = afterWith
-      .split(/[\s,、]+/)
-      .map(w => w.replace(/[^a-zA-Z0-9_\-]/g, ''))
-      .filter(w => w.length > 1 && !NOISE.has(w) && !stopWords.has(w) && !/^\d+$/.test(w));
-    if (fieldNames.length > 0) {
-      params.fields = [{ name: 'id', type: 'auto', modifiers: [] }];
-      for (const rawName of fieldNames) {
-        const name = normalizeField(rawName);
-        const type = inferType(name);
-        params.fields.push({ name, type, modifiers: inferModifiers(name, type) });
+  // English entities: extract nouns from the full instruction, splitting on "and" / ","
+  if (entityNames.length === 0) {
+    const allKnown = new Set([...Object.values(INTENT_WORDS).flat(), ...Object.values(PLATFORM_WORDS).flat(),
+      ...Object.values(COMPOSITE_WORDS).flat()]);
+    const lower = raw.toLowerCase();
+    const segments = lower.split(/\s+(?:and|&)\s+|,\s*/);
+    for (const seg of segments) {
+      const segWords = seg.trim().split(/\s+/).filter(w => w !== 'with');
+      for (const w of segWords) {
+        const wl = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!wl || NOISE.has(wl) || allKnown.has(wl) || /^\d+$/.test(wl) || wl.length <= 2) continue;
+        const name = capitalize(singularize(wl));
+        if (!entityNames.includes(name)) entityNames.push(name);
+        break;
       }
     }
   }
 
-  // Use preset fields if none extracted
-  if (params.fields.length === 0 && params.schemaName) {
-    params.fields = defaultFields(params.schemaName);
+  // Composite multi-entity presets (shop, crm, booking, sns, etc.)
+  if (mods.multiEntity && entityNames.length <= 1) {
+    for (const e of mods.multiEntity) {
+      if (!entityNames.includes(e)) entityNames.push(e);
+    }
+  }
+
+  // Preset override
+  if (mods.preset && entityNames.length === 0) {
+    entityNames.push(capitalize(mods.preset));
+  }
+
+  // Default
+  if (entityNames.length === 0 && intents.has('schema')) entityNames.push('Item');
+
+  // Primary entity (backward compat)
+  params.schemaName = entityNames[0] || null;
+
+  // Extract fields from "with" clause (applies to primary entity)
+  // Only treat words after "with" as fields if they look like field names (not entity names or intent keywords)
+  const lower = raw.toLowerCase();
+  let primaryFields = [];
+  const withIdx = lower.indexOf(' with ');
+  if (withIdx !== -1) {
+    const afterWith = lower.slice(withIdx + 6);
+    const primaryIntents = new Set(['server', 'api', 'rest', 'bot', 'cli', 'page', 'test', 'database',
+      'auth', 'crud', 'websocket', 'mail', 'graphql', 'sqlite', 'postgres']);
+    const entityLike = new Set(entityNames.map(e => e.toLowerCase()));
+    const entityLikePlural = new Set(entityNames.map(e => pluralize(e.toLowerCase())));
+    const candidateWords = afterWith
+      .split(/[\s,、]+/)
+      .map(w => w.replace(/[^a-zA-Z0-9_\-]/g, ''))
+      .filter(w => w.length > 1 && !NOISE.has(w) && !primaryIntents.has(w) && !/^\d+$/.test(w)
+        && !entityLike.has(w) && !entityLikePlural.has(w) && w !== 'and');
+    // Only use as fields if they look like actual field names (not entity names)
+    const knownFieldish = new Set([...Object.keys(FIELD_SYNONYMS), ...Object.keys(FIELD_TYPES).flatMap(k => FIELD_TYPES[k])]);
+    const hasFieldNames = candidateWords.some(w => knownFieldish.has(normalizeField(w)));
+    if (candidateWords.length > 0 && hasFieldNames) {
+      primaryFields = [{ name: 'id', type: 'auto', modifiers: [] }];
+      for (const rawName of candidateWords) {
+        const name = normalizeField(rawName);
+        const type = inferType(name);
+        primaryFields.push({ name, type, modifiers: inferModifiers(name, type) });
+      }
+    }
+  }
+
+  // Build entities array
+  for (let i = 0; i < entityNames.length; i++) {
+    const name = entityNames[i];
+    const fields = (i === 0 && primaryFields.length > 0) ? primaryFields : defaultFields(name);
+    params.entities.push({ name, fields });
+  }
+
+  // Backward compat: primary entity fields
+  params.fields = params.entities.length > 0 ? params.entities[0].fields : [];
+
+  // Detect relationships between entities
+  if (params.entities.length > 1) {
+    params.relationships = detectRelationships(params.entities);
+    applyRelationships(params.entities, params.relationships);
   }
 
   // Extract bot commands
@@ -483,6 +604,87 @@ function testBlock(name) {
   assert [1, 2, 3].length == 3`;
 }
 
+function entityTestBlock(entity) {
+  const name = entity.name;
+  const lower = name.toLowerCase();
+  const plural = pluralize(lower);
+  const store = name + 'Store';
+  const requiredFields = entity.fields.filter(f => f.modifiers.includes('required') && f.type !== 'auto');
+  const sampleObj = requiredFields.map(f => {
+    if (f.type === 'int') return `${f.name}: 1`;
+    if (f.type === 'bool') return `${f.name}: true`;
+    return `${f.name}: "test"`;
+  }).join(', ');
+
+  return `test "${lower} CRUD":
+  any created = ${store}.create({${sampleObj}})
+  assert created.id
+
+  any found = ${store}.find(created.id)
+  assert found.id == created.id
+
+  list all = ${store}.all()
+  assert all.length > 0
+
+  ${store}.remove(created.id)
+  any deleted = ${store}.find(created.id)
+  assert not deleted`;
+}
+
+function nestedRouteBlock(parent, child, fk) {
+  const parentLower = parent.toLowerCase();
+  const childLower = child.toLowerCase();
+  const childPlural = pluralize(childLower);
+  const childStore = child + 'Store';
+  return [
+    `get "/api/${pluralize(parentLower)}/:${fk.replace('_id', 'Id')}/${childPlural}" (req, res):`,
+    `  list items = ${childStore}.findAll("${fk}", req.params.${fk.replace('_id', 'Id')})`,
+    `  ret items`,
+  ];
+}
+
+function paginatedListBlock(entity) {
+  const lower = entity.name.toLowerCase();
+  const plural = pluralize(lower);
+  const store = entity.name + 'Store';
+  return [
+    `get "/api/${plural}" (req, res):`,
+    `  int page = req.query.page || 1`,
+    `  int limit = req.query.limit || 20`,
+    `  str search = req.query.search || ""`,
+    `  list all = ${store}.all()`,
+    `  if search:`,
+    `    all = all.filter((item) => JSON.stringify(item).includes(search))`,
+    `  int total = all.length`,
+    `  int start = (page - 1) * limit`,
+    `  list items = all.slice(start, start + limit)`,
+    `  ret {items, total, page, limit}`,
+  ];
+}
+
+function seedBlock(entities) {
+  const lines = ['fn seed():'];
+  for (const entity of entities) {
+    const store = entity.name + 'Store';
+    const seen = new Set();
+    const sampleFields = [];
+    for (const f of entity.fields) {
+      if (f.type === 'auto' || seen.has(f.name)) continue;
+      seen.add(f.name);
+      if (f.name === 'password') { sampleFields.push('password: "hashed_demo"'); continue; }
+      if (!f.modifiers.includes('required') && !f.name.endsWith('_id')) continue;
+      if (f.name.endsWith('_id')) sampleFields.push(`${f.name}: 1`);
+      else if (f.type === 'int') sampleFields.push(`${f.name}: ${f.name === 'price' ? 1000 : f.name === 'total' ? 2500 : 1}`);
+      else if (f.type === 'bool') sampleFields.push(`${f.name}: false`);
+      else if (f.name === 'email') sampleFields.push(`${f.name}: "demo@example.com"`);
+      else sampleFields.push(`${f.name}: "Sample ${entity.name}"`);
+    }
+    lines.push(`  ${store}.create({${sampleFields.join(', ')}})`);
+  }
+  lines.push('  log("Seed data inserted")');
+  return lines.join('\n');
+}
+
 function graphqlBlock() {
   return `graphql "/graphql"`;
 }
@@ -499,16 +701,380 @@ function mailBlock() {
   pass SMTP_PASS`;
 }
 
+// ── Middleware & Utility Templates ──────────────────────────
+
+function utilityFunctions(intents) {
+  const fns = [];
+  if (intents.has('server')) {
+    fns.push(`fn ok(any data, any meta):
+  ret {ok: true, data, error: null, meta}`);
+    fns.push(`fn err(str message, int code):
+  ret {ok: false, data: null, error: message, code}`);
+    fns.push(`fn sanitize(str input):
+  ret input.replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")`);
+  }
+  return fns;
+}
+
+function softDeleteRoutes(entity) {
+  const lower = entity.name.toLowerCase();
+  const plural = pluralize(lower);
+  const store = entity.name + 'Store';
+  return [
+    `del "/api/${plural}/:id/soft" (req, res):`,
+    `  ${store}.update(req.params.id, {deleted: true})`,
+    `  ret ok({archived: true}, null)`,
+    ``,
+    `put "/api/${plural}/:id/restore" (req, res):`,
+    `  ${store}.update(req.params.id, {deleted: false})`,
+    `  ret ok({restored: true}, null)`,
+  ];
+}
+
+function batchRoutes(entity) {
+  const lower = entity.name.toLowerCase();
+  const plural = pluralize(lower);
+  const store = entity.name + 'Store';
+  return [
+    `post "/api/${plural}/batch" (req, res):`,
+    `  list results = []`,
+    `  each item in req.body.items:`,
+    `    any created = ${store}.create(item)`,
+    `    results.push(created)`,
+    `  ret ok({created: results.length, items: results}, null)`,
+    ``,
+    `del "/api/${plural}/batch" (req, res):`,
+    `  each id in req.body.ids:`,
+    `    ${store}.remove(id)`,
+    `  ret ok({deleted: req.body.ids.length}, null)`,
+  ];
+}
+
+function uploadRoute() {
+  return [
+    `post "/api/upload" (req, res):`,
+    `  any file = req.files.file`,
+    `  if not file:`,
+    `    ret.status(400) err("No file provided", 400)`,
+    `  str path = "uploads/" + file.name`,
+    `  file.mv(path)`,
+    `  ret ok({path, name: file.name, size: file.size}, null)`,
+  ];
+}
+
+function auditSchema() {
+  return `schema AuditLog:
+  id        auto
+  action    str required
+  entity    str required
+  entity_id int
+  user_id   int
+  detail    str
+  created   auto`;
+}
+
+function auditFn() {
+  return `fn auditLog(str action, str entity, int entityId, int userId):
+  AuditLogStore.create({action, entity, entity_id: entityId, user_id: userId})`;
+}
+
+function webhookRoute() {
+  return [
+    `post "/api/webhooks" (req, res):`,
+    `  str event = req.body.event`,
+    `  any payload = req.body.payload`,
+    `  log("Webhook received: " + event)`,
+    `  ret ok({received: true, event}, null)`,
+    ``,
+    `get "/api/webhooks/health" (req, res):`,
+    `  ret ok({status: "listening"}, null)`,
+  ];
+}
+
+function serverMiddlewareHints(intents, params) {
+  const hints = [];
+  hints.push('# ── Middleware (install if needed) ──');
+  hints.push('# npm install express-rate-limit  →  rateLimit({windowMs: 900000, max: 100})');
+  hints.push('# npm install helmet             →  helmet() for security headers');
+  hints.push('# npm install compression        →  compression() for gzip');
+  if (intents.has('auth')) {
+    hints.push('# npm install cors               →  cors({origin: "https://yourdomain.com"})');
+  }
+  return hints.join('\n');
+}
+
+function openApiSpec(entities, intents, params, relationships) {
+  const paths = {};
+  for (const entity of entities) {
+    const plural = pluralize(entity.name.toLowerCase());
+    const requiredFields = entity.fields.filter(f => f.modifiers.includes('required') && f.type !== 'auto');
+    const properties = {};
+    for (const f of entity.fields) {
+      properties[f.name] = { type: f.type === 'auto' ? 'integer' : f.type === 'int' ? 'integer' : f.type === 'bool' ? 'boolean' : 'string' };
+    }
+    paths[`/api/${plural}`] = {
+      get: { summary: `List ${plural} (paginated)`, parameters: [
+        { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
+        { name: 'search', in: 'query', schema: { type: 'string' } },
+      ], responses: { '200': { description: `List of ${plural}` } } },
+      post: { summary: `Create ${entity.name.toLowerCase()}`, requestBody: { content: { 'application/json': { schema: {
+        type: 'object', required: requiredFields.map(f => f.name),
+        properties: Object.fromEntries(requiredFields.map(f => [f.name, properties[f.name]])),
+      } } } }, responses: { '201': { description: 'Created' } } },
+    };
+    paths[`/api/${plural}/{id}`] = {
+      get: { summary: `Get ${entity.name.toLowerCase()} by ID`, responses: { '200': { description: entity.name } } },
+      put: { summary: `Update ${entity.name.toLowerCase()}`, responses: { '200': { description: 'Updated' } } },
+      delete: { summary: `Delete ${entity.name.toLowerCase()}`, responses: { '200': { description: 'Deleted' } } },
+    };
+    paths[`/api/${plural}/batch`] = {
+      post: { summary: `Batch create ${plural}`, responses: { '200': { description: 'Batch created' } } },
+      delete: { summary: `Batch delete ${plural}`, responses: { '200': { description: 'Batch deleted' } } },
+    };
+    paths[`/api/${plural}/{id}/soft`] = {
+      delete: { summary: `Soft delete ${entity.name.toLowerCase()}`, responses: { '200': { description: 'Archived' } } },
+    };
+    paths[`/api/${plural}/{id}/restore`] = {
+      put: { summary: `Restore ${entity.name.toLowerCase()}`, responses: { '200': { description: 'Restored' } } },
+    };
+  }
+  for (const rel of relationships) {
+    const parentPlural = pluralize(rel.parent.toLowerCase());
+    const childPlural = pluralize(rel.child.toLowerCase());
+    paths[`/api/${parentPlural}/{${rel.fk.replace('_id', 'Id')}}/${childPlural}`] = {
+      get: { summary: `${rel.child}s by ${rel.parent}`, responses: { '200': { description: `List of ${childPlural}` } } },
+    };
+  }
+  if (intents.has('auth')) {
+    paths['/api/auth/register'] = { post: { summary: 'Register', responses: { '200': { description: 'Token + user' } } } };
+    paths['/api/auth/login'] = { post: { summary: 'Login', responses: { '200': { description: 'Token + user' } } } };
+    paths['/api/auth/me'] = { get: { summary: 'Current user', security: [{ bearerAuth: [] }], responses: { '200': { description: 'User' } } } };
+  }
+  paths['/api/health'] = { get: { summary: 'Health check', responses: { '200': { description: 'Status' } } } };
+  paths['/api/upload'] = { post: { summary: 'Upload file', responses: { '200': { description: 'File info' } } } };
+
+  const spec = {
+    openapi: '3.0.3',
+    info: { title: (entities[0]?.name || 'App') + ' API', version: '1.0.0', description: 'Generated by NAIDE Agent Coder' },
+    servers: [{ url: `http://localhost:${params.port}` }],
+    paths,
+  };
+  if (intents.has('auth')) {
+    spec.components = { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } } };
+  }
+  return spec;
+}
+
+function adminPage(entities, intents) {
+  const lines = [];
+  lines.push('<!DOCTYPE html>');
+  lines.push('<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">');
+  lines.push('<title>Admin Dashboard</title>');
+  lines.push('<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui;background:#f5f5f5;padding:2rem}');
+  lines.push('h1{margin-bottom:1rem}.card{background:#fff;border-radius:8px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}');
+  lines.push('table{width:100%;border-collapse:collapse}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #eee}');
+  lines.push('th{background:#f9f9f9;font-weight:600}button{padding:.4rem 1rem;border:none;border-radius:4px;cursor:pointer;background:#2563eb;color:#fff}');
+  lines.push('button:hover{background:#1d4ed8}button.danger{background:#dc2626}button.danger:hover{background:#b91c1c}');
+  lines.push('input,select{padding:.4rem;border:1px solid #ddd;border-radius:4px;margin-right:.5rem}');
+  lines.push('.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem}');
+  lines.push('.stat{background:#fff;border-radius:8px;padding:1.5rem;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.1)}');
+  lines.push('.stat h3{font-size:2rem;color:#2563eb}.stat p{color:#666;margin-top:.5rem}');
+  lines.push('#toast{position:fixed;top:1rem;right:1rem;background:#22c55e;color:#fff;padding:.8rem 1.5rem;border-radius:8px;display:none}');
+  lines.push('</style></head><body>');
+  lines.push('<h1>Admin Dashboard</h1>');
+  lines.push('<div id="toast"></div>');
+  lines.push('<div class="stats" id="stats"></div>');
+  for (const entity of entities) {
+    const lower = entity.name.toLowerCase();
+    const plural = pluralize(lower);
+    lines.push(`<div class="card"><h2>${entity.name}s</h2>`);
+    lines.push(`<div style="margin:1rem 0"><input id="${lower}-search" placeholder="Search..." oninput="${lower}Load()">`);
+    lines.push(`<button onclick="${lower}Load()">Refresh</button> <button onclick="${lower}ShowForm()">+ New</button></div>`);
+    lines.push(`<div id="${lower}-form" style="display:none;margin:1rem 0;padding:1rem;background:#f9f9f9;border-radius:4px">`);
+    for (const f of entity.fields) {
+      if (f.type === 'auto') continue;
+      const inputType = f.type === 'int' ? 'number' : f.type === 'bool' ? 'checkbox' : f.name === 'password' ? 'password' : f.name === 'email' ? 'email' : 'text';
+      if (f.type === 'bool') {
+        lines.push(`<label><input type="checkbox" id="${lower}-${f.name}"> ${f.name}</label> `);
+      } else {
+        lines.push(`<input type="${inputType}" id="${lower}-${f.name}" placeholder="${f.name}${f.modifiers.includes('required') ? ' *' : ''}">`);
+      }
+    }
+    lines.push(`<button onclick="${lower}Create()">Save</button> <button onclick="document.getElementById('${lower}-form').style.display='none'" class="danger">Cancel</button></div>`);
+    lines.push(`<table><thead><tr>${entity.fields.map(f => `<th>${f.name}</th>`).join('')}<th>Actions</th></tr></thead>`);
+    lines.push(`<tbody id="${lower}-table"></tbody></table></div>`);
+  }
+  lines.push('<script>');
+  lines.push('const API="";function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000)}');
+  lines.push('async function loadStats(){try{const r=await fetch(API+"/api/health");const d=await r.json();const s=document.getElementById("stats");');
+  lines.push('s.innerHTML=Object.entries(d).filter(([k])=>k!=="status").map(([k,v])=>`<div class="stat"><h3>${v}</h3><p>${k}</p></div>`).join("")}catch(e){}}');
+  for (const entity of entities) {
+    const lower = entity.name.toLowerCase();
+    const plural = pluralize(lower);
+    const fields = entity.fields.filter(f => f.type !== 'auto');
+    lines.push(`async function ${lower}Load(){const s=document.getElementById("${lower}-search").value;`);
+    lines.push(`const r=await fetch(API+"/api/${plural}?search="+s);const d=await r.json();const items=d.items||d;`);
+    lines.push(`document.getElementById("${lower}-table").innerHTML=items.map(i=>"<tr>${entity.fields.map(f => `<td>"+i.${f.name}+"`).join('')}<td>"+`);
+    lines.push(`"<button onclick=\\"${lower}Del("+i.id+")\\">Del</button></td></tr>").join("")}`);
+    lines.push(`function ${lower}ShowForm(){document.getElementById("${lower}-form").style.display="block"}`);
+    lines.push(`async function ${lower}Create(){const body={${fields.map(f => {
+      if (f.type === 'bool') return `${f.name}:document.getElementById("${lower}-${f.name}").checked`;
+      if (f.type === 'int') return `${f.name}:+document.getElementById("${lower}-${f.name}").value`;
+      return `${f.name}:document.getElementById("${lower}-${f.name}").value`;
+    }).join(',')}};`);
+    lines.push(`await fetch(API+"/api/${plural}",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});`);
+    lines.push(`document.getElementById("${lower}-form").style.display="none";toast("Created!");${lower}Load();loadStats()}`);
+    lines.push(`async function ${lower}Del(id){if(!confirm("Delete?"))return;await fetch(API+"/api/${plural}/"+id,{method:"DELETE"});toast("Deleted!");${lower}Load();loadStats()}`);
+  }
+  lines.push(`loadStats();${entities.map(e => pluralize(e.name.toLowerCase()).replace(/^./, c => c) && e.name.toLowerCase() + 'Load()').join(';')}`);
+  lines.push('</script></body></html>');
+  return lines.join('\n');
+}
+
+function apiClientCode(entities, intents, port) {
+  const lines = [];
+  lines.push('// Auto-generated API client — NAIDE Agent Coder');
+  lines.push(`const BASE = typeof window !== 'undefined' ? '' : 'http://localhost:${port}';`);
+  lines.push('let _token = null;');
+  lines.push('');
+  lines.push('function headers() {');
+  lines.push("  const h = { 'Content-Type': 'application/json' };");
+  lines.push("  if (_token) h['Authorization'] = 'Bearer ' + _token;");
+  lines.push('  return h;');
+  lines.push('}');
+  lines.push('');
+  lines.push('async function api(method, path, body) {');
+  lines.push('  const opts = { method, headers: headers() };');
+  lines.push('  if (body) opts.body = JSON.stringify(body);');
+  lines.push('  const res = await fetch(BASE + path, opts);');
+  lines.push('  return res.json();');
+  lines.push('}');
+  lines.push('');
+  if (intents.has('auth')) {
+    lines.push('export async function register(name, email, password) {');
+    lines.push("  const r = await api('POST', '/api/auth/register', { name, email, password });");
+    lines.push('  if (r.token) _token = r.token;');
+    lines.push('  return r;');
+    lines.push('}');
+    lines.push('');
+    lines.push('export async function login(email, password) {');
+    lines.push("  const r = await api('POST', '/api/auth/login', { email, password });");
+    lines.push('  if (r.token) _token = r.token;');
+    lines.push('  return r;');
+    lines.push('}');
+    lines.push('');
+    lines.push("export async function me() { return api('GET', '/api/auth/me'); }");
+    lines.push('export function setToken(t) { _token = t; }');
+    lines.push('');
+  }
+  for (const entity of entities) {
+    const lower = entity.name.toLowerCase();
+    const plural = pluralize(lower);
+    const Name = entity.name;
+    lines.push(`// ${Name}`);
+    lines.push(`export async function list${Name}s(page = 1, limit = 20, search = '') {`);
+    lines.push(`  return api('GET', \`/api/${plural}?page=\${page}&limit=\${limit}&search=\${search}\`);`);
+    lines.push('}');
+    lines.push(`export async function get${Name}(id) { return api('GET', \`/api/${plural}/\${id}\`); }`);
+    lines.push(`export async function create${Name}(data) { return api('POST', '/api/${plural}', data); }`);
+    lines.push(`export async function update${Name}(id, data) { return api('PUT', \`/api/${plural}/\${id}\`, data); }`);
+    lines.push(`export async function remove${Name}(id) { return api('DELETE', \`/api/${plural}/\${id}\`); }`);
+    lines.push(`export async function archive${Name}(id) { return api('DELETE', \`/api/${plural}/\${id}/soft\`); }`);
+    lines.push(`export async function restore${Name}(id) { return api('PUT', \`/api/${plural}/\${id}/restore\`); }`);
+    lines.push(`export async function batchCreate${Name}s(items) { return api('POST', '/api/${plural}/batch', { items }); }`);
+    lines.push(`export async function batchRemove${Name}s(ids) { return api('DELETE', '/api/${plural}/batch', { ids }); }`);
+    lines.push('');
+  }
+  lines.push("export async function upload(file) { const fd = new FormData(); fd.append('file', file); const r = await fetch(BASE + '/api/upload', { method: 'POST', headers: _token ? { Authorization: 'Bearer ' + _token } : {}, body: fd }); return r.json(); }");
+  lines.push("export async function health() { return api('GET', '/api/health'); }");
+  return lines.join('\n') + '\n';
+}
+
+// ── Auth Route Templates ────────────────────────────────────
+
+function authRoutesBlock(userEntity) {
+  const store = userEntity + 'Store';
+  return [
+    `post "/api/auth/register" (req, res):`,
+    `  str hashed = await hash(req.body.password)`,
+    `  any user = ${store}.create({name: req.body.name, email: req.body.email, password: hashed})`,
+    `  str token = jwt.sign({id: user.id}, JWT_SECRET)`,
+    `  ret {token, user: {id: user.id, name: user.name, email: user.email}}`,
+    ``,
+    `post "/api/auth/login" (req, res):`,
+    `  any user = ${store}.findBy("email", req.body.email)`,
+    `  if not user:`,
+    `    ret.status(401) {error: "Invalid credentials"}`,
+    `  bool valid = await verify(req.body.password, user.password)`,
+    `  if not valid:`,
+    `    ret.status(401) {error: "Invalid credentials"}`,
+    `  str token = jwt.sign({id: user.id}, JWT_SECRET)`,
+    `  ret {token, user: {id: user.id, name: user.name, email: user.email}}`,
+    ``,
+    `get "/api/auth/me" (req, res):`,
+    `  ret {user: req.user}`,
+  ];
+}
+
+function envLines(intents, params) {
+  const lines = [];
+  if (intents.has('auth')) lines.push('# env JWT_SECRET "change-me-in-production"');
+  if (params.dbType === 'postgres') lines.push('# env DATABASE_URL "postgres://localhost:5432/app"');
+  if (intents.has('mail')) {
+    lines.push('# env SMTP_HOST "smtp.example.com"');
+    lines.push('# env SMTP_USER "user@example.com"');
+    lines.push('# env SMTP_PASS "password"');
+  }
+  if (intents.has('bot')) {
+    const token = (params.platform || 'discord').toUpperCase() + '_TOKEN';
+    lines.push(`# env ${token} "your-bot-token"`);
+  }
+  if (intents.has('ai')) lines.push('# env OPENAI_API_KEY "your-api-key"');
+  return lines;
+}
+
 // ── Code Composer ───────────────────────────────────────────
 
 function compose(intents, params) {
   const sections = [];
-  const schemaName = params.schemaName || 'Item';
-  const nameLower = schemaName.toLowerCase();
-  const namePlural = pluralize(nameLower);
+  const entities = params.entities.length > 0 ? params.entities : [{ name: params.schemaName || 'Item', fields: params.fields }];
+  const primaryName = entities[0].name;
+  const primaryLower = primaryName.toLowerCase();
+  const relationships = params.relationships || [];
+  const hasAuth = intents.has('auth');
+  const userEntity = entities.find(e => ['User', 'Customer', 'Employee', 'Staff'].includes(e.name));
 
-  if (intents.has('schema') && params.fields.length > 0) {
-    sections.push(schemaBlock(schemaName, params.fields));
+  // Middleware hints
+  if (intents.has('server')) {
+    sections.push(serverMiddlewareHints(intents, params));
+  }
+
+  // Env hints
+  const env = envLines(intents, params);
+  if (env.length > 0) sections.push(env.join('\n'));
+
+  // Utility functions (envelope, sanitize)
+  const utils = utilityFunctions(intents);
+  if (utils.length > 0) sections.push(...utils);
+
+  // Schema blocks for all entities (add role + deleted fields)
+  if (intents.has('schema')) {
+    for (const entity of entities) {
+      if (entity.fields.length > 0) {
+        if (hasAuth && userEntity && entity.name === userEntity.name && !entity.fields.some(f => f.name === 'role')) {
+          entity.fields.push({ name: 'role', type: 'str', modifiers: [] });
+        }
+        if (intents.has('crud') && !entity.fields.some(f => f.name === 'deleted')) {
+          entity.fields.push({ name: 'deleted', type: 'bool', modifiers: [] });
+        }
+        sections.push(schemaBlock(entity.name, entity.fields));
+      }
+    }
+    // Audit log schema when auth is present
+    if (hasAuth) {
+      sections.push(auditSchema());
+    }
   }
 
   if (intents.has('database')) {
@@ -519,39 +1085,117 @@ function compose(intents, params) {
     const body = [];
     body.push('cors "*"');
 
+    // CRUD for each entity
     if (intents.has('crud') && intents.has('schema')) {
-      body.push(`crud "/api/${namePlural}" ${schemaName}`);
+      for (const entity of entities) {
+        const ep = pluralize(entity.name.toLowerCase());
+        body.push(`crud "/api/${ep}" ${entity.name}`);
+      }
     }
 
-    if (intents.has('auth')) {
+    // Auth: full routes + role-based access
+    if (hasAuth) {
       body.push('auth JWT_SECRET:');
       body.push('  protect "/api/*"');
       body.push('  public "/api/auth/*"');
+      body.push('  public "/api/health"');
+      if (userEntity) {
+        body.push('');
+        body.push(...authRoutesBlock(userEntity.name));
+        // Role-based admin check route
+        body.push('');
+        body.push('get "/api/admin/stats" (req, res):');
+        body.push('  if req.user.role != "admin":');
+        body.push('    ret.status(403) {error: "Admin access required"}');
+        if (entities.length > 0) {
+          const counts = entities.map(e => `${pluralize(e.name.toLowerCase())}: ${e.name}Store.count()`).join(', ');
+          body.push(`  ret {${counts}}`);
+        } else {
+          body.push('  ret {status: "ok"}');
+        }
+      }
     }
 
+    // Paginated list endpoints (override default CRUD list)
+    if (intents.has('crud') && intents.has('schema')) {
+      body.push('');
+      for (const entity of entities) {
+        body.push(...paginatedListBlock(entity));
+        body.push('');
+      }
+    }
+
+    // Nested routes for relationships
+    for (const rel of relationships) {
+      body.push(...nestedRouteBlock(rel.parent, rel.child, rel.fk));
+      body.push('');
+    }
+
+    // WebSocket
     if (intents.has('websocket')) {
-      body.push('');
       body.push('ws "/ws":');
-      body.push('  on "message" (data):');
+      body.push('  on "connection" (socket):');
+      body.push('    log("Client connected")');
+      body.push('  on "message" (data, socket):');
       body.push('    socket.send(data)');
+      body.push('  on "close" (socket):');
+      body.push('    log("Client disconnected")');
+      body.push('');
     }
 
+    // AI endpoint
     if (intents.has('ai')) {
-      body.push('');
       body.push('post "/api/ask" (req, res):');
+      body.push('  if not req.body.prompt:');
+      body.push('    ret.status(400) {error: "prompt is required"}');
       body.push('  str answer = await ai.ask(req.body.prompt)');
       body.push('  ret {answer}');
+      body.push('');
     }
 
-    body.push('');
+    // Soft delete + batch for each entity
+    if (intents.has('crud') && intents.has('schema')) {
+      for (const entity of entities) {
+        body.push(...softDeleteRoutes(entity));
+        body.push('');
+        body.push(...batchRoutes(entity));
+        body.push('');
+      }
+    }
+
+    // File upload
+    if (intents.has('crud')) {
+      body.push(...uploadRoute());
+      body.push('');
+    }
+
+    // Webhook
+    if (intents.has('server')) {
+      body.push(...webhookRoute());
+      body.push('');
+    }
+
+    // Health check
     body.push('get "/api/health" (req, res):');
-    if (intents.has('schema') && intents.has('crud')) {
-      body.push(`  ret {status: "ok", ${namePlural}: ${schemaName}Store.count()}`);
+    if (intents.has('schema') && intents.has('crud') && entities.length > 0) {
+      const counts = entities.map(e => `${pluralize(e.name.toLowerCase())}: ${e.name}Store.count()`).join(', ');
+      body.push(`  ret {status: "ok", ${counts}}`);
     } else {
       body.push('  ret {status: "ok"}');
     }
 
-    sections.push(serverBlock(safeName(nameLower === 'item' ? 'app' : nameLower), params.port, body));
+    const serverName = safeName(primaryLower === 'item' ? 'app' : primaryLower);
+    sections.push(serverBlock(serverName, params.port, body));
+  }
+
+  // Seed function
+  if (intents.has('database') && intents.has('schema') && entities.length > 0) {
+    sections.push(seedBlock(entities));
+  }
+
+  // Audit log function
+  if (hasAuth) {
+    sections.push(auditFn());
   }
 
   if (intents.has('bot')) {
@@ -559,7 +1203,7 @@ function compose(intents, params) {
   }
 
   if (intents.has('cli')) {
-    sections.push(cliBlock(nameLower));
+    sections.push(cliBlock(primaryLower));
   }
 
   if (intents.has('graphql')) {
@@ -567,15 +1211,18 @@ function compose(intents, params) {
   }
 
   if (intents.has('page')) {
-    sections.push(pageBlock(schemaName));
+    sections.push(pageBlock(primaryName));
   }
 
   if (intents.has('mail')) {
     sections.push(mailBlock());
   }
 
-  if (intents.has('test')) {
-    sections.push(testBlock(nameLower));
+  // Auto-generate entity tests when test intent or when entities exist
+  if (intents.has('test') || (intents.has('schema') && intents.has('crud') && entities.length > 0)) {
+    for (const entity of entities) {
+      sections.push(entityTestBlock(entity));
+    }
   }
 
   return sections.join('\n\n') + '\n';
@@ -661,7 +1308,7 @@ function heal(code, err) {
 
 const KEYWORD_CHEATSHEET = {
   'Intent':    'server, api, rest, bot, cli, page, test, database, ai, crud, auth, websocket, mail, graphql',
-  'Composite': 'todo, blog, chat, shop, fullstack, board',
+  'Composite': 'todo, blog, chat, shop, fullstack, board, crm, inventory, booking, sns',
   'Platform':  'discord, slack, telegram, line',
   'DB':        'sqlite, postgres',
   'Japanese':  'サーバー, 認証, ログイン, 会員, CRUD, 管理, データベース, ボット, テスト, ページ',
@@ -675,6 +1322,237 @@ function buildSuggestion(mods) {
     lines.push(`    ${cat.padEnd(10)} ${kws}`);
   }
   return lines.join('\n');
+}
+
+// ── Project Generator ──────────────────────────────────────
+
+export function generateProject(instruction, options = {}) {
+  const result = generate(instruction, options);
+  const files = [];
+  const intents = new Set(result.intents);
+  const entities = result.entities || [];
+  const primaryName = (entities[0] || 'app').toLowerCase();
+  const projectName = safeName(primaryName) + '-app';
+
+  // Main app file
+  files.push({ path: 'app.naide', content: result.code });
+
+  // Package.json
+  const deps = {};
+  if (intents.has('server'))    deps.express = '^4.21.0';
+  if (intents.has('websocket')) deps.ws = '^8.18.0';
+  if (intents.has('auth')) {
+    deps.jsonwebtoken = '^9.0.2';
+    deps.bcryptjs = '^2.4.3';
+  }
+  if (intents.has('mail'))      deps.nodemailer = '^6.9.0';
+  if (result.analysis.entities.some(() => true)) deps.naider = '^1.21.0';
+  const pkg = {
+    name: projectName,
+    version: '1.0.0',
+    type: 'module',
+    scripts: {
+      dev: 'naide app.naide',
+      build: 'naide app.naide --emit -o dist/app.mjs',
+      start: 'node dist/app.mjs',
+      test: 'naide test app.naide',
+      seed: 'naide app.naide --run-seed',
+    },
+    dependencies: deps,
+  };
+  files.push({ path: 'package.json', content: JSON.stringify(pkg, null, 2) + '\n' });
+
+  // .env file
+  const envL = [];
+  envL.push(`PORT=${result.port}`);
+  if (intents.has('auth')) envL.push('JWT_SECRET=change-me-in-production');
+  if (intents.has('bot'))  envL.push(`${(options.platform || 'DISCORD').toUpperCase()}_TOKEN=your-bot-token`);
+  if (intents.has('mail')) {
+    envL.push('SMTP_HOST=smtp.example.com');
+    envL.push('SMTP_USER=user@example.com');
+    envL.push('SMTP_PASS=password');
+  }
+  if (intents.has('ai'))   envL.push('OPENAI_API_KEY=your-api-key');
+  files.push({ path: '.env', content: envL.join('\n') + '\n' });
+
+  // .gitignore
+  files.push({ path: '.gitignore', content: 'node_modules/\ndist/\ndata/\n.env\n*.mjs\n' });
+
+  // Dockerfile
+  if (intents.has('server')) {
+    const dockerfile = `FROM node:22-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+RUN npm install -g naider
+COPY . .
+RUN naide app.naide --emit -o dist/app.mjs
+EXPOSE ${result.port}
+CMD ["node", "dist/app.mjs"]
+`;
+    files.push({ path: 'Dockerfile', content: dockerfile });
+
+    files.push({ path: '.dockerignore', content: 'node_modules\ndist\ndata\n.env\n.git\n' });
+  }
+
+  // README
+  const readmeLines = [`# ${projectName}\n`];
+  readmeLines.push(`Generated by NAIDE Agent Coder (~~)\n`);
+  readmeLines.push(`## Features\n`);
+  for (const step of result.analysis.plan) readmeLines.push(`- ${step}`);
+  if (entities.length > 0) {
+    readmeLines.push(`\n## Entities\n`);
+    for (const e of result.analysis.entities) readmeLines.push(`- **${e.name}** (${e.fieldCount} fields)`);
+  }
+  if (result.analysis.relationships.length > 0) {
+    readmeLines.push(`\n## Relationships\n`);
+    for (const r of result.analysis.relationships) readmeLines.push(`- ${r.parent} → ${r.child} (${r.fk})`);
+  }
+  readmeLines.push(`\n## Quick Start\n`);
+  readmeLines.push('```bash');
+  readmeLines.push('npm install');
+  readmeLines.push('npm run dev');
+  readmeLines.push('```\n');
+  if (intents.has('server')) {
+    readmeLines.push(`## API Endpoints\n`);
+    readmeLines.push(`- \`GET /api/health\` — Health check`);
+    for (const e of entities) {
+      const ep = pluralize(e.toLowerCase());
+      readmeLines.push(`- \`GET /api/${ep}?page=1&limit=20&search=\` — List ${ep} (paginated)`);
+      readmeLines.push(`- \`POST /api/${ep}\` — Create ${e.toLowerCase()}`);
+      readmeLines.push(`- \`GET /api/${ep}/:id\` — Get ${e.toLowerCase()}`);
+      readmeLines.push(`- \`PUT /api/${ep}/:id\` — Update ${e.toLowerCase()}`);
+      readmeLines.push(`- \`DELETE /api/${ep}/:id\` — Delete ${e.toLowerCase()}`);
+      readmeLines.push(`- \`DELETE /api/${ep}/:id/soft\` — Soft delete ${e.toLowerCase()}`);
+      readmeLines.push(`- \`PUT /api/${ep}/:id/restore\` — Restore ${e.toLowerCase()}`);
+      readmeLines.push(`- \`POST /api/${ep}/batch\` — Batch create ${ep}`);
+      readmeLines.push(`- \`DELETE /api/${ep}/batch\` — Batch delete ${ep}`);
+    }
+    for (const r of result.analysis.relationships) {
+      const parentPlural = pluralize(r.parent.toLowerCase());
+      const childPlural = pluralize(r.child.toLowerCase());
+      readmeLines.push(`- \`GET /api/${parentPlural}/:id/${childPlural}\` — ${r.child}s by ${r.parent}`);
+    }
+    readmeLines.push(`- \`POST /api/upload\` — File upload`);
+    readmeLines.push(`- \`POST /api/webhooks\` — Register webhook`);
+    readmeLines.push(`- \`GET /api/webhooks/health\` — Webhook health`);
+    if (intents.has('auth')) {
+      readmeLines.push(`- \`POST /api/auth/register\` — Register`);
+      readmeLines.push(`- \`POST /api/auth/login\` — Login`);
+      readmeLines.push(`- \`GET /api/auth/me\` — Current user`);
+      readmeLines.push(`- \`GET /api/admin/stats\` — Admin stats (role: admin)`);
+    }
+  }
+  if (intents.has('server')) {
+    readmeLines.push(`\n## Docker\n`);
+    readmeLines.push('```bash');
+    readmeLines.push(`docker build -t ${projectName} .`);
+    readmeLines.push(`docker run -p ${result.port}:${result.port} --env-file .env ${projectName}`);
+    readmeLines.push('```');
+  }
+  files.push({ path: 'README.md', content: readmeLines.join('\n') + '\n' });
+
+  // Build full entity objects for generators
+  const entityObjs = entities.map(name => {
+    const preset = SCHEMA_PRESETS[name.toLowerCase()];
+    const fields = preset ? preset.map(f => ({ name: f[0], type: f[1], modifiers: f.slice(2) })) : defaultFields(name);
+    if (!fields.some(f => f.name === 'deleted')) fields.push({ name: 'deleted', type: 'bool', modifiers: [] });
+    return { name, fields };
+  });
+
+  // OpenAPI spec
+  if (intents.has('server') && entityObjs.length > 0) {
+    const spec = openApiSpec(entityObjs, intents, { port: result.port }, result.relationships || []);
+    files.push({ path: 'openapi.json', content: JSON.stringify(spec, null, 2) + '\n' });
+  }
+
+  // Admin dashboard
+  if (intents.has('server') && entityObjs.length > 0) {
+    files.push({ path: 'admin.html', content: adminPage(entityObjs, intents) });
+  }
+
+  // API client
+  if (intents.has('server')) {
+    files.push({ path: 'client.mjs', content: apiClientCode(entityObjs, intents, result.port) });
+  }
+
+  return { ...result, files };
+}
+
+// ── File Write Mode ────────────────────────────────────────
+
+export function writeToFile(filePath, instruction, options = {}) {
+  const result = generate(instruction, options);
+  const code = result.code;
+
+  if (!_existsFS(filePath)) {
+    _writeFS(filePath, code, 'utf-8');
+    return { ...result, action: 'created', path: filePath };
+  }
+
+  const existing = _readFS(filePath, 'utf-8');
+  const mode = options.mode || 'append';
+
+  if (mode === 'replace') {
+    _writeFS(filePath, code, 'utf-8');
+    return { ...result, action: 'replaced', path: filePath };
+  }
+
+  // Append mode: merge intelligently
+  const merged = mergeCode(existing, code);
+  const validated = validate(merged);
+  _writeFS(filePath, validated.code, 'utf-8');
+  return { ...result, code: validated.code, valid: validated.valid, fixed: validated.fixed,
+    repairs: validated.repairs, action: 'merged', path: filePath };
+}
+
+function mergeCode(existing, generated) {
+  const existingLines = existing.split('\n');
+  const generatedLines = generated.split('\n');
+
+  const existingSchemas = new Set();
+  const existingServers = new Set();
+  for (const line of existingLines) {
+    const schemaMatch = line.match(/^schema\s+(\w+)\s*:/);
+    if (schemaMatch) existingSchemas.add(schemaMatch[1]);
+    const serverMatch = line.match(/^server\s+(\w+)\s/);
+    if (serverMatch) existingServers.add(serverMatch[1]);
+  }
+
+  // Filter out duplicate top-level blocks from generated
+  const filteredLines = [];
+  let skipBlock = false;
+  let blockIndent = -1;
+  for (let i = 0; i < generatedLines.length; i++) {
+    const line = generatedLines[i];
+    const schemaMatch = line.match(/^schema\s+(\w+)\s*:/);
+    const serverMatch = line.match(/^server\s+(\w+)\s/);
+
+    if (schemaMatch && existingSchemas.has(schemaMatch[1])) {
+      skipBlock = true;
+      blockIndent = 0;
+      continue;
+    }
+    if (serverMatch && existingServers.has(serverMatch[1])) {
+      // For server blocks, extract only new routes
+      skipBlock = true;
+      blockIndent = 0;
+      continue;
+    }
+
+    if (skipBlock) {
+      const indent = line.match(/^(\s*)/)[1].length;
+      if (line.trim() === '' || indent > blockIndent) continue;
+      skipBlock = false;
+    }
+
+    filteredLines.push(line);
+  }
+
+  const newCode = filteredLines.join('\n').trim();
+  if (!newCode) return existing;
+
+  return existing.trimEnd() + '\n\n' + newCode + '\n';
 }
 
 // ── Pre-Processor (for ~~ in source files) ──────────────────
@@ -703,6 +1581,47 @@ export function expandDirectives(source) {
   return { source: result.join('\n'), expanded };
 }
 
+// ── Analysis Builder ───────────────────────────────────────
+
+function buildAnalysis(instruction, intents, params) {
+  const plan = [];
+
+  if (params.entities.length > 0) {
+    for (const e of params.entities) {
+      plan.push(`Schema "${e.name}" (${e.fields.map(f => f.name).join(', ')})`);
+    }
+  }
+
+  if (params.relationships.length > 0) {
+    for (const r of params.relationships) {
+      plan.push(`Relation: ${r.parent} → ${r.child} (${r.fk})`);
+    }
+  }
+
+  if (intents.has('database')) plan.push(`Database: ${params.dbType || 'file-based'}`);
+  if (intents.has('server'))   plan.push(`Server on port ${params.port}`);
+  if (intents.has('crud'))     plan.push(`CRUD endpoints for ${params.entities.map(e => pluralize(e.name.toLowerCase())).join(', ')} (paginated)`);
+  if (intents.has('auth'))     plan.push('Auth: JWT + register/login/me + role-based admin');
+  if (params.relationships.length > 0) plan.push(`Nested routes: ${params.relationships.map(r => `/${pluralize(r.parent.toLowerCase())}/:id/${pluralize(r.child.toLowerCase())}`).join(', ')}`);
+  if (intents.has('websocket'))plan.push('WebSocket: real-time messaging');
+  if (intents.has('ai'))       plan.push('AI endpoint: /api/ask');
+  if (intents.has('bot'))      plan.push(`Bot: ${params.platform || 'discord'}`);
+  if (intents.has('mail'))     plan.push('Mail: SMTP configuration');
+  if (intents.has('graphql'))  plan.push('GraphQL endpoint');
+  if (intents.has('page'))     plan.push('Page: HTML generation');
+  if (intents.has('cli'))      plan.push('CLI app with flags');
+  if (intents.has('database') && intents.has('schema')) plan.push('Seed: sample data function');
+  plan.push(`Tests: ${params.entities.length} entity CRUD test suites`);
+
+  return {
+    instruction,
+    entities: params.entities.map(e => ({ name: e.name, fieldCount: e.fields.length })),
+    relationships: params.relationships,
+    features: [...intents],
+    plan,
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────
 
 export function generate(instruction, options = {}) {
@@ -711,11 +1630,18 @@ export function generate(instruction, options = {}) {
   const params = extractParams(words, instruction, intents, mods);
 
   if (options.port) params.port = options.port;
-  if (options.schemaName) params.schemaName = options.schemaName;
-  if (options.fields) params.fields = options.fields;
+  if (options.schemaName) {
+    params.schemaName = options.schemaName;
+    if (params.entities.length > 0) params.entities[0].name = options.schemaName;
+  }
+  if (options.fields) {
+    params.fields = options.fields;
+    if (params.entities.length > 0) params.entities[0].fields = options.fields;
+  }
 
   let code = compose(intents, params);
   const result = validate(code);
+  const analysis = buildAnalysis(instruction, intents, params);
 
   return {
     code: result.code,
@@ -724,8 +1650,11 @@ export function generate(instruction, options = {}) {
     repairs: result.repairs,
     intents: [...intents],
     schema: params.schemaName,
+    entities: params.entities.map(e => e.name),
+    relationships: params.relationships,
     port: params.port,
     suggestion: buildSuggestion(mods),
     fallback: !!mods.fallback,
+    analysis,
   };
 }

@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.20.0';
+const NAIDE_VERSION = '1.21.0';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -114,6 +114,9 @@ const flags = {
   check: false,
   target: 'node',
   expand: false,
+  project: false,
+  write: null,
+  replace: false,
 };
 
 const files = [];
@@ -133,6 +136,9 @@ for (let i = 0; i < args.length; i++) {
     case '--check': flags.check = true; flags.run = false; break;
     case '--target': case '-t': flags.target = args[++i]; break;
     case '--expand': flags.expand = true; flags.run = false; break;
+    case '--project': case '-p': flags.project = true; break;
+    case '--write': flags.write = args[++i]; break;
+    case '--replace': flags.replace = true; break;
     default: files.push(arg);
   }
 }
@@ -142,25 +148,35 @@ if (files[0] === 'gen' || files[0] === '~~') {
   const instruction = files.slice(1).join(' ');
   if (!instruction) {
     console.log(`
-  NAIDE Code Generator (~~)
+  NAIDE Agent Coder (~~)
 
   Usage:
     naide ~~ "REST API for users with auth"
     naide gen "todo app with database"
-    naide gen "Discord bot with hello command"
+    naide gen "users and products and orders with auth"
+    naide ~~ "ECサイト" --project
 
-  Generates valid NAIDE code from natural language instructions.
-  No AI, no network — pure pattern matching with self-healing validation.
+  Autonomous code generator with analysis, multi-entity support,
+  relationship detection, and full auth routes. No AI, no network.
 
   Examples:
     naide ~~ "REST API for products with name price stock"
-    naide ~~ "blog app with auth and database"
+    naide ~~ "users and products with auth"            # multi-entity
+    naide ~~ "SNS app"                                 # User+Post+Comment
+    naide ~~ "ECサイト"                                 # User+Product+Order
+    naide ~~ "予約システム"                              # User+Reservation
     naide ~~ "Discord bot with hello and help commands"
-    naide ~~ "CLI tool"
-    naide ~~ "chat app with websocket"
-    naide ~~ "user management fullstack app"
-    naide ~~ "ユーザー管理APIを認証付きで"
-    naide ~~ "掲示板アプリ"
+    naide ~~ "ユーザーと商品と注文の管理APIを認証付きで"   # JP multi-entity
+
+  Project Mode (--project):
+    naide ~~ "e-commerce app with auth" --project
+    # Creates: app.naide, package.json, .env, .gitignore,
+    #          Dockerfile, .dockerignore, README.md
+
+  File Write Mode:
+    naide ~~ "add auth" app.naide              # merge into existing file
+    naide ~~ "add websocket" --write app.naide # explicit --write
+    naide ~~ "REST API" --write app.naide --replace  # overwrite file
 
   In .naide files:
     ~~ "REST API for users with auth"
@@ -170,15 +186,18 @@ if (files[0] === 'gen' || files[0] === '~~') {
     naide --expand app.naide     Show ~~ expansion results
 
   API:
-    import { generate } from 'naider';
-    const result = generate("REST API for users");
-    console.log(result.code);
+    import { generate, generateProject, writeToFile } from 'naider';
+    const result = generate("users and products with auth");
+    console.log(result.analysis);  // agent analysis
+    console.log(result.entities);  // ['User', 'Product']
+    writeToFile("app.naide", "add auth");  // merge into file
 
   ── Keyword Cheat Sheet ──────────────────────────────────────
 
   Intent     server, api, rest, bot, cli, page, test, database,
              ai, crud, auth, websocket, mail, graphql
-  Composite  todo, blog, chat, shop, fullstack, board
+  Composite  todo, blog, chat, shop, fullstack, board,
+             crm, inventory, booking, sns
   Platform   discord, slack, telegram, line
   DB Type    sqlite, postgres
   JP Intent  サーバー, 認証, ログイン, 会員, CRUD, 管理, データベース,
@@ -187,25 +206,99 @@ if (files[0] === 'gen' || files[0] === '~~') {
              問い合わせ, 通知, カテゴリ, プロジェクト, 掲示板, 決済
   Fields     "with name email age" — auto-inferred types & validators
   Field Alias  e-mail→email, pwd→password, tel→phone, desc→description
+  Relations  Auto-detected: User→Post, User→Order, Product→Order, etc.
 
   ────────────────────────────────────────────────────────────
 `);
     process.exit(0);
   }
 
-  const { generate } = await import('../src/gen.js');
+  const { generate, generateProject, writeToFile } = await import('../src/gen.js');
+
+  // Write mode: inject into existing .naide/.nx file
+  const targetFile = instruction.match(/\S+\.(?:naide|nx)$/)?.[0];
+  if (targetFile || flags.write) {
+    const file = flags.write || targetFile;
+    const cleanInstruction = targetFile ? instruction.replace(/\s+\S+\.(?:naide|nx)$/, '') : instruction;
+    const mode = flags.replace ? 'replace' : 'append';
+    const result = writeToFile(resolve(file), cleanInstruction, { mode });
+    const a = result.analysis;
+    process.stderr.write('\n  ── NAIDE Agent ──────────────────────────────────────────\n');
+    process.stderr.write(`  Input:    "${a.instruction}"\n`);
+    process.stderr.write(`  Action:   ${result.action} → ${file}\n`);
+    if (a.entities.length > 0) {
+      process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
+    }
+    process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
+    console.log(result.code);
+    process.stderr.write(`  ── ${result.action}: ${file} (valid: ${result.valid}) ──\n`);
+    process.exit(0);
+  }
+
+  // Project mode: generate full project directory
+  if (flags.project) {
+    const result = generateProject(instruction);
+    const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const dir = flags.output || (primaryName + '-app');
+    const outDir = resolve(dir);
+    if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+    for (const f of result.files) {
+      const fp = resolve(outDir, f.path);
+      writeFileSync(fp, f.content, 'utf-8');
+    }
+    const a = result.analysis;
+    process.stderr.write('\n  ── NAIDE Agent ──────────────────────────────────────────\n');
+    process.stderr.write(`  Input:    "${a.instruction}"\n`);
+    if (a.entities.length > 0) {
+      process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
+    }
+    if (a.relationships.length > 0) {
+      for (const r of a.relationships) process.stderr.write(`  Relation: ${r.parent} 1→N ${r.child} (${r.fk})\n`);
+    }
+    process.stderr.write(`  Plan:\n`);
+    for (const step of a.plan) process.stderr.write(`    + ${step}\n`);
+    process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
+    console.log(`  Project created: ${dir}/`);
+    for (const f of result.files) console.log(`    ${f.path}`);
+    console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
+    process.exit(0);
+  }
+
   const result = generate(instruction);
 
   if (flags.output) {
     writeFileSync(flags.output, result.code, 'utf-8');
     console.log(`  Generated: ${flags.output} (${result.intents.join(' + ')})`);
   } else {
+    // Agent-style analysis header
+    const a = result.analysis;
+    process.stderr.write('\n  ── NAIDE Agent ──────────────────────────────────────────\n');
+    process.stderr.write(`  Input:    "${a.instruction}"\n`);
+    if (a.entities.length > 0) {
+      process.stderr.write(`  Entities: ${a.entities.map(e => `${e.name} (${e.fieldCount} fields)`).join(', ')}\n`);
+    }
+    if (a.relationships.length > 0) {
+      for (const r of a.relationships) {
+        process.stderr.write(`  Relation: ${r.parent} 1→N ${r.child} (${r.fk})\n`);
+      }
+    }
+    process.stderr.write(`  Plan:\n`);
+    for (const step of a.plan) {
+      process.stderr.write(`    + ${step}\n`);
+    }
+    process.stderr.write('  ────────────────────────────────────────────────────────\n\n');
+
     console.log(result.code);
+
     const meta = [`[${result.intents.join(' + ')}]`];
-    if (result.schema) meta.push(`→ ${result.schema}`);
+    if (result.entities && result.entities.length > 1) {
+      meta.push(`→ ${result.entities.join(', ')}`);
+    } else if (result.schema) {
+      meta.push(`→ ${result.schema}`);
+    }
     meta.push(`valid: ${result.valid}`);
     if (result.fixed) meta.push('(auto-fixed)');
-    process.stderr.write(`\n  ── gen ~~ ${meta.join(' ')} ──\n`);
+    process.stderr.write(`  ── gen ~~ ${meta.join(' ')} ──\n`);
     if (result.repairs.length > 0) {
       process.stderr.write('  Repairs:\n');
       for (const r of result.repairs) process.stderr.write(`    - ${r}\n`);

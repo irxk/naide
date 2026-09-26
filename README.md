@@ -89,67 +89,50 @@ naide --tokens <file>         # Print token stream
 
 ### Code Generation (`~~`)
 
-Generate valid NAIDE code from natural language instructions — no AI, no network, no dependencies. Pure pattern matching + template composition with self-healing parser validation. Runs in microseconds.
+Generate valid NAIDE code from natural language instructions — no AI, no network, no dependencies. Pure pattern matching + template composition with self-healing parser validation. Multi-entity support with automatic relationship detection, paginated CRUD, soft delete, batch operations, nested routes, seed data, tests, and full project scaffolding.
 
 ```bash
-# CLI
+# Single entity
 naide ~~ "REST API for users with auth"
 naide ~~ "todo app with database"
-naide ~~ "Discord bot with hello command"
-naide ~~ "blog app with auth and websocket"
-naide ~~ "CLI tool"
-naide gen "chat app"
+
+# Multi-entity (auto-detects relationships, injects foreign keys)
+naide ~~ "users and products and orders with auth"
+
+# Composite presets
+naide ~~ "shop"        # User + Product + Order
+naide ~~ "crm"         # User + Contact + Deal + Activity
+naide ~~ "sns"         # User + Post + Comment + Message + Notification
+naide ~~ "booking"     # User + Event + Reservation
+
+# Project mode (generates full directory)
+naide ~~ "e-commerce app with auth" --project
+
+# File write mode (merge into existing file)
+naide ~~ "REST API for users" --write app.naide
 
 # Japanese
+naide ~~ "ECサイト"
 naide ~~ "ユーザー管理APIを認証付きで"
-naide ~~ "掲示板アプリ"
-naide ~~ "商品管理のフルスタックアプリ"
 ```
 
-Output example:
+Generated routes per entity: paginated list, CRUD, soft delete, restore, batch create/delete, nested routes (from relationships), file upload, webhooks. With auth: register, login, profile, admin stats, audit log.
 
-```python
-# naide ~~ "REST API for users with auth"
-
-schema User:
-  id       auto
-  name     str required
-  email    str required email
-  password str required min(8)
-
-db "data/"
-
-server user port 3000:
-  cors "*"
-  crud "/api/users" User
-  auth JWT_SECRET:
-    protect "/api/*"
-    public "/api/auth/*"
-
-  get "/api/health" (req, res):
-    ret {status: "ok", users: UserStore.count()}
-```
-
-Inline in `.naide` files — expands at compile time:
-
-```python
-# app.naide
-~~ "REST API for users with auth"
-```
-
-```bash
-naide --expand app.naide    # debug: show what ~~ expanded to
-```
+Project mode (`--project`) generates: `app.naide`, `package.json`, `.env`, `Dockerfile`, `README.md`, `openapi.json`, `admin.html`, `client.mjs`.
 
 API usage:
 
 ```javascript
-import { generate } from 'naider';
-const result = generate("REST API for users with auth");
-console.log(result.code);     // generated NAIDE code
-console.log(result.valid);    // true (parser-validated)
-console.log(result.intents);  // ['server', 'schema', 'crud', 'auth', 'database']
-console.log(result.repairs);  // [] (auto-fix log, if any)
+import { generate, generateProject } from 'naider';
+
+const result = generate("users and products with auth");
+console.log(result.entities);      // ['User', 'Product']
+console.log(result.relationships); // [{parent:'User', child:'Product', fk:'user_id'}]
+console.log(result.valid);         // true
+console.log(result.analysis);      // {entities, relationships, plan, ...}
+
+const project = generateProject("e-commerce with auth");
+project.files.forEach(f => console.log(f.path));
 ```
 
 **Self-healing**: Generated code is validated against the actual NAIDE parser. Parse errors are auto-fixed (up to 5 retries) — missing colons, indent issues, reserved keyword conflicts.
@@ -162,11 +145,13 @@ console.log(result.repairs);  // [] (auto-fix log, if any)
 | Category | Keywords |
 |----------|----------|
 | Intent | `server` `api` `rest` `bot` `cli` `page` `test` `database` `ai` `crud` `auth` `websocket` `mail` `graphql` |
-| Composite | `todo` `blog` `chat` `shop` `fullstack` `board` |
+| Composite | `todo` `blog` `chat` `shop` `fullstack` `board` `crm` `inventory` `booking` `sns` |
 | Platform | `discord` `slack` `telegram` `line` |
 | DB Type | `sqlite` `postgres` |
 | JP Intent | `サーバー` `認証` `ログイン` `会員` `CRUD` `管理` `データベース` `ボット` `テスト` `ページ` `メール` |
-| JP Entity | `ユーザー` `商品` `記事` `タスク` `注文` `コメント` `イベント` `問い合わせ` `通知` `カテゴリ` `掲示板` `決済` |
+| JP Entity | `ユーザー` `商品` `記事` `タスク` `注文` `コメント` `イベント` `問い合わせ` `通知` `カテゴリ` `掲示板` `決済` `予約` `社員` |
+| JP Composite | `管理システム` `やることリスト` `ブログ` `チャットアプリ` `ECサイト` `掲示板` |
+| NL Phrases | `"users can comment"` `"admin manage"` `"upload"` `"search"` `"notification"` `"deploy"` `"seed"` |
 | Fields | `"with name email age"` — auto-inferred types & validators |
 
 </details>
@@ -175,7 +160,7 @@ console.log(result.repairs);  // [] (auto-fix log, if any)
 
 ```
 $ naide
-NAIDE REPL v1.20.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v1.21.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"

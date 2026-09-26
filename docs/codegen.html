@@ -12,7 +12,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v1.20.0</span>
+      <span class="version">v1.21.0</span>
     </div>
     <nav>
       <a href="index.html">Home</a>
@@ -48,37 +48,113 @@
 naide gen "todo app with database"
 naide ~~ "Discord bot with hello command"
 naide ~~ "blog app with auth and websocket"
-naide ~~ "CLI tool"
+naide ~~ "users and products and orders with auth"
 naide gen "chat app"</code></pre>
 
       <p>Japanese instructions are fully supported:</p>
       <pre><code>naide ~~ "ユーザー管理APIを認証付きで"
 naide ~~ "掲示板アプリ"
-naide ~~ "商品管理のフルスタックアプリ"
+naide ~~ "ECサイト"
 naide ~~ "チャットアプリ"</code></pre>
 
       <p>Write the output to a file with <code>-o</code>:</p>
       <pre><code>naide ~~ "REST API for users" -o app.naide</code></pre>
 
-      <h2>Output Example</h2>
-      <p><code>naide ~~ "REST API for users with auth"</code> generates:</p>
-      <pre><code class="lang-naide"><span class="kw">schema</span> <span class="fn">User</span>:
-  id       <span class="type">auto</span>
-  name     <span class="type">str</span> required
-  email    <span class="type">str</span> required email
-  password <span class="type">str</span> required min(<span class="num">8</span>)
+      <h2>Multi-Entity Support</h2>
+      <p>Specify multiple entities separated by <code>and</code>, <code>&amp;</code>, or <code>,</code>. The engine detects parent-child relationships and auto-injects foreign keys:</p>
+      <pre><code>naide ~~ "users and products and orders with auth"</code></pre>
+      <p>This generates 3 schemas (User, Product, Order), detects that User &rarr; Order and Product &rarr; Order, and adds <code>user_id</code> and <code>product_id</code> FK fields automatically. Each entity gets full CRUD, paginated list, soft delete, batch operations, nested routes, and tests.</p>
 
-<span class="kw">db</span> <span class="str">"data/"</span>
+      <p>Composite keywords also expand to multiple entities:</p>
+      <pre><code>naide ~~ "shop"       # User + Product + Order
+naide ~~ "ECサイト"    # User + Product + Order
+naide ~~ "crm"        # User + Contact + Deal + Activity
+naide ~~ "sns"        # User + Post + Comment + Message + Notification</code></pre>
 
-<span class="kw">server</span> user <span class="kw">port</span> <span class="num">3000</span>:
-  <span class="kw">cors</span> <span class="str">"*"</span>
-  <span class="kw">crud</span> <span class="str">"/api/users"</span> User
-  <span class="kw">auth</span> JWT_SECRET:
-    protect <span class="str">"/api/*"</span>
-    public <span class="str">"/api/auth/*"</span>
+      <h2>Project Mode</h2>
+      <p>Generate a complete project directory with all supporting files:</p>
+      <pre><code>naide ~~ "e-commerce app with auth" --project</code></pre>
+      <p>This creates a directory with:</p>
+      <ul>
+        <li><code>app.naide</code> &mdash; Main NAIDE source code</li>
+        <li><code>package.json</code> &mdash; With dev/test/seed scripts</li>
+        <li><code>.env</code> &mdash; Environment variables (JWT_SECRET, PORT)</li>
+        <li><code>.gitignore</code> &mdash; node_modules, .env, data/</li>
+        <li><code>Dockerfile</code> + <code>.dockerignore</code> &mdash; Docker container support</li>
+        <li><code>README.md</code> &mdash; Full API documentation with endpoints</li>
+        <li><code>openapi.json</code> &mdash; OpenAPI 3.0.3 specification</li>
+        <li><code>admin.html</code> &mdash; Admin dashboard with CRUD forms, search, stats</li>
+        <li><code>client.mjs</code> &mdash; JavaScript API client with typed functions</li>
+      </ul>
 
-  <span class="kw">get</span> <span class="str">"/api/health"</span> (req, res):
-    <span class="kw">ret</span> {status: <span class="str">"ok"</span>, users: UserStore.count()}</code></pre>
+      <h2>File Write Mode</h2>
+      <p>Write generated code directly to a <code>.naide</code> or <code>.nx</code> file:</p>
+      <pre><code>naide ~~ "REST API for users with auth" --write app.naide
+naide ~~ "todo app" --write todo.nx
+naide ~~ "users API" --write app.naide --replace</code></pre>
+      <p>Without <code>--replace</code>, the engine merges intelligently &mdash; avoids duplicate schemas and servers. With <code>--replace</code>, the file is overwritten completely.</p>
+
+      <h2>Generated Features</h2>
+      <p>Every server-type generation automatically includes:</p>
+
+      <h3>Per-Entity Routes</h3>
+      <table>
+        <thead><tr><th>Route</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/users?page=1&amp;limit=20&amp;search=</code></td><td>Paginated list with search</td></tr>
+          <tr><td><code>POST /api/users</code></td><td>Create</td></tr>
+          <tr><td><code>GET /api/users/:id</code></td><td>Get by ID</td></tr>
+          <tr><td><code>PUT /api/users/:id</code></td><td>Update</td></tr>
+          <tr><td><code>DELETE /api/users/:id</code></td><td>Hard delete</td></tr>
+          <tr><td><code>DELETE /api/users/:id/soft</code></td><td>Soft delete (sets <code>deleted = true</code>)</td></tr>
+          <tr><td><code>PUT /api/users/:id/restore</code></td><td>Restore soft-deleted</td></tr>
+          <tr><td><code>POST /api/users/batch</code></td><td>Batch create</td></tr>
+          <tr><td><code>DELETE /api/users/batch</code></td><td>Batch delete</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Nested Routes (from relationships)</h3>
+      <p>When parent-child relationships are detected, nested routes are generated:</p>
+      <pre><code>GET /api/users/:userId/orders    # Orders by User
+GET /api/users/:userId/posts     # Posts by User
+GET /api/products/:productId/orders  # Orders by Product</code></pre>
+
+      <h3>Global Routes</h3>
+      <table>
+        <thead><tr><th>Route</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/health</code></td><td>Health check with entity counts</td></tr>
+          <tr><td><code>POST /api/upload</code></td><td>File upload endpoint</td></tr>
+          <tr><td><code>POST /api/webhooks</code></td><td>Register a webhook</td></tr>
+          <tr><td><code>GET /api/webhooks/health</code></td><td>Webhook health check</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Auth Routes (when auth intent detected)</h3>
+      <table>
+        <thead><tr><th>Route</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>POST /api/auth/register</code></td><td>User registration</td></tr>
+          <tr><td><code>POST /api/auth/login</code></td><td>JWT login</td></tr>
+          <tr><td><code>GET /api/auth/me</code></td><td>Current user profile</td></tr>
+          <tr><td><code>GET /api/admin/stats</code></td><td>Admin-only aggregate stats</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Utility Functions</h3>
+      <p>Standard response helpers and input sanitization:</p>
+      <pre><code>fn ok(any data, any meta) &rarr; {ok: true, data, meta}
+fn err(str message, int code) &rarr; {ok: false, error: message, code}
+fn sanitize(str input) &rarr; stripped HTML tags</code></pre>
+
+      <h3>Audit Log</h3>
+      <p>When auth is enabled, an AuditLog schema and <code>auditLog()</code> function are generated for tracking actions.</p>
+
+      <h3>Seed Function</h3>
+      <p>A <code>fn seed()</code> function is generated with sample data for each entity, callable via <code>npm run seed</code> in project mode.</p>
+
+      <h3>Auto-Generated Tests</h3>
+      <p>CRUD test suites are generated for each entity &mdash; create, find, list, remove with assertions.</p>
 
       <h2>Inline Directives</h2>
       <p>Use <code>~~</code> inside <code>.naide</code> files. The directive is expanded at compile time, before parsing:</p>
@@ -94,29 +170,24 @@ naide ~~ "チャットアプリ"</code></pre>
 
       <h2>API Usage</h2>
       <p>Use programmatically in JavaScript/TypeScript:</p>
-      <pre><code>import { generate } from 'naider';
+      <pre><code>import { generate, generateProject } from 'naider';
 
-const result = generate("REST API for users with auth");
+const result = generate("users and products with auth");
 
-console.log(result.code);      // generated NAIDE source code
-console.log(result.valid);     // true (parser-validated)
-console.log(result.intents);   // ['server', 'schema', 'crud', 'auth', 'database']
-console.log(result.schema);    // 'User'
-console.log(result.port);      // 3000
-console.log(result.fixed);     // false (true if auto-repaired)
-console.log(result.repairs);   // [] (list of auto-fix descriptions)
-console.log(result.suggestion);// null (hint text if match was weak)</code></pre>
+console.log(result.code);          // generated NAIDE source code
+console.log(result.valid);         // true (parser-validated)
+console.log(result.intents);       // ['server', 'schema', 'crud', 'auth', 'database']
+console.log(result.entities);      // ['User', 'Product']
+console.log(result.relationships); // [{parent:'User', child:'Product', fk:'user_id'}]
+console.log(result.port);          // 3000
+console.log(result.fixed);         // false (true if auto-repaired)
+console.log(result.repairs);       // [] (list of auto-fix descriptions)
+console.log(result.analysis);      // {entities, relationships, plan, ...}
 
-      <p>Override parameters:</p>
-      <pre><code>const result = generate("REST API", {
-  port: 8080,
-  schemaName: "Product",
-  fields: [
-    { name: "id", type: "auto", modifiers: [] },
-    { name: "title", type: "str", modifiers: ["required"] },
-    { name: "price", type: "int", modifiers: ["required"] },
-  ]
-});</code></pre>
+// Full project generation
+const project = generateProject("e-commerce with auth");
+project.files.forEach(f => console.log(f.path));
+// app.naide, package.json, .env, Dockerfile, README.md, openapi.json, admin.html, client.mjs, ...</code></pre>
 
       <h2>MCP Server</h2>
       <p>The <code>naide_generate</code> tool is available via the MCP server for AI agent integration:</p>
@@ -136,7 +207,7 @@ console.log(result.suggestion);// null (hint text if match was weak)</code></pre
  "L8: renamed reserved word 'post' &rarr; 'postApp'"]</code></pre>
 
       <h2>Field Normalization</h2>
-      <p>Field names are automatically normalized via a synonym dictionary. This means you can use common abbreviations and variations:</p>
+      <p>Field names are automatically normalized via a synonym dictionary:</p>
       <table>
         <thead><tr><th>Input</th><th>Normalized</th><th>Inferred Type</th></tr></thead>
         <tbody>
@@ -152,7 +223,6 @@ console.log(result.suggestion);// null (hint text if match was weak)</code></pre
       </table>
 
       <h2>Keyword Cheat Sheet</h2>
-      <p>These keywords control what the generator produces:</p>
 
       <h3>Intent Keywords</h3>
       <table>
@@ -175,16 +245,35 @@ console.log(result.suggestion);// null (hint text if match was weak)</code></pre
       </table>
 
       <h3>Composite Keywords</h3>
-      <p>These trigger multiple intents at once:</p>
+      <p>These trigger multiple intents and multi-entity generation:</p>
       <table>
-        <thead><tr><th>Keyword</th><th>Intents</th></tr></thead>
+        <thead><tr><th>Keyword</th><th>Entities</th><th>Intents</th></tr></thead>
         <tbody>
-          <tr><td><code>todo</code></td><td>server + schema(Todo) + crud + database</td></tr>
-          <tr><td><code>blog</code></td><td>server + schema(Post) + crud + database</td></tr>
-          <tr><td><code>chat</code></td><td>server + schema(Message) + websocket + database</td></tr>
-          <tr><td><code>shop</code> <code>ecommerce</code></td><td>server + schema(Product) + crud + auth + database</td></tr>
-          <tr><td><code>fullstack</code></td><td>server + schema + crud + auth + database</td></tr>
-          <tr><td><code>board</code></td><td>server + schema(Post) + crud + database</td></tr>
+          <tr><td><code>todo</code></td><td>Todo</td><td>server + crud + database</td></tr>
+          <tr><td><code>blog</code></td><td>Post</td><td>server + crud + database</td></tr>
+          <tr><td><code>chat</code></td><td>Message</td><td>server + websocket + database</td></tr>
+          <tr><td><code>shop</code> <code>ecommerce</code> <code>ECサイト</code></td><td>User + Product + Order</td><td>server + crud + auth + database</td></tr>
+          <tr><td><code>fullstack</code></td><td>(from instruction)</td><td>server + crud + auth + database</td></tr>
+          <tr><td><code>board</code> <code>掲示板</code></td><td>Post</td><td>server + crud + database</td></tr>
+          <tr><td><code>crm</code></td><td>User + Contact + Deal + Activity</td><td>server + crud + auth + database</td></tr>
+          <tr><td><code>inventory</code></td><td>Product + Category + Inventory</td><td>server + crud + auth + database</td></tr>
+          <tr><td><code>booking</code> <code>予約</code></td><td>User + Event + Reservation</td><td>server + crud + auth + database</td></tr>
+          <tr><td><code>sns</code></td><td>User + Post + Comment + Message + Notification</td><td>server + crud + auth + websocket + database</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Natural Language Detection</h3>
+      <p>Complex phrases are parsed into intents:</p>
+      <table>
+        <thead><tr><th>Phrase</th><th>Detected</th></tr></thead>
+        <tbody>
+          <tr><td>"users can comment", "users post reviews"</td><td>auth + crud</td></tr>
+          <tr><td>"admin delete", "admin manage"</td><td>auth + admin routes</td></tr>
+          <tr><td>"upload", "file upload"</td><td>upload route</td></tr>
+          <tr><td>"search", "filter", "sort"</td><td>paginated list</td></tr>
+          <tr><td>"notification", "push", "alert"</td><td>websocket</td></tr>
+          <tr><td>"deploy", "docker", "container"</td><td>Docker support</td></tr>
+          <tr><td>"seed", "初期データ", "サンプルデータ"</td><td>seed function</td></tr>
         </tbody>
       </table>
 
@@ -213,23 +302,36 @@ console.log(result.suggestion);// null (hint text if match was weak)</code></pre
       <pre><code>naide ~~ "REST API for users with name email age role"</code></pre>
       <p>Field types are auto-inferred from names: <code>id</code>&rarr;<code>auto</code>, <code>email</code>&rarr;<code>str+email</code>, <code>age</code>&rarr;<code>int</code>, <code>done</code>&rarr;<code>bool</code>, <code>created</code>&rarr;<code>auto</code>. Without <code>with</code>, preset fields are used based on the entity name.</p>
 
+      <h2>Agent-Style Analysis</h2>
+      <p>The CLI shows an analysis header before code output, including detected entities, relationships, plan, and feature counts:</p>
+      <pre><code>--- NAIDE Agent Analysis ---
+Entities: User (5 fields), Product (6 fields), Order (5 fields)
+Relations: User &rarr; Order (user_id), Product &rarr; Order (product_id)
+Intents: server, schema, crud, auth, database
+Routes: 9 per entity + 3 nested + 6 global
+Plan: Define User/Product/Order schemas, configure database, create server with CRUD...</code></pre>
+
       <h2>Examples</h2>
 
-      <h3>Todo App</h3>
-      <pre><code>naide ~~ "todo app with auth"</code></pre>
-      <p>Generates: schema Todo (id, title, done) + db + server with CRUD + JWT auth</p>
+      <h3>Multi-Entity E-commerce</h3>
+      <pre><code>naide ~~ "users and products and orders with auth"</code></pre>
+      <p>Generates: 3 schemas with auto FK relations, paginated CRUD, soft delete, batch ops, nested routes, seed, tests, auth with admin stats</p>
 
-      <h3>Discord Bot</h3>
-      <pre><code>naide ~~ "Discord bot with hello and help commands"</code></pre>
-      <p>Generates: bot block with discord platform, event handlers for each command</p>
+      <h3>Full Project</h3>
+      <pre><code>naide ~~ "e-commerce app with auth" --project</code></pre>
+      <p>Generates: complete project directory with source, package.json, Docker, OpenAPI, admin dashboard, API client, README</p>
 
-      <h3>Fullstack E-commerce</h3>
-      <pre><code>naide ~~ "shop app with sqlite"</code></pre>
-      <p>Generates: schema Product + SQLite db + server with CRUD + auth</p>
+      <h3>CRM System</h3>
+      <pre><code>naide ~~ "crm"</code></pre>
+      <p>Generates: User + Contact + Deal + Activity with auth, relationships, full CRUD stack</p>
 
-      <h3>Japanese: User Management</h3>
-      <pre><code>naide ~~ "ユーザー管理APIを認証付きで"</code></pre>
-      <p>Generates: schema User + db + server with CRUD + JWT auth (same as English equivalent)</p>
+      <h3>Write to File</h3>
+      <pre><code>naide ~~ "REST API for users with auth" --write app.naide</code></pre>
+      <p>Generates and writes directly to <code>app.naide</code>, merging with existing code</p>
+
+      <h3>Japanese: EC Site</h3>
+      <pre><code>naide ~~ "ECサイト"</code></pre>
+      <p>Generates: User + Product + Order with auth, same as English "shop" composite</p>
 
       <div class="footer">
         <p><a href="cli.html">&larr; CLI Reference</a></p>
