@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.23.0';
+const NAIDE_VERSION = '1.24.0';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -302,6 +302,48 @@ if (files[0] === 'gen' || files[0] === '~~') {
     for (const f of result.files) console.log(`    ${f.path}`);
     if (!isUpdate) console.log(`\n  cd ${dir} && npm install && npm run dev\n`);
     else console.log(`\n  Files regenerated. Run: npm run dev\n`);
+    process.exit(0);
+  }
+
+  // Multi-target generation (D6)
+  if (flags.target && flags.target !== 'naide') {
+    const { generateForTarget, generateAllTargets } = await import('../src/gen.js');
+    if (flags.target === 'all') {
+      const result = await generateAllTargets(instruction);
+      if (!result.valid) {
+        process.stderr.write(`  Error: generated NAIDE code is invalid\n`);
+        process.exit(1);
+      }
+      const succeeded = Object.entries(result.targets).filter(([, v]) => !v.error);
+      const failed = Object.entries(result.targets).filter(([, v]) => v.error);
+      process.stderr.write(`\n  ── Multi-Target Generation (${succeeded.length}/${Object.keys(result.targets).length} targets) ──\n`);
+      for (const [t, v] of succeeded) {
+        if (flags.output) {
+          const outPath = flags.output.replace(/\.\w+$/, v.ext);
+          writeFileSync(outPath, v.code, 'utf-8');
+          console.log(`  ${t}: ${outPath}`);
+        } else {
+          console.log(`\n  ── ${t} (${v.ext}) ──\n`);
+          console.log(v.code);
+        }
+      }
+      if (failed.length > 0) {
+        process.stderr.write(`  Failed: ${failed.map(([t, v]) => `${t} (${v.error.slice(0, 50)})`).join(', ')}\n`);
+      }
+      process.exit(0);
+    }
+    const result = await generateForTarget(instruction, flags.target);
+    if (result.compiled) {
+      if (flags.output) {
+        writeFileSync(flags.output, result.compiled, 'utf-8');
+        console.log(`  Generated: ${flags.output} (${flags.target})`);
+      } else {
+        console.log(result.compiled);
+      }
+    } else {
+      process.stderr.write(`  Error compiling to ${flags.target}: ${result.compileError || 'unknown'}\n`);
+      console.log(result.code);
+    }
     process.exit(0);
   }
 

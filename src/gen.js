@@ -1202,13 +1202,48 @@ function passwordResetRoutes() {
 
 // ── WebSocket Rooms (B11) ──────────────────────────────────
 
-function wsRoomsBlock() {
-  return [
+function wsRoomsBlock(hasAuth) {
+  const lines = [
     `ws "/ws":`,
-    `  on "connection" (socket):`,
+    `  on "connection" (socket, req):`,
+  ];
+  if (hasAuth) {
+    lines.push(
+      `    # WS auth: verify token from query string`,
+      `    str wsToken = ""`,
+      `    if req.url and req.url.includes("token="):`,
+      `      str qs = req.url.split("token=")[1] or ""`,
+      `      int ampIdx = qs.indexOf("&")`,
+      `      if ampIdx > 0:`,
+      `        wsToken = qs.slice(0, ampIdx)`,
+      `      else:`,
+      `        wsToken = qs`,
+      `    if wsToken:`,
+      `      any wsDecoded = jwt.verify(wsToken, JWT_SECRET)`,
+      `      if wsDecoded:`,
+      `        socket.user = wsDecoded`,
+      `        socket.authenticated = true`,
+      `      else:`,
+      `        socket.authenticated = false`,
+      `        socket.send(JSON.stringify({type: "error", message: "Invalid token"}))`,
+      `        socket.close()`,
+      `    else:`,
+      `      socket.authenticated = false`,
+    );
+  }
+  lines.push(
     `    socket.room = "general"`,
     `    log("Client connected to room: general")`,
     `  on "message" (data, socket):`,
+  );
+  if (hasAuth) {
+    lines.push(
+      `    if not socket.authenticated:`,
+      `      socket.send(JSON.stringify({type: "error", message: "Not authenticated"}))`,
+      `      ret`,
+    );
+  }
+  lines.push(
     `    any msg = JSON.parse(data)`,
     `    if msg.type == "join":`,
     `      socket.room = msg.room`,
@@ -1221,7 +1256,8 @@ function wsRoomsBlock() {
     `      broadcast(msg.data)`,
     `  on "close" (socket):`,
     `    log("Client disconnected")`,
-  ];
+  );
+  return lines;
 }
 
 // ── Rate Limiting (B12) ────────────────────────────────────
@@ -1248,6 +1284,33 @@ function loggingBlock() {
   int startTime = Date.now()
   log("[" + req.method + "] " + req.path)
   next()`;
+}
+
+// ── RBAC Middleware (D1) ──────────────────────────────────
+
+function rbacBlock() {
+  return `fn requireRole(list allowed):
+  ret fn(req, res, next):
+    if not req.user:
+      ret.status(401) {error: "Not authenticated"}
+    str userRole = req.user.role or "user"
+    if not allowed.includes(userRole):
+      ret.status(403) {error: "Insufficient permissions"}
+    next()`;
+}
+
+function rbacRouteGuards(entity) {
+  const lower = entity.name.toLowerCase();
+  const plural = pluralize(lower);
+  return [
+    `# Role guards for ${plural}`,
+    `del "/api/${plural}/:id" (req, res):`,
+    `  str role = req.user.role or "user"`,
+    `  if role != "admin" and role != "moderator":`,
+    `    ret.status(403) {error: "Only admin/moderator can delete"}`,
+    `  ${entity.name}Store.remove(req.params.id)`,
+    `  ret {deleted: true}`,
+  ];
 }
 
 // ── Caching Headers (C18) ─────────────────────────────────
@@ -1288,7 +1351,11 @@ th{background:var(--bg);font-weight:600;font-size:.875rem;color:var(--muted)}
 .search input{flex:1;padding:.5rem .75rem;border:1px solid var(--border);border-radius:var(--radius)}
 .pagination{display:flex;gap:.5rem;justify-content:center;margin-top:1rem;align-items:center}
 .toast{position:fixed;top:1rem;right:1rem;background:#22c55e;color:#fff;padding:.75rem 1.5rem;border-radius:var(--radius);opacity:0;transition:opacity .3s;z-index:999}
-.toast.show{opacity:1}.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100}
+.toast.show{opacity:1}.toast.error{background:var(--danger)}.toast.warn{background:#f59e0b}
+.loading{text-align:center;padding:2rem;color:var(--muted)}.loading::after{content:"";display:inline-block;width:1.5rem;height:1.5rem;border:2px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .6s linear infinite;margin-left:.5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-banner{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:.75rem 1rem;border-radius:var(--radius);margin-bottom:1rem;font-size:.875rem}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:100}
 .modal{background:var(--card);border-radius:var(--radius);padding:2rem;width:90%;max-width:500px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .modal h3{margin-bottom:1rem}.modal-actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1.5rem}
 .badge{display:inline-block;padding:.15rem .5rem;border-radius:99px;font-size:.75rem;font-weight:500;background:var(--border)}
@@ -1338,30 +1405,36 @@ th{background:var(--bg);font-weight:600;font-size:.875rem;color:var(--muted)}
   L.push('<script>');
   L.push(`const API="";let currentPage={};let _token=null;let _isRegister=false;`);
   L.push(`function authHeaders(){const h={"Content-Type":"application/json"};if(_token)h.Authorization="Bearer "+_token;return h}`);
-  L.push(`function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2500)}`);
+  L.push(`function toast(m,type){const t=document.getElementById("toast");t.textContent=m;t.className="toast show"+(type?" "+type:"");setTimeout(()=>{t.classList.remove("show")},2500)}`);
+  L.push(`function showError(msg){toast(msg,"error")}`);
+  L.push(`async function apiFetch(url,opts){try{const r=await fetch(url,opts||{headers:authHeaders()});if(r.status===401){${hasAuth?'showError("Session expired — please log in again");doLogout();':''} return null}if(!r.ok){const e=await r.json().catch(()=>({error:"Request failed"}));showError(e.error||"Error "+r.status);return null}return await r.json()}catch(e){showError("Network error: "+e.message);return null}}`);
+  L.push(`function setLoading(id,on){const el=document.getElementById(id);if(el)el.innerHTML=on?'<div class="loading">Loading...</div>':""}`);
+  L.push(`function showBanner(containerId,msg){const el=document.getElementById(containerId);if(!el)return;let b=el.querySelector(".error-banner");if(!b){b=document.createElement("div");b.className="error-banner";el.prepend(b)}b.textContent=msg;setTimeout(()=>b.remove(),5000)}`);
   L.push(`function showSection(name){document.querySelectorAll('[id^="section-"]').forEach(s=>s.classList.add("hidden"));const el=document.getElementById("section-"+name);if(el)el.classList.remove("hidden");document.querySelectorAll("nav a").forEach(a=>a.classList.remove("active"));const n=document.getElementById("nav-"+name);if(n)n.classList.add("active");if(window[name+"Load"])window[name+"Load"]()}`);
   if (hasAuth) {
     L.push(`function toggleAuthMode(){_isRegister=!_isRegister;document.getElementById("auth-title").textContent=_isRegister?"Register":"Login";document.getElementById("auth-name-group").classList.toggle("hidden",!_isRegister)}`);
-    L.push(`async function doAuth(){const email=document.getElementById("auth-email").value;const password=document.getElementById("auth-password").value;const url=_isRegister?"/api/auth/register":"/api/auth/login";const body=_isRegister?{name:document.getElementById("auth-name").value,email,password}:{email,password};try{const r=await fetch(API+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(d.token){_token=d.token;document.getElementById("user-info").textContent="Hi, "+(d.user?.name||email);document.getElementById("user-info").classList.remove("hidden");document.getElementById("logout-btn").classList.remove("hidden");document.getElementById("nav-auth").classList.add("hidden");toast(_isRegister?"Registered!":"Logged in!");showSection("${entities[0].name.toLowerCase()}")}else{toast(d.error||"Auth failed")}}catch(e){toast("Error: "+e.message)}}`);
-    L.push(`function doLogout(){_token=null;document.getElementById("user-info").classList.add("hidden");document.getElementById("logout-btn").classList.add("hidden");document.getElementById("nav-auth").classList.remove("hidden");toast("Logged out");showSection("auth")}`);
+    L.push(`async function doAuth(){const email=document.getElementById("auth-email").value;const password=document.getElementById("auth-password").value;if(!email||!password){showError("Email and password are required");return}const url=_isRegister?"/api/auth/register":"/api/auth/login";const body=_isRegister?{name:document.getElementById("auth-name").value,email,password}:{email,password};try{const r=await fetch(API+url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json();if(!r.ok){showError(d.error||"Auth failed ("+r.status+")");return}if(d.token){_token=d.token;localStorage.setItem("_token",d.token);document.getElementById("user-info").textContent="Hi, "+(d.user?.name||email);document.getElementById("user-info").classList.remove("hidden");document.getElementById("logout-btn").classList.remove("hidden");document.getElementById("nav-auth").classList.add("hidden");toast(_isRegister?"Registered!":"Logged in!");showSection("${entities[0].name.toLowerCase()}")}else{showError(d.error||"No token received")}}catch(e){showError("Network error: "+e.message)}}`);
+    L.push(`function doLogout(){_token=null;localStorage.removeItem("_token");document.getElementById("user-info").classList.add("hidden");document.getElementById("logout-btn").classList.add("hidden");document.getElementById("nav-auth").classList.remove("hidden");toast("Logged out");showSection("auth")}`);
+    L.push(`(function(){const t=localStorage.getItem("_token");if(t){_token=t;document.getElementById("user-info").textContent="Logged in";document.getElementById("user-info").classList.remove("hidden");document.getElementById("logout-btn").classList.remove("hidden");document.getElementById("nav-auth").classList.add("hidden")}})()`);
   }
   for (const entity of entities) {
     const lower = entity.name.toLowerCase();
     const plural = pluralize(lower);
     const fields = entity.fields.filter(f => f.type !== 'auto');
     L.push(`async function ${lower}Load(page){page=page||1;currentPage["${lower}"]=page;const s=document.getElementById("${lower}-search").value;const sort=document.getElementById("${lower}-sort").value;const ord=document.getElementById("${lower}-order").value;`);
-    L.push(`const r=await fetch(API+"/api/${plural}?page="+page+"&limit=10&search="+encodeURIComponent(s)+"&sort="+sort+"&order="+ord,{headers:authHeaders()});const d=await r.json();const items=d.items||d;`);
+    L.push(`setLoading("${lower}-tbody",true);`);
+    L.push(`const d=await apiFetch(API+"/api/${plural}?page="+page+"&limit=10&search="+encodeURIComponent(s)+"&sort="+sort+"&order="+ord);if(!d){setLoading("${lower}-tbody",false);return}const items=d.items||d;`);
     L.push(`document.getElementById("${lower}-tbody").innerHTML=items.map(i=>"<tr>${entity.fields.map(f => `<td>"+(i.${f.name}!=null?i.${f.name}:"")+"</td>`).join('')}<td><button class='btn btn-sm btn-primary' onclick='${lower}Edit("+i.id+")'>Edit</button> <button class='btn btn-sm btn-danger' onclick='${lower}Del("+i.id+")'>Del</button></td></tr>").join("");`);
     L.push(`const tp=Math.ceil((d.total||items.length)/10);let pg="";for(let p=1;p<=tp;p++)pg+="<button class='btn btn-sm "+(p===page?"btn-primary":"")+"' onclick='${lower}Load("+p+")'>"+p+"</button>";document.getElementById("${lower}-pager").innerHTML=pg}`);
     L.push(`function ${lower}ShowModal(id){document.getElementById("${lower}-edit-id").value=id||"";document.getElementById("${lower}-modal-title").textContent=id?"Edit ${entity.name}":"New ${entity.name}";${fields.map(f => f.type === 'bool' ? `document.getElementById("${lower}-f-${f.name}").checked=false` : `document.getElementById("${lower}-f-${f.name}").value=""`).join(';')};document.getElementById("${lower}-modal").classList.remove("hidden")}`);
-    L.push(`async function ${lower}Edit(id){const r=await fetch(API+"/api/${plural}/"+id,{headers:authHeaders()});const d=await r.json();const i=d.data||d;${lower}ShowModal(id);${fields.map(f => f.type === 'bool' ? `document.getElementById("${lower}-f-${f.name}").checked=!!i.${f.name}` : `document.getElementById("${lower}-f-${f.name}").value=i.${f.name}||""`).join(';')}}`);
+    L.push(`async function ${lower}Edit(id){const d=await apiFetch(API+"/api/${plural}/"+id);if(!d)return;const i=d.data||d;${lower}ShowModal(id);${fields.map(f => f.type === 'bool' ? `document.getElementById("${lower}-f-${f.name}").checked=!!i.${f.name}` : `document.getElementById("${lower}-f-${f.name}").value=i.${f.name}||""`).join(';')}}`);
     L.push(`async function ${lower}Save(){const id=document.getElementById("${lower}-edit-id").value;const body={${fields.map(f => {
       if (f.type === 'bool') return `${f.name}:document.getElementById("${lower}-f-${f.name}").checked`;
       if (f.type === 'int') return `${f.name}:+document.getElementById("${lower}-f-${f.name}").value`;
       return `${f.name}:document.getElementById("${lower}-f-${f.name}").value`;
     }).join(',')}};`);
-    L.push(`const method=id?"PUT":"POST";const url=API+"/api/${plural}"+(id?"/"+id:"");await fetch(url,{method,headers:authHeaders(),body:JSON.stringify(body)});document.getElementById("${lower}-modal").classList.add("hidden");toast(id?"Updated!":"Created!");${lower}Load()}`);
-    L.push(`async function ${lower}Del(id){if(!confirm("Delete this ${lower}?"))return;await fetch(API+"/api/${plural}/"+id,{method:"DELETE",headers:authHeaders()});toast("Deleted!");${lower}Load()}`);
+    L.push(`const method=id?"PUT":"POST";const url=API+"/api/${plural}"+(id?"/"+id:"");const d=await apiFetch(url,{method,headers:authHeaders(),body:JSON.stringify(body)});if(!d){showBanner("section-${lower}","Save failed — check required fields");return}document.getElementById("${lower}-modal").classList.add("hidden");toast(id?"Updated!":"Created!");${lower}Load()}`);
+    L.push(`async function ${lower}Del(id){if(!confirm("Delete this ${lower}?"))return;const d=await apiFetch(API+"/api/${plural}/"+id,{method:"DELETE",headers:authHeaders()});if(!d)return;toast("Deleted!");${lower}Load()}`);
   }
   const initSection = hasAuth ? 'auth' : entities[0].name.toLowerCase();
   L.push(`showSection("${initSection}")`);
@@ -1501,6 +1574,173 @@ function envLines(intents, params) {
   return lines;
 }
 
+// ── Test Runner (D2) ─────────────────────────────────────
+
+function testRunnerFile(entities, intents, port) {
+  const lines = [];
+  lines.push(`import { describe, it } from 'node:test';`);
+  lines.push(`import assert from 'node:assert/strict';`);
+  lines.push('');
+  lines.push(`const BASE = process.env.TEST_URL || 'http://localhost:${port}';`);
+  lines.push(`const headers = {'Content-Type': 'application/json'};`);
+  lines.push(`let authToken = null;`);
+  lines.push('');
+  lines.push(`async function api(path, opts = {}) {`);
+  lines.push(`  const h = {...headers};`);
+  lines.push(`  if (authToken) h.Authorization = 'Bearer ' + authToken;`);
+  lines.push(`  const r = await fetch(BASE + path, {...opts, headers: {...h, ...opts.headers}});`);
+  lines.push(`  const body = await r.json().catch(() => null);`);
+  lines.push(`  return {status: r.status, body, ok: r.ok};`);
+  lines.push(`}`);
+  lines.push('');
+  lines.push(`describe('Health', () => {`);
+  lines.push(`  it('GET /api/health returns ok', async () => {`);
+  lines.push(`    const r = await api('/api/health');`);
+  lines.push(`    assert.equal(r.status, 200);`);
+  lines.push(`    assert.equal(r.body.status, 'ok');`);
+  lines.push(`  });`);
+  lines.push(`});`);
+  lines.push('');
+  if (intents.has('auth')) {
+    lines.push(`describe('Auth', () => {`);
+    lines.push(`  const email = 'test' + Date.now() + '@test.com';`);
+    lines.push(`  it('POST /api/auth/register creates user', async () => {`);
+    lines.push(`    const r = await api('/api/auth/register', {method: 'POST', body: JSON.stringify({name: 'Test', email, password: 'test1234'})});`);
+    lines.push(`    assert.equal(r.status, 200);`);
+    lines.push(`    assert.ok(r.body.token);`);
+    lines.push(`    authToken = r.body.token;`);
+    lines.push(`  });`);
+    lines.push(`  it('POST /api/auth/login returns token', async () => {`);
+    lines.push(`    const r = await api('/api/auth/login', {method: 'POST', body: JSON.stringify({email, password: 'test1234'})});`);
+    lines.push(`    assert.equal(r.status, 200);`);
+    lines.push(`    assert.ok(r.body.token);`);
+    lines.push(`    authToken = r.body.token;`);
+    lines.push(`  });`);
+    lines.push(`  it('GET /api/auth/me returns current user', async () => {`);
+    lines.push(`    const r = await api('/api/auth/me');`);
+    lines.push(`    assert.equal(r.status, 200);`);
+    lines.push(`    assert.equal(r.body.email || r.body.data?.email, email);`);
+    lines.push(`  });`);
+    lines.push(`  it('rejects invalid login', async () => {`);
+    lines.push(`    const r = await api('/api/auth/login', {method: 'POST', body: JSON.stringify({email: 'no@no.com', password: 'wrong'})});`);
+    lines.push(`    assert.equal(r.status, 401);`);
+    lines.push(`  });`);
+    lines.push(`});`);
+    lines.push('');
+  }
+  for (const entity of entities) {
+    const lower = entity.name.toLowerCase();
+    const plural = pluralize(lower);
+    const requiredFields = entity.fields.filter(f => f.modifiers.includes('required') && f.type !== 'auto');
+    const sampleData = {};
+    for (const f of requiredFields) {
+      if (f.type === 'int') sampleData[f.name] = 1;
+      else if (f.type === 'bool') sampleData[f.name] = true;
+      else sampleData[f.name] = 'test_' + f.name;
+    }
+    if (Object.keys(sampleData).length === 0) {
+      const first = entity.fields.find(f => f.type !== 'auto' && f.type !== 'bool');
+      if (first) sampleData[first.name] = first.type === 'int' ? 1 : 'test';
+    }
+    lines.push(`describe('${entity.name} CRUD', () => {`);
+    lines.push(`  let createdId;`);
+    lines.push(`  it('POST /api/${plural} creates', async () => {`);
+    lines.push(`    const r = await api('/api/${plural}', {method: 'POST', body: JSON.stringify(${JSON.stringify(sampleData)})});`);
+    lines.push(`    assert.ok(r.ok, 'status ' + r.status);`);
+    lines.push(`    createdId = r.body.id || r.body.data?.id;`);
+    lines.push(`    assert.ok(createdId, 'has id');`);
+    lines.push(`  });`);
+    lines.push(`  it('GET /api/${plural} lists', async () => {`);
+    lines.push(`    const r = await api('/api/${plural}');`);
+    lines.push(`    assert.equal(r.status, 200);`);
+    lines.push(`    const items = r.body.items || r.body;`);
+    lines.push(`    assert.ok(Array.isArray(items));`);
+    lines.push(`  });`);
+    lines.push(`  it('GET /api/${plural}/:id finds', async () => {`);
+    lines.push(`    const r = await api('/api/${plural}/' + createdId);`);
+    lines.push(`    assert.equal(r.status, 200);`);
+    lines.push(`  });`);
+    lines.push(`  it('PUT /api/${plural}/:id updates', async () => {`);
+    lines.push(`    const r = await api('/api/${plural}/' + createdId, {method: 'PUT', body: JSON.stringify(${JSON.stringify(sampleData)})});`);
+    lines.push(`    assert.ok(r.ok);`);
+    lines.push(`  });`);
+    lines.push(`  it('DELETE /api/${plural}/:id deletes', async () => {`);
+    lines.push(`    const r = await api('/api/${plural}/' + createdId, {method: 'DELETE'});`);
+    lines.push(`    assert.ok(r.ok);`);
+    lines.push(`  });`);
+    lines.push(`});`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+// ── DB Migration (D3) ───────────────────────────────────────
+
+function migrationFile(entities, relationships, m2mRels) {
+  const lines = [];
+  const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  lines.push(`# Migration: ${ts}`);
+  lines.push(`# Auto-generated by NAIDE ~~ engine`);
+  lines.push(`# Run: naide migrate.naide`);
+  lines.push('');
+  lines.push('use "node:fs"');
+  lines.push('');
+  lines.push(`fn migrate():`);
+  for (const entity of entities) {
+    const lower = entity.name.toLowerCase();
+    const plural = pluralize(lower);
+    lines.push(`  log("Creating table: ${plural}")`);
+    const cols = entity.fields.map(f => {
+      let col = f.name;
+      if (f.type === 'auto') col += ' INTEGER PRIMARY KEY AUTOINCREMENT';
+      else if (f.type === 'int') col += ' INTEGER';
+      else if (f.type === 'bool') col += ' BOOLEAN DEFAULT false';
+      else col += ' TEXT';
+      if (f.modifiers.includes('required') && f.type !== 'auto') col += ' NOT NULL';
+      if (f.modifiers.includes('unique')) col += ' UNIQUE';
+      return col;
+    });
+    lines.push(`  str sql_${lower} = "CREATE TABLE IF NOT EXISTS ${plural} (${cols.join(', ')}"`);
+    const fks = relationships.filter(r => r.child === entity.name);
+    if (fks.length > 0) {
+      for (const fk of fks) {
+        const parentPlural = pluralize(fk.parent.toLowerCase());
+        lines.push(`  sql_${lower} = sql_${lower} + ", FOREIGN KEY (${fk.fk}) REFERENCES ${parentPlural}(id)"`);
+      }
+    }
+    lines.push(`  sql_${lower} = sql_${lower} + ")"`);
+    lines.push(`  log(sql_${lower})`);
+    lines.push('');
+  }
+  for (const rel of m2mRels) {
+    const jLower = rel.junction.toLowerCase();
+    lines.push(`  log("Creating junction table: ${jLower}")`);
+    const lp = pluralize(rel.left.toLowerCase());
+    const rp = pluralize(rel.right.toLowerCase());
+    lines.push(`  str sql_${jLower} = "CREATE TABLE IF NOT EXISTS ${jLower} (id INTEGER PRIMARY KEY AUTOINCREMENT, ${rel.fkLeft} INTEGER NOT NULL, ${rel.fkRight} INTEGER NOT NULL, created TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (${rel.fkLeft}) REFERENCES ${lp}(id), FOREIGN KEY (${rel.fkRight}) REFERENCES ${rp}(id), UNIQUE(${rel.fkLeft}, ${rel.fkRight}))"`);
+    lines.push(`  log(sql_${jLower})`);
+    lines.push('');
+  }
+  lines.push('  log("Migration complete")');
+  lines.push('');
+  lines.push(`fn rollback():`);
+  for (const entity of [...entities].reverse()) {
+    const plural = pluralize(entity.name.toLowerCase());
+    lines.push(`  log("Dropping table: ${plural}")`);
+    lines.push(`  str drop_${entity.name.toLowerCase()} = "DROP TABLE IF EXISTS ${plural}"`);
+    lines.push(`  log(drop_${entity.name.toLowerCase()})`);
+  }
+  for (const rel of m2mRels) {
+    const jLower = rel.junction.toLowerCase();
+    lines.push(`  str drop_${jLower} = "DROP TABLE IF EXISTS ${jLower}"`);
+    lines.push(`  log(drop_${jLower})`);
+  }
+  lines.push('  log("Rollback complete")');
+  lines.push('');
+  lines.push('migrate()');
+  return lines.join('\n') + '\n';
+}
+
 // ── Code Composer ───────────────────────────────────────────
 
 function compose(intents, params) {
@@ -1529,6 +1769,11 @@ function compose(intents, params) {
   if (intents.has('server')) {
     sections.push(rateLimitBlock());
     sections.push(loggingBlock());
+  }
+
+  // RBAC middleware (D1)
+  if (hasAuth) {
+    sections.push(rbacBlock());
   }
 
   // Input validation functions (A4)
@@ -1640,9 +1885,9 @@ function compose(intents, params) {
       body.push('');
     }
 
-    // WebSocket with rooms (B11)
+    // WebSocket with rooms + auth (B11, D4)
     if (intents.has('websocket')) {
-      body.push(...wsRoomsBlock());
+      body.push(...wsRoomsBlock(hasAuth));
       body.push('');
     }
 
@@ -1662,6 +1907,14 @@ function compose(intents, params) {
         body.push(...softDeleteRoutes(entity));
         body.push('');
         body.push(...batchRoutes(entity));
+        body.push('');
+      }
+    }
+
+    // RBAC role-guarded delete routes (D1)
+    if (hasAuth && intents.has('crud') && intents.has('schema')) {
+      for (const entity of entities) {
+        body.push(...rbacRouteGuards(entity));
         body.push('');
       }
     }
@@ -1866,8 +2119,10 @@ export function generateProject(instruction, options = {}) {
       dev: 'naide app.naide',
       build: 'naide app.naide --emit -o dist/app.mjs',
       start: 'node dist/app.mjs',
-      test: 'naide test app.naide',
+      test: 'node --test test.mjs',
+      'test:unit': 'naide test app.naide',
       seed: 'naide app.naide --run-seed',
+      migrate: 'naide migrate.naide',
     },
     dependencies: deps,
   };
@@ -1996,6 +2251,17 @@ CMD ["node", "dist/app.mjs"]
 
   // GitHub Actions CI (C16)
   files.push({ path: '.github/workflows/ci.yml', content: githubActionsCI(projectName) });
+
+  // Test runner (D2)
+  if (intents.has('server') && entityObjs.length > 0) {
+    files.push({ path: 'test.mjs', content: testRunnerFile(entityObjs, intents, result.port) });
+  }
+
+  // DB migration (D3)
+  if (intents.has('database') && entityObjs.length > 0) {
+    const m2mRels = detectManyToMany(entities.map(e => e));
+    files.push({ path: 'migrate.naide', content: migrationFile(entityObjs, result.relationships || [], m2mRels) });
+  }
 
   return { ...result, files };
 }
@@ -2332,7 +2598,8 @@ function buildAnalysis(instruction, intents, params) {
   if (params.relationships.length > 0) plan.push(`Nested routes: ${params.relationships.map(r => `/${pluralize(r.parent.toLowerCase())}/:id/${pluralize(r.child.toLowerCase())}`).join(', ')}`);
   const m2m = detectManyToMany(params.entities.map(e => e.name));
   if (m2m.length > 0) plan.push(`M:N relations: ${m2m.map(r => `${r.left}↔${r.right} via ${r.junction}`).join(', ')}`);
-  if (intents.has('websocket'))plan.push('WebSocket: rooms + broadcast');
+  if (intents.has('auth'))     plan.push('RBAC: requireRole() middleware for admin/moderator/user');
+  if (intents.has('websocket'))plan.push('WebSocket: rooms + broadcast' + (intents.has('auth') ? ' (token auth)' : ''));
   if (intents.has('ai'))       plan.push('AI endpoint: /api/ask');
   if (intents.has('bot'))      plan.push(`Bot: ${params.platform || 'discord'}`);
   if (intents.has('mail'))     plan.push('Mail: SMTP configuration');
@@ -2387,4 +2654,63 @@ export function generate(instruction, options = {}) {
     fallback: !!mods.fallback,
     analysis,
   };
+}
+
+// ── Multi-Target Generation (D6) ─────────────────────────────
+
+const TARGET_EXTENSIONS = {
+  node: '.mjs', python: '.py', bun: '.mjs', typescript: '.ts',
+  go: '.go', java: '.java', rust: '.rs', cpp: '.cpp', c: '.c',
+  csharp: '.cs', kotlin: '.kt', swift: '.swift', dart: '.dart',
+  php: '.php', ruby: '.rb',
+};
+
+const ALL_TARGETS = Object.keys(TARGET_EXTENSIONS);
+
+export async function generateForTarget(instruction, target, options = {}) {
+  const result = generate(instruction, options);
+  if (!result.valid) return { ...result, compiled: null, target };
+
+  let compiled;
+  try {
+    const { compile, compileAsync } = await import('./index.js');
+    if (target === 'node') {
+      const r = compile(result.code);
+      compiled = r.js;
+    } else {
+      const r = await compileAsync(result.code, { target });
+      compiled = r.code;
+    }
+  } catch (e) {
+    compiled = null;
+    result.compileError = e.message;
+  }
+
+  return { ...result, compiled, target, extension: TARGET_EXTENSIONS[target] || '.txt' };
+}
+
+export async function generateAllTargets(instruction, options = {}) {
+  const result = generate(instruction, options);
+  if (!result.valid) return { ...result, targets: {} };
+
+  const targets = {};
+  try {
+    const { compile, compileAsync } = await import('./index.js');
+    for (const target of ALL_TARGETS) {
+      try {
+        if (target === 'node') {
+          targets[target] = { code: compile(result.code).js, ext: '.mjs' };
+        } else {
+          const r = await compileAsync(result.code, { target });
+          targets[target] = { code: r.code, ext: TARGET_EXTENSIONS[target] };
+        }
+      } catch (e) {
+        targets[target] = { error: e.message, ext: TARGET_EXTENSIONS[target] };
+      }
+    }
+  } catch (e) {
+    return { ...result, targets: {}, importError: e.message };
+  }
+
+  return { ...result, targets };
 }
