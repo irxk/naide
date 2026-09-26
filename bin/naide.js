@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.24.2';
+const NAIDE_VERSION = '1.24.3';
 
 function crashReport(err, context = {}) {
   const info = [

@@ -1781,370 +1781,403 @@ function migrationFile(entities, relationships, m2mRels) {
 
 // ── Code Composer ───────────────────────────────────────────
 
-// ── Game HTML Generators ──────────────────────────────────
+// ── Game Engine (compositional) ──────────────────────────
 
-const GAME_CSS_BASE = `*{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0a0a1a;--surface:#141428;--primary:#6C63FF;--secondary:#FF6584;--accent:#00D4AA;--text:#f0f0f0;--muted:#888}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-.container{width:min(420px,92vw);text-align:center}
-h1{font-size:1.8rem;margin-bottom:.5rem;background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.score{font-size:3rem;font-weight:800;margin:.5rem 0;font-variant-numeric:tabular-nums}
-.btn{display:inline-block;padding:.75rem 2rem;border:none;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;transition:transform .1s,box-shadow .2s;color:#fff;background:linear-gradient(135deg,var(--primary),#8B5CF6)}
-.btn:active{transform:scale(.95)}
-.btn:hover{box-shadow:0 0 20px rgba(108,99,255,.4)}
-.stats{display:flex;gap:1.5rem;justify-content:center;margin:.75rem 0;font-size:.9rem;color:var(--muted)}
-.stats span{display:flex;flex-direction:column;align-items:center;gap:.2rem}
-.stats b{color:var(--text);font-size:1.1rem}
-.hidden{display:none!important}
-.high{color:var(--accent)}
-@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
-@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}`;
-
-function tappingGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Tapping Game'}</title>
-<style>${GAME_CSS_BASE}
-.tap-area{width:min(320px,80vw);height:min(320px,80vw);border-radius:50%;background:radial-gradient(circle,var(--primary),#4338CA);display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;position:relative;transition:box-shadow .15s;font-size:4rem;font-weight:900}
-.tap-area:active{box-shadow:0 0 60px rgba(108,99,255,.6)}
-.tap-area.go{animation:pulse 1s infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(108,99,255,.5)}50%{box-shadow:0 0 0 20px rgba(108,99,255,0)}}
-.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.3);animation:rippleAnim .5s ease-out forwards;pointer-events:none}
-@keyframes rippleAnim{0%{width:0;height:0;opacity:.6}100%{width:200px;height:200px;opacity:0}}
-.combo{position:fixed;font-weight:800;font-size:1.5rem;color:var(--accent);pointer-events:none;animation:fadeUp .6s ease-out forwards}
-.timer-bar{width:100%;height:6px;background:var(--surface);border-radius:3px;margin:.5rem 0;overflow:hidden}
-.timer-bar .fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--primary));transition:width .1s linear;border-radius:3px}
-.result{font-size:1.2rem;line-height:2}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Tapping Game'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin-bottom:1.5rem">Tap as fast as you can!</p>
-<div class="stats"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
-<button class="btn" onclick="startGame()">Start</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="timer-bar"><div class="fill" id="bar" style="width:100%"></div></div>
-<div class="score" id="count">0</div>
-<div class="tap-area go" id="tap" ontouchstart="doTap(event)" onmousedown="doTap(event)">TAP</div>
-<div class="stats"><span>Combo<b id="combo">x1</b></span><span>TPS<b id="tps">0</b></span></div>
-</div>
-<div id="state-result" class="hidden">
-<div class="score" id="final">0</div>
-<div class="result" id="summary"></div>
-<button class="btn" style="margin-top:1rem" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const DURATION=10000;
-let taps,startT,timer,comboN,lastTap,best=+(localStorage.getItem('tap_best')||0);
-document.getElementById('best').textContent=best;
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function startGame(){taps=0;comboN=1;lastTap=0;startT=Date.now();document.getElementById('count').textContent='0';document.getElementById('combo').textContent='x1';document.getElementById('bar').style.width='100%';show('play');timer=requestAnimationFrame(tick)}
-function tick(){const el=Date.now()-startT,pct=Math.max(0,1-el/DURATION)*100;document.getElementById('bar').style.width=pct+'%';const sec=Math.max(0,(DURATION-el)/1000);document.getElementById('tps').textContent=(taps/Math.max(.1,(el/1000))).toFixed(1);if(el>=DURATION)return endGame();timer=requestAnimationFrame(tick)}
-function doTap(e){e.preventDefault();if(Date.now()-startT>DURATION)return;taps++;const now=Date.now(),gap=now-lastTap;if(gap<200)comboN=Math.min(comboN+1,99);else if(gap>500)comboN=1;lastTap=now;document.getElementById('count').textContent=taps;document.getElementById('combo').textContent='x'+comboN;document.getElementById('count').style.animation='none';void document.getElementById('count').offsetWidth;document.getElementById('count').style.animation='pop .15s';const r=document.createElement('div');r.className='ripple';const rect=document.getElementById('tap').getBoundingClientRect();const x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;const y=(e.touches?e.touches[0].clientY:e.clientY)-rect.top;r.style.left=x-100+'px';r.style.top=y-100+'px';document.getElementById('tap').appendChild(r);setTimeout(()=>r.remove(),500);if(comboN>=3){const c=document.createElement('div');c.className='combo';c.textContent='x'+comboN;c.style.left=Math.random()*60+20+'%';c.style.top=Math.random()*30+20+'%';document.body.appendChild(c);setTimeout(()=>c.remove(),600)}}
-function endGame(){cancelAnimationFrame(timer);const tps=(taps/(DURATION/1000)).toFixed(1);if(taps>best){best=taps;localStorage.setItem('tap_best',best);document.getElementById('best').textContent=best}document.getElementById('last').textContent=taps;document.getElementById('final').textContent=taps;const r=taps>=100?'Insane!':taps>=70?'Amazing!':taps>=50?'Great!':taps>=30?'Nice!':'Keep trying!';document.getElementById('summary').innerHTML=r+'<br>'+tps+' taps/sec'+(taps>=best?' <span class="high">★ New Best!</span>':'');show('result')}
-</script></body></html>`;
-}
-
-function quizGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Quiz Game'}</title>
-<style>${GAME_CSS_BASE}
-.question{font-size:1.3rem;margin:1.5rem 0;min-height:3em;line-height:1.5}
-.choices{display:flex;flex-direction:column;gap:.75rem;margin:1rem 0}
-.choice{padding:1rem;border:2px solid var(--surface);border-radius:12px;background:var(--surface);cursor:pointer;font-size:1rem;text-align:left;transition:border-color .2s,background .2s}
-.choice:hover{border-color:var(--primary)}
-.choice.correct{border-color:var(--accent);background:rgba(0,212,170,.15)}
-.choice.wrong{border-color:var(--secondary);background:rgba(255,101,132,.15)}
-.progress{display:flex;gap:4px;justify-content:center;margin-bottom:1rem}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--surface)}
-.dot.done{background:var(--accent)}.dot.fail{background:var(--secondary)}.dot.cur{background:var(--primary);box-shadow:0 0 8px var(--primary)}
-.timer{font-size:2.5rem;font-weight:800;font-variant-numeric:tabular-nums}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Quiz Game'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Test your knowledge — 10 questions, 15 seconds each</p>
-<div class="stats"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
-<button class="btn" onclick="startGame()">Start Quiz</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="progress" id="dots"></div>
-<div class="timer" id="timer">15</div>
-<div class="question" id="question"></div>
-<div class="choices" id="choices"></div>
-</div>
-<div id="state-result" class="hidden">
-<div class="score" id="final">0/10</div>
-<div class="result" id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
-<button class="btn" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const QUESTIONS=[
-{q:"What does HTML stand for?",a:["HyperText Markup Language","High Tech Modern Language","Home Tool Markup Language","Hyper Transfer Markup Language"],c:0},
-{q:"Which planet is closest to the Sun?",a:["Mercury","Venus","Mars","Earth"],c:0},
-{q:"What is the largest ocean on Earth?",a:["Pacific","Atlantic","Indian","Arctic"],c:0},
-{q:"In JavaScript, which keyword declares a constant?",a:["const","let","var","static"],c:0},
-{q:"What year did the World Wide Web become public?",a:["1991","1989","1995","2000"],c:0},
-{q:"What is the chemical symbol for gold?",a:["Au","Ag","Go","Gd"],c:0},
-{q:"How many bits are in a byte?",a:["8","4","16","32"],c:0},
-{q:"Which language is NAIDE designed to replace for AI coding?",a:["JavaScript","Python","Ruby","Go"],c:0},
-{q:"What does CSS stand for?",a:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Coded Style Sheets"],c:0},
-{q:"What is the speed of light (approx km/s)?",a:["300,000","150,000","500,000","1,000,000"],c:0},
-{q:"Which data structure uses FIFO?",a:["Queue","Stack","Tree","Graph"],c:0},
-{q:"What is the square root of 144?",a:["12","14","10","16"],c:0},
-{q:"Who painted the Mona Lisa?",a:["Da Vinci","Picasso","Van Gogh","Monet"],c:0},
-{q:"What gas do plants absorb?",a:["CO2","O2","N2","H2"],c:0},
-{q:"Which protocol is used for secure web browsing?",a:["HTTPS","FTP","SMTP","SSH"],c:0}
-];
-let cur,score,answers,tmr,timeLeft,best=+(localStorage.getItem('quiz_best')||0),pool;
-document.getElementById('best').textContent=best;
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function startGame(){pool=shuffle([...QUESTIONS]).slice(0,10);cur=0;score=0;answers=[];document.getElementById('dots').innerHTML=pool.map((_,i)=>'<div class="dot" id="d'+i+'"></div>').join('');show('play');showQ()}
-function showQ(){if(cur>=pool.length)return endGame();document.getElementById('d'+cur).classList.add('cur');const q=pool[cur];const mixed=q.a.map((t,i)=>({t,ok:i===q.c}));shuffle(mixed);document.getElementById('question').textContent=q.q;const ch=document.getElementById('choices');ch.innerHTML='';mixed.forEach((m,i)=>{const d=document.createElement('div');d.className='choice';d.textContent=m.t;d.onclick=()=>pick(d,m.ok,ch);ch.appendChild(d)});timeLeft=15;document.getElementById('timer').textContent=timeLeft;clearInterval(tmr);tmr=setInterval(()=>{timeLeft--;document.getElementById('timer').textContent=Math.max(0,timeLeft);if(timeLeft<=0){clearInterval(tmr);timeout()}},1000)}
-function pick(el,ok,ch){clearInterval(tmr);ch.querySelectorAll('.choice').forEach(c=>{c.onclick=null;if(c===el)c.classList.add(ok?'correct':'wrong');else if(!ok){const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('correct')}});const d=document.getElementById('d'+cur);d.classList.remove('cur');if(ok){score++;d.classList.add('done')}else{d.classList.add('fail')}answers.push(ok);cur++;setTimeout(showQ,800)}
-function timeout(){const ch=document.getElementById('choices');ch.querySelectorAll('.choice').forEach(c=>{c.onclick=null;const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('correct')});document.getElementById('d'+cur).classList.remove('cur');document.getElementById('d'+cur).classList.add('fail');answers.push(false);cur++;setTimeout(showQ,800)}
-function endGame(){clearInterval(tmr);if(score>best){best=score;localStorage.setItem('quiz_best',best);document.getElementById('best').textContent=best}document.getElementById('last').textContent=score;document.getElementById('final').textContent=score+'/'+pool.length;const pct=Math.round(score/pool.length*100);const r=pct===100?'Perfect!':pct>=80?'Excellent!':pct>=60?'Good!':pct>=40?'Not bad!':'Study more!';document.getElementById('summary').innerHTML=r+'<br>'+pct+'% correct'+(score>=best?' <span class="high">★ New Best!</span>':'');show('result')}
-</script></body></html>`;
-}
-
-function memoryGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Memory Game'}</title>
-<style>${GAME_CSS_BASE}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:1rem auto;width:min(360px,88vw)}
-.card{aspect-ratio:1;border-radius:12px;cursor:pointer;perspective:600px;-webkit-perspective:600px}
-.card .inner{position:relative;width:100%;height:100%;transition:transform .4s;transform-style:preserve-3d;-webkit-transform-style:preserve-3d}
-.card.flip .inner{transform:rotateY(180deg)}
-.card .front,.card .back{position:absolute;width:100%;height:100%;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:2rem;backface-visibility:hidden;-webkit-backface-visibility:hidden}
-.card .front{background:linear-gradient(135deg,var(--primary),#4338CA)}
-.card .back{background:var(--surface);transform:rotateY(180deg);border:2px solid var(--primary)}
-.card.matched .front{background:linear-gradient(135deg,var(--accent),#059669)}
-.card.matched{pointer-events:none}
-.moves{font-size:2.5rem;font-weight:800}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Memory Game'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Match all pairs with fewest moves</p>
-<div class="stats"><span>Best<b id="best">-</b></span></div>
-<button class="btn" onclick="startGame()">Start</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="stats"><span>Moves<b id="moves">0</b></span><span>Pairs<b id="pairs">0/8</b></span><span>Time<b id="time">0s</b></span></div>
-<div class="grid" id="grid"></div>
-</div>
-<div id="state-result" class="hidden">
-<div class="moves" id="finalMoves">0</div>
-<p style="font-size:1.2rem;margin:.5rem 0">moves</p>
-<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
-<button class="btn" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const EMOJIS=['🎮','🎯','🚀','💎','🔥','⚡','🌟','🎵','🎨','🏆','🍕','🌈','🦊','🐙','🎃','🍀'];
-let cards,flipped,matched,moves,pairsN,tmr,startT,best=localStorage.getItem('mem_best');
-document.getElementById('best').textContent=best||'-';
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function startGame(){const pick=shuffle([...EMOJIS]).slice(0,8);cards=shuffle([...pick,...pick]);flipped=[];matched=0;moves=0;pairsN=8;document.getElementById('moves').textContent=0;document.getElementById('pairs').textContent='0/'+pairsN;const g=document.getElementById('grid');g.innerHTML='';cards.forEach((em,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<div class="inner"><div class="front">?</div><div class="back">'+em+'</div></div>';d.onclick=()=>flipCard(d,i);g.appendChild(d)});startT=Date.now();tmr=setInterval(()=>{document.getElementById('time').textContent=Math.floor((Date.now()-startT)/1000)+'s'},200);show('play')}
-function flipCard(el,i){if(flipped.length>=2||el.classList.contains('flip')||el.classList.contains('matched'))return;el.classList.add('flip');flipped.push({el,i,val:cards[i]});if(flipped.length===2){moves++;document.getElementById('moves').textContent=moves;const[a,b]=flipped;if(a.val===b.val){a.el.classList.add('matched');b.el.classList.add('matched');matched++;document.getElementById('pairs').textContent=matched+'/'+pairsN;flipped=[];if(matched===pairsN)endGame()}else{setTimeout(()=>{a.el.classList.remove('flip');b.el.classList.remove('flip');flipped=[]},700)}}}
-function endGame(){clearInterval(tmr);const sec=Math.floor((Date.now()-startT)/1000);if(!best||moves<+best){best=moves;localStorage.setItem('mem_best',best);document.getElementById('best').textContent=best}document.getElementById('finalMoves').textContent=moves;const r=moves<=pairsN+2?'Perfect memory!':moves<=pairsN*2?'Great!':moves<=pairsN*3?'Good!':'Keep practicing!';document.getElementById('summary').innerHTML=r+'<br>Completed in '+sec+'s'+(moves<=+best?' <span class="high">★ New Best!</span>':'');show('result')}
-</script></body></html>`;
-}
-
-function snakeGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Snake Game'}</title>
-<style>${GAME_CSS_BASE}
-canvas{border-radius:12px;background:var(--surface);display:block;margin:1rem auto;image-rendering:pixelated;touch-action:none}
-.controls{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(2,56px);gap:6px;justify-content:center;margin:1rem auto}
-.controls button{border:none;border-radius:10px;background:var(--surface);color:var(--text);font-size:1.4rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
-.controls button:active{background:var(--primary)}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Snake'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Arrow keys or swipe to control</p>
-<div class="stats"><span>Best<b id="best">0</b></span></div>
-<button class="btn" onclick="startGame()">Play</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="stats"><span>Score<b id="score">0</b></span><span>Best<b id="hiscore">0</b></span></div>
-<canvas id="cv" width="320" height="320"></canvas>
-<div class="controls">
-<div></div><button ontouchstart="setDir(0,-1)" onclick="setDir(0,-1)">▲</button><div></div>
-<button ontouchstart="setDir(-1,0)" onclick="setDir(-1,0)">◀</button><button ontouchstart="setDir(0,1)" onclick="setDir(0,1)">▼</button><button ontouchstart="setDir(1,0)" onclick="setDir(1,0)">▶</button>
-</div>
-</div>
-<div id="state-result" class="hidden">
-<div class="score" id="final">0</div>
-<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
-<button class="btn" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const S=20,W=16,cv=document.getElementById('cv'),ctx=cv.getContext('2d');
-let snake,dir,food,sc,best=+(localStorage.getItem('snake_best')||0),loop,nextDir;
-document.getElementById('best').textContent=best;document.getElementById('hiscore').textContent=best;
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function rand(){let p;do{p={x:Math.floor(Math.random()*W),y:Math.floor(Math.random()*W)}}while(snake.some(s=>s.x===p.x&&s.y===p.y));return p}
-function startGame(){snake=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nextDir={x:1,y:0};food=rand();sc=0;document.getElementById('score').textContent=0;show('play');clearInterval(loop);loop=setInterval(tick,120)}
-function setDir(x,y){if(x===-dir.x&&y===-dir.y)return;nextDir={x,y}}
-function tick(){dir=nextDir;const h={x:snake[0].x+dir.x,y:snake[0].y+dir.y};if(h.x<0||h.x>=W||h.y<0||h.y>=W||snake.some(s=>s.x===h.x&&s.y===h.y))return endGame();snake.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;document.getElementById('score').textContent=sc;food=rand()}else{snake.pop()}draw()}
-function draw(){ctx.fillStyle='#141428';ctx.fillRect(0,0,320,320);ctx.fillStyle='#FF6584';ctx.beginPath();ctx.arc(food.x*S+S/2,food.y*S+S/2,S/2-2,0,Math.PI*2);ctx.fill();snake.forEach((s,i)=>{const t=i/snake.length;ctx.fillStyle=i===0?'#6C63FF':'hsl('+(260+t*40)+',70%,'+(60-t*15)+'%)';ctx.beginPath();ctx.roundRect(s.x*S+1,s.y*S+1,S-2,S-2,4);ctx.fill()})}
-function endGame(){clearInterval(loop);if(sc>best){best=sc;localStorage.setItem('snake_best',best);document.getElementById('best').textContent=best;document.getElementById('hiscore').textContent=best}document.getElementById('final').textContent=sc;const r=sc>=30?'Legend!':sc>=20?'Amazing!':sc>=10?'Great!':sc>=5?'Good!':'Try again!';document.getElementById('summary').innerHTML=r+(sc>=best&&sc>0?' <span class="high">★ New Best!</span>':'');show('result')}
-document.addEventListener('keydown',e=>{if(e.key==='ArrowUp')setDir(0,-1);if(e.key==='ArrowDown')setDir(0,1);if(e.key==='ArrowLeft')setDir(-1,0);if(e.key==='ArrowRight')setDir(1,0)});
-let tx,ty;cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
-cv.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)>Math.abs(dy)){setDir(dx>0?1:-1,0)}else{setDir(0,dy>0?1:-1)}},{passive:true});
-</script></body></html>`;
-}
-
-function reactionGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Reaction Test'}</title>
-<style>${GAME_CSS_BASE}
-.zone{width:min(340px,85vw);height:min(340px,85vw);border-radius:24px;display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;font-size:1.2rem;font-weight:600;transition:background .2s}
-.zone.wait{background:var(--surface)}
-.zone.ready{background:var(--secondary);color:#fff}
-.zone.go{background:var(--accent);color:var(--bg)}
-.zone.early{background:#EF4444}
-.times{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:1rem 0}
-.times span{background:var(--surface);padding:.3rem .6rem;border-radius:6px;font-size:.85rem;font-variant-numeric:tabular-nums}
-.ms{font-size:3.5rem;font-weight:900;font-variant-numeric:tabular-nums}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Reaction Test'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Tap when the color turns green — 5 rounds</p>
-<div class="stats"><span>Best Avg<b id="best">-</b></span></div>
-<button class="btn" onclick="startGame()">Start</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="stats"><span>Round<b id="round">1/5</b></span><span>Avg<b id="avg">-</b></span></div>
-<div class="zone wait" id="zone" onmousedown="tap()" ontouchstart="tap()">
-<span id="zoneText">Wait...</span>
-</div>
-<div class="times" id="times"></div>
-</div>
-<div id="state-result" class="hidden">
-<div class="ms" id="finalMs">0</div>
-<p style="font-size:1.2rem;margin:.5rem 0">ms average</p>
-<div id="summary" style="margin:1rem 0"></div>
-<div class="times" id="finalTimes"></div>
-<button class="btn" style="margin-top:1rem" onclick="startGame()">Try Again</button>
-</div>
-</div>
-<script>
-const ROUNDS=5;
-let round,results,phase,greenAt,tmr,best=localStorage.getItem('react_best');
-document.getElementById('best').textContent=best?best+'ms':'-';
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function startGame(){round=0;results=[];document.getElementById('times').innerHTML='';show('play');nextRound()}
-function nextRound(){if(round>=ROUNDS)return endGame();document.getElementById('round').textContent=(round+1)+'/'+ROUNDS;const z=document.getElementById('zone');z.className='zone ready';document.getElementById('zoneText').textContent='Wait for green...';phase='wait';const delay=1500+Math.random()*3000;clearTimeout(tmr);tmr=setTimeout(()=>{z.className='zone go';document.getElementById('zoneText').textContent='TAP NOW!';greenAt=Date.now();phase='go'},delay)}
-function tap(){if(phase==='wait'){clearTimeout(tmr);const z=document.getElementById('zone');z.className='zone early';document.getElementById('zoneText').textContent='Too early! Tap to retry';phase='early'}else if(phase==='early'){nextRound()}else if(phase==='go'){const ms=Date.now()-greenAt;results.push(ms);const t=document.createElement('span');t.textContent=ms+'ms';document.getElementById('times').appendChild(t);const avg=Math.round(results.reduce((a,b)=>a+b,0)/results.length);document.getElementById('avg').textContent=avg+'ms';round++;phase='done';setTimeout(nextRound,600)}}
-function endGame(){const avg=Math.round(results.reduce((a,b)=>a+b,0)/results.length);if(!best||avg<+best){best=avg;localStorage.setItem('react_best',best);document.getElementById('best').textContent=best+'ms'}document.getElementById('finalMs').textContent=avg;document.getElementById('finalTimes').innerHTML=results.map((r,i)=>'<span>R'+(i+1)+': '+r+'ms</span>').join('');const r=avg<=200?'Superhuman!':avg<=250?'Lightning!':avg<=300?'Fast!':avg<=400?'Average':'Keep practicing!';document.getElementById('summary').innerHTML='<span style="font-size:1.2rem">'+r+'</span>'+(avg<=+best?' <span class="high">★ New Best!</span>':'');show('result')}
-</script></body></html>`;
-}
-
-function typingGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Typing Game'}</title>
-<style>${GAME_CSS_BASE}
-.word-display{font-size:2rem;font-weight:700;letter-spacing:.1em;margin:1.5rem 0;min-height:3rem;display:flex;justify-content:center;gap:2px;flex-wrap:wrap}
-.word-display .ch{transition:color .1s}
-.word-display .correct{color:var(--accent)}
-.word-display .wrong{color:var(--secondary)}
-.word-display .cursor{border-bottom:3px solid var(--primary);animation:blink 1s step-end infinite}
-@keyframes blink{50%{border-color:transparent}}
-input.type-input{background:var(--surface);border:2px solid var(--primary);border-radius:12px;padding:.75rem 1rem;font-size:1.2rem;color:var(--text);width:100%;text-align:center;outline:none;caret-color:var(--primary)}
-.word-queue{color:var(--muted);font-size:1rem;margin:.5rem 0;height:2em;overflow:hidden;display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Typing Speed'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Type as many words as you can in 30 seconds</p>
-<div class="stats"><span>Best WPM<b id="best">0</b></span></div>
-<button class="btn" onclick="startGame()">Start</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="stats"><span>Time<b id="timer">30</b></span><span>Words<b id="words">0</b></span><span>WPM<b id="wpm">0</b></span></div>
-<div class="timer-bar"><div class="fill" id="bar" style="width:100%"></div></div>
-<div class="word-display" id="display"></div>
-<div class="word-queue" id="queue"></div>
-<input class="type-input" id="inp" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type here...">
-</div>
-<div id="state-result" class="hidden">
-<div class="score" id="finalWpm">0</div>
-<p style="font-size:1.2rem;margin:.5rem 0">WPM</p>
-<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
-<button class="btn" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const WORDS=["the","be","to","of","and","in","that","have","it","for","not","on","with","he","as","you","do","at","this","but","his","by","from","they","we","say","her","she","or","an","will","my","one","all","would","there","their","what","so","up","out","if","about","who","get","which","go","me","when","make","can","like","time","no","just","him","know","take","people","into","year","your","good","some","could","them","see","other","than","then","now","look","only","come","its","over","think","also","back","after","use","two","how","our","work","first","well","way","even","new","want","give","most","find","here","thing","many","code","fast","type","game","play","next","open","read","test","data","file","line","word","text","long","name","part","best","help","made","move","hand","high","keep","last","same","tell","does","set","each","much","head","turn","real","show","full","form","left","start","might","run","need","home","life","old","big","end","point","still","call","live","away","right","hard","plan","team","late","mind","wait","stop","must","land","close","draw","press","mark","step","pick","rock","blue","deep","dark","hold","four","week","room","free","fall","base","rest","less","note","hear","ever"];
-const DUR=30000;let pool,cur,pos,done,startT,tmr,best=+(localStorage.getItem('type_best')||0);
-document.getElementById('best').textContent=best;
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function startGame(){pool=shuffle([...WORDS]);cur=0;pos=0;done=0;startT=Date.now();document.getElementById('words').textContent=0;document.getElementById('wpm').textContent=0;const inp=document.getElementById('inp');inp.value='';show('play');inp.focus();renderWord();tmr=setInterval(tick,100)}
-function renderWord(){const w=pool[cur%pool.length];const d=document.getElementById('display');d.innerHTML=w.split('').map((c,i)=>{let cls=i<pos?(document.getElementById('inp').value[i]===c?'correct':'wrong'):'';if(i===pos)cls+=' cursor';return '<span class="ch '+cls+'">'+c+'</span>'}).join('');const q=document.getElementById('queue');q.innerHTML='';for(let i=1;i<=5;i++){const nw=pool[(cur+i)%pool.length];q.innerHTML+='<span>'+nw+'</span>'}}
-function tick(){const el=Date.now()-startT;const pct=Math.max(0,1-el/DUR)*100;document.getElementById('bar').style.width=pct+'%';document.getElementById('timer').textContent=Math.max(0,Math.ceil((DUR-el)/1000));if(el>=DUR)endGame()}
-document.getElementById('inp').addEventListener('input',function(){if(Date.now()-startT>DUR)return;const w=pool[cur%pool.length];const v=this.value;pos=v.length;if(v.endsWith(' ')||v.length>=w.length){if(v.trim()===w){done++;document.getElementById('words').textContent=done;const wpm=Math.round(done/((Date.now()-startT)/60000));document.getElementById('wpm').textContent=wpm}cur++;pos=0;this.value=''}renderWord()});
-function endGame(){clearInterval(tmr);document.getElementById('inp').blur();const wpm=Math.round(done/((DUR)/60000));if(wpm>best){best=wpm;localStorage.setItem('type_best',best);document.getElementById('best').textContent=best}document.getElementById('finalWpm').textContent=wpm;const r=wpm>=80?'Blazing fast!':wpm>=60?'Excellent!':wpm>=40?'Good!':wpm>=20?'Decent!':'Keep practicing!';document.getElementById('summary').innerHTML=r+'<br>'+done+' words in 30s'+(wpm>=best&&wpm>0?' <span class="high">★ New Best!</span>':'');show('result')}
-</script></body></html>`;
-}
-
-function breakoutGameHTML(title) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no"><title>${title || 'Breakout'}</title>
-<style>${GAME_CSS_BASE}
-canvas{border-radius:12px;background:var(--surface);display:block;margin:1rem auto;touch-action:none}
-</style></head><body>
-<div class="container">
-<h1>${title || 'Breakout'}</h1>
-<div id="state-menu">
-<p style="color:var(--muted);margin:1rem 0">Move the paddle to break all blocks</p>
-<div class="stats"><span>Best<b id="best">0</b></span></div>
-<button class="btn" onclick="startGame()">Play</button>
-</div>
-<div id="state-play" class="hidden">
-<div class="stats"><span>Score<b id="score">0</b></span><span>Lives<b id="lives">3</b></span></div>
-<canvas id="cv" width="360" height="480"></canvas>
-</div>
-<div id="state-result" class="hidden">
-<div class="score" id="final">0</div>
-<div id="summary" style="font-size:1.1rem;margin:1rem 0"></div>
-<button class="btn" onclick="startGame()">Play Again</button>
-</div>
-</div>
-<script>
-const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),W=360,H=480;
-const COLS=8,ROWS=5,BW=W/COLS-4,BH=18,PAD_W=70,PAD_H=12,BR=6;
-let px,ball,dx,dy,bricks,sc,lives,best=+(localStorage.getItem('brk_best')||0),raf;
-document.getElementById('best').textContent=best;
-function show(id){document.querySelectorAll('[id^=state-]').forEach(e=>e.classList.add('hidden'));document.getElementById('state-'+id).classList.remove('hidden')}
-const COLORS=['#6C63FF','#8B5CF6','#A78BFA','#FF6584','#00D4AA'];
-function initBricks(){bricks=[];for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)bricks.push({x:c*(BW+4)+2,y:r*(BH+4)+40,w:BW,h:BH,color:COLORS[r],alive:true})}
-function startGame(){px=W/2;ball={x:W/2,y:H-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5;sc=0;lives=3;initBricks();document.getElementById('score').textContent=0;document.getElementById('lives').textContent=3;show('play');cancelAnimationFrame(raf);tick()}
-function tick(){update();draw();if(lives>0&&bricks.some(b=>b.alive))raf=requestAnimationFrame(tick);else endGame()}
-function update(){ball.x+=dx;ball.y+=dy;if(ball.x<=BR||ball.x>=W-BR)dx=-dx;if(ball.y<=BR)dy=-dy;if(ball.y>=H-PAD_H-BR-8&&ball.y<=H-8&&ball.x>=px-PAD_W/2&&ball.x<=px+PAD_W/2){dy=-Math.abs(dy);dx+=((ball.x-px)/(PAD_W/2))*2}if(ball.y>H){lives--;document.getElementById('lives').textContent=lives;if(lives>0){ball={x:W/2,y:H-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5}}for(const b of bricks){if(!b.alive)continue;if(ball.x+BR>b.x&&ball.x-BR<b.x+b.w&&ball.y+BR>b.y&&ball.y-BR<b.y+b.h){b.alive=false;dy=-dy;sc+=10;document.getElementById('score').textContent=sc}}}
-function draw(){ctx.clearRect(0,0,W,H);for(const b of bricks){if(!b.alive)continue;ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,4);ctx.fill()}ctx.fillStyle='#6C63FF';ctx.beginPath();ctx.roundRect(px-PAD_W/2,H-PAD_H-8,PAD_W,PAD_H,6);ctx.fill();ctx.fillStyle='#FF6584';ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,Math.PI*2);ctx.fill()}
-function endGame(){cancelAnimationFrame(raf);const won=!bricks.some(b=>b.alive);if(sc>best){best=sc;localStorage.setItem('brk_best',best);document.getElementById('best').textContent=best}document.getElementById('final').textContent=sc;document.getElementById('summary').innerHTML=(won?'You cleared it!':'Game Over')+(sc>=best&&sc>0?' <span class="high">★ New Best!</span>':'');show('result')}
-cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();px=Math.max(PAD_W/2,Math.min(W-PAD_W/2,(e.clientX-r.left)*(W/r.width)))});
-cv.addEventListener('touchmove',e=>{e.preventDefault();const r=cv.getBoundingClientRect();px=Math.max(PAD_W/2,Math.min(W-PAD_W/2,(e.touches[0].clientX-r.left)*(W/r.width)))},{passive:false});
-document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')px=Math.max(PAD_W/2,px-20);if(e.key==='ArrowRight')px=Math.min(W-PAD_W/2,px+20)});
-</script></body></html>`;
-}
-
-const GAME_GENERATORS = {
-  tapping: tappingGameHTML,
-  quiz: quizGameHTML,
-  memory: memoryGameHTML,
-  snake: snakeGameHTML,
-  reaction: reactionGameHTML,
-  typing: typingGameHTML,
-  breakout: breakoutGameHTML,
+const GAME_PALETTES = {
+  tapping:  { bg:'#1a0a2e', sf:'#2d1a42', pr:'#FF6B35', sc:'#FF3864', ac:'#FFD700', tx:'#fff',    mt:'#a89cc8' },
+  quiz:     { bg:'#0d1b2a', sf:'#1b2838', pr:'#3A86FF', sc:'#8338EC', ac:'#06D6A0', tx:'#e8ecf1', mt:'#7b8ca3' },
+  memory:   { bg:'#1a0f25', sf:'#2d1f3d', pr:'#C77DFF', sc:'#E05297', ac:'#FF6B9D', tx:'#f5f0ff', mt:'#9b8bb4' },
+  snake:    { bg:'#071a0e', sf:'#0f2918', pr:'#4ADE80', sc:'#22D3EE', ac:'#FCD34D', tx:'#e8f5e9', mt:'#6b8a7a' },
+  typing:   { bg:'#0a192f', sf:'#112240', pr:'#64FFDA', sc:'#00B4D8', ac:'#CCD6F6', tx:'#CCD6F6', mt:'#5c7a8a' },
+  reaction: { bg:'#18181b', sf:'#27272a', pr:'#F87171', sc:'#EF4444', ac:'#4ADE80', tx:'#fafafa', mt:'#71717a' },
+  breakout: { bg:'#0c0a1d', sf:'#1c1833', pr:'#A78BFA', sc:'#8B5CF6', ac:'#F59E0B', tx:'#f0f0ff', mt:'#8f85a3' },
 };
 
-function gameHTML(type, title) {
-  const gen = GAME_GENERATORS[type] || tappingGameHTML;
-  return gen(title);
+function extractGameOpts(raw) {
+  const o = {};
+  const d = raw.match(/(\d+)\s*(?:sec|seconds|秒|s\b)/i);
+  if (d) o.duration = Math.min(120, Math.max(3, parseInt(d[1])));
+  const sz = raw.match(/(\d+)\s*x\s*(\d+)/i);
+  if (sz) { o.cols = parseInt(sz[1]); o.rows = parseInt(sz[2]); }
+  if (/fast|高速|はやい/i.test(raw)) o.speed = 'fast';
+  if (/hard|難しい|ハード/i.test(raw)) o.difficulty = 'hard';
+  if (/easy|簡単|イージー/i.test(raw)) o.difficulty = 'easy';
+  return o;
+}
+
+function cssVars(p) {
+  return `:root{--bg:${p.bg};--sf:${p.sf};--pr:${p.pr};--sc:${p.sc};--ac:${p.ac};--tx:${p.tx};--mt:${p.mt}}`;
+}
+
+function cssBase(p) {
+  return `*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:${p.bg};color:${p.tx};min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.ct{width:min(420px,92vw);text-align:center}
+h1{font-size:1.8rem;margin-bottom:.5rem;background:linear-gradient(135deg,${p.pr},${p.sc});-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sc{font-size:3rem;font-weight:800;margin:.5rem 0;font-variant-numeric:tabular-nums}
+.btn{display:inline-block;padding:.75rem 2rem;border:none;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;transition:transform .1s,box-shadow .2s;color:#fff;background:linear-gradient(135deg,${p.pr},${p.sc})}
+.btn:active{transform:scale(.95)}.btn:hover{box-shadow:0 0 24px ${p.pr}66}
+.st{display:flex;gap:1.5rem;justify-content:center;margin:.75rem 0;font-size:.9rem;color:${p.mt}}
+.st span{display:flex;flex-direction:column;align-items:center;gap:.2rem}.st b{color:${p.tx};font-size:1.1rem}
+.hd{display:none!important}.hi{color:${p.ac}}
+@keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-60px)}}`;
+}
+
+function cssTimerBar(p) {
+  return `.bar{width:100%;height:6px;background:${p.sf};border-radius:3px;margin:.5rem 0;overflow:hidden}
+.bar .fl{height:100%;background:linear-gradient(90deg,${p.ac},${p.pr});transition:width .1s linear;border-radius:3px}`;
+}
+
+function jsCore(storageKey) {
+  return `const $=id=>document.getElementById(id);
+let best=+(localStorage.getItem('${storageKey}')||0);
+if($('best'))$('best').textContent=best;
+function show(s){document.querySelectorAll('[id^=s-]').forEach(e=>e.classList.add('hd'));$('s-'+s).classList.remove('hd')}
+function saveBest(v){if(v>best){best=v;localStorage.setItem('${storageKey}',best);if($('best'))$('best').textContent=best;return true}return false}`;
+}
+
+function htmlWrap(title, css, sections, js) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>${title}</title>
+<style>
+${css}
+</style>
+</head>
+<body>
+<div class="ct">
+<h1>${title}</h1>
+${sections}
+</div>
+<script>
+${js}
+</script>
+</body>
+</html>`;
+}
+
+// ── Tapping Game Builder ──
+
+function buildTapping(title, opts) {
+  const p = GAME_PALETTES.tapping;
+  const dur = opts.duration || 10;
+
+  const css = [cssVars(p), cssBase(p), cssTimerBar(p),
+    `.tap{width:min(300px,75vw);height:min(300px,75vw);border-radius:50%;background:radial-gradient(circle at 35% 35%,${p.pr},${p.sc});display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;position:relative;font-size:3.5rem;font-weight:900;transition:box-shadow .15s;letter-spacing:-.05em}`,
+    `.tap:active{box-shadow:0 0 60px ${p.pr}88}`,
+    `.tap.on{animation:pulse 1s infinite}`,
+    `@keyframes pulse{0%,100%{box-shadow:0 0 0 0 ${p.pr}66}50%{box-shadow:0 0 0 20px ${p.pr}00}}`,
+    `.rp{position:absolute;border-radius:50%;background:rgba(255,255,255,.25);animation:rpAn .5s ease-out forwards;pointer-events:none}`,
+    `@keyframes rpAn{0%{width:0;height:0;opacity:.6}100%{width:200px;height:200px;opacity:0}}`,
+    `.cb{position:fixed;font-weight:800;font-size:1.5rem;color:${p.ac};pointer-events:none;animation:fadeUp .6s ease-out forwards}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin-bottom:1.5rem">Tap as fast as you can — ${dur} seconds!</p>
+<div class="st"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
+<button class="btn" onclick="go()">Start</button></div>
+<div id="s-play" class="hd">
+<div class="bar"><div class="fl" id="bar" style="width:100%"></div></div>
+<div class="sc" id="cnt">0</div>
+<div class="tap on" id="tap" ontouchstart="hit(event)" onmousedown="hit(event)">TAP</div>
+<div class="st"><span>Combo<b id="cmb">x1</b></span><span>TPS<b id="tps">0</b></span></div></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<div id="msg" style="font-size:1.2rem;line-height:2"></div>
+<button class="btn" style="margin-top:1rem" onclick="go()">Again</button></div>`;
+
+  const js = [jsCore('tap_best'),
+    `const DUR=${dur*1000};let taps,t0,raf,combo,lh;`,
+    `function go(){taps=0;combo=1;lh=0;t0=Date.now();$('cnt').textContent='0';$('cmb').textContent='x1';$('bar').style.width='100%';show('play');raf=requestAnimationFrame(tick)}`,
+    `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('tps').textContent=(taps/Math.max(.1,e/1000)).toFixed(1);if(e>=DUR)return end();raf=requestAnimationFrame(tick)}`,
+    `function hit(ev){ev.preventDefault();if(Date.now()-t0>DUR)return;taps++;const now=Date.now(),gap=now-lh;combo=gap<200?Math.min(combo+1,99):gap>500?1:combo;lh=now;$('cnt').textContent=taps;$('cmb').textContent='x'+combo;$('cnt').style.animation='none';void $('cnt').offsetWidth;$('cnt').style.animation='pop .15s';const el=$('tap'),rc=el.getBoundingClientRect(),cx=(ev.touches?ev.touches[0].clientX:ev.clientX)-rc.left,cy=(ev.touches?ev.touches[0].clientY:ev.clientY)-rc.top;const r=document.createElement('div');r.className='rp';r.style.cssText='left:'+(cx-100)+'px;top:'+(cy-100)+'px';el.appendChild(r);setTimeout(()=>r.remove(),500);if(combo>=3){const c=document.createElement('div');c.className='cb';c.textContent='x'+combo;c.style.cssText='left:'+Math.random()*60+20+'%;top:'+Math.random()*30+20+'%';document.body.appendChild(c);setTimeout(()=>c.remove(),600)}}`,
+    `function end(){cancelAnimationFrame(raf);const tps=(taps/(DUR/1000)).toFixed(1);const nb=saveBest(taps);$('last').textContent=taps;$('fin').textContent=taps;const r=taps>=100?'Insane!':taps>=70?'Amazing!':taps>=50?'Great!':taps>=30?'Nice!':'Keep trying!';$('msg').innerHTML=r+'<br>'+tps+' taps/sec'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Quiz Game Builder ──
+
+function buildQuiz(title, opts) {
+  const p = GAME_PALETTES.quiz;
+  const perQ = opts.duration || 15;
+
+  const css = [cssVars(p), cssBase(p),
+    `.q{font-size:1.3rem;margin:1.5rem 0;min-height:3em;line-height:1.5}`,
+    `.ch{display:flex;flex-direction:column;gap:.75rem;margin:1rem 0}`,
+    `.ch div{padding:1rem;border:2px solid ${p.sf};border-radius:12px;background:${p.sf};cursor:pointer;font-size:1rem;text-align:left;transition:border-color .2s,background .2s}`,
+    `.ch div:hover{border-color:${p.pr}}`,
+    `.ch .ok{border-color:${p.ac};background:${p.ac}22}`,
+    `.ch .no{border-color:#F87171;background:#F8717122}`,
+    `.dots{display:flex;gap:4px;justify-content:center;margin-bottom:1rem}`,
+    `.dot{width:10px;height:10px;border-radius:50%;background:${p.sf}}`,
+    `.dot.pass{background:${p.ac}}.dot.fail{background:#F87171}.dot.now{background:${p.pr};box-shadow:0 0 8px ${p.pr}}`,
+    `.tm{font-size:2.5rem;font-weight:800;font-variant-numeric:tabular-nums}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">10 questions, ${perQ} seconds each</p>
+<div class="st"><span>Best<b id="best">0</b></span><span>Last<b id="last">-</b></span></div>
+<button class="btn" onclick="go()">Start Quiz</button></div>
+<div id="s-play" class="hd">
+<div class="dots" id="dots"></div>
+<div class="tm" id="timer">${perQ}</div>
+<div class="q" id="qtext"></div>
+<div class="ch" id="choices"></div></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0/10</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const js = [jsCore('quiz_best'),
+    `const QS=[{q:"What does HTML stand for?",a:["HyperText Markup Language","High Tech Modern Language","Home Tool Markup Language","Hyper Transfer Markup Language"],c:0},{q:"Which planet is closest to the Sun?",a:["Mercury","Venus","Mars","Earth"],c:0},{q:"What is the largest ocean on Earth?",a:["Pacific","Atlantic","Indian","Arctic"],c:0},{q:"In JavaScript, which keyword declares a constant?",a:["const","let","var","static"],c:0},{q:"What year did the World Wide Web go public?",a:["1991","1989","1995","2000"],c:0},{q:"What is the chemical symbol for gold?",a:["Au","Ag","Go","Gd"],c:0},{q:"How many bits are in a byte?",a:["8","4","16","32"],c:0},{q:"What does CSS stand for?",a:["Cascading Style Sheets","Computer Style Sheets","Creative Style System","Coded Style Sheets"],c:0},{q:"What is the speed of light (approx km/s)?",a:["300,000","150,000","500,000","1,000,000"],c:0},{q:"Which data structure uses FIFO?",a:["Queue","Stack","Tree","Graph"],c:0},{q:"What is the square root of 144?",a:["12","14","10","16"],c:0},{q:"Who painted the Mona Lisa?",a:["Da Vinci","Picasso","Van Gogh","Monet"],c:0},{q:"What gas do plants absorb?",a:["CO2","O2","N2","H2"],c:0},{q:"Which protocol is used for secure browsing?",a:["HTTPS","FTP","SMTP","SSH"],c:0},{q:"What is 2^10?",a:["1024","512","2048","4096"],c:0}];`,
+    `const PER_Q=${perQ};let cur,score,pool,tmr,tl;`,
+    `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
+    `function go(){pool=shuf([...QS]).slice(0,10);cur=0;score=0;$('dots').innerHTML=pool.map((_,i)=>'<div class="dot" id="d'+i+'"></div>').join('');show('play');next()}`,
+    `function next(){if(cur>=pool.length)return end();$('d'+cur).classList.add('now');const q=pool[cur],mx=q.a.map((t,i)=>({t,ok:i===q.c}));shuf(mx);$('qtext').textContent=q.q;const ch=$('choices');ch.innerHTML='';mx.forEach(m=>{const d=document.createElement('div');d.textContent=m.t;d.onclick=()=>pick(d,m.ok,ch);ch.appendChild(d)});tl=PER_Q;$('timer').textContent=tl;clearInterval(tmr);tmr=setInterval(()=>{tl--;$('timer').textContent=Math.max(0,tl);if(tl<=0){clearInterval(tmr);timeout()}},1000)}`,
+    `function pick(el,ok,ch){clearInterval(tmr);ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c===el)c.classList.add(ok?'ok':'no');else if(!ok){const t=pool[cur].a[pool[cur].c];if(c.textContent===t)c.classList.add('ok')}});$('d'+cur).classList.remove('now');$('d'+cur).classList.add(ok?'pass':'fail');if(ok)score++;cur++;setTimeout(next,800)}`,
+    `function timeout(){const ch=$('choices');ch.querySelectorAll('div').forEach(c=>{c.onclick=null;if(c.textContent===pool[cur].a[pool[cur].c])c.classList.add('ok')});$('d'+cur).classList.remove('now');$('d'+cur).classList.add('fail');cur++;setTimeout(next,800)}`,
+    `function end(){clearInterval(tmr);const nb=saveBest(score);$('last').textContent=score;$('fin').textContent=score+'/'+pool.length;const pc=Math.round(score/pool.length*100);const r=pc===100?'Perfect!':pc>=80?'Excellent!':pc>=60?'Good!':pc>=40?'Not bad!':'Study more!';$('msg').innerHTML=r+'<br>'+pc+'% correct'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Memory Game Builder ──
+
+function buildMemory(title, opts) {
+  const p = GAME_PALETTES.memory;
+  const cols = opts.cols || 4;
+  const pairs = Math.floor((cols * (opts.rows || cols)) / 2);
+
+  const css = [cssVars(p), cssBase(p),
+    `.grid{display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin:1rem auto;width:min(${cols*90}px,88vw)}`,
+    `.card{aspect-ratio:1;border-radius:12px;cursor:pointer;perspective:600px;-webkit-perspective:600px}`,
+    `.card .inn{position:relative;width:100%;height:100%;transition:transform .4s;transform-style:preserve-3d;-webkit-transform-style:preserve-3d}`,
+    `.card.flip .inn{transform:rotateY(180deg)}`,
+    `.card .fr,.card .bk{position:absolute;width:100%;height:100%;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:${cols<=4?'2rem':'1.4rem'};backface-visibility:hidden;-webkit-backface-visibility:hidden}`,
+    `.card .fr{background:linear-gradient(135deg,${p.pr},${p.sc})}`,
+    `.card .bk{background:${p.sf};transform:rotateY(180deg);border:2px solid ${p.pr}}`,
+    `.card.done .fr{background:linear-gradient(135deg,${p.ac},#059669)}`,
+    `.card.done{pointer-events:none}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Match all ${pairs} pairs with fewest moves</p>
+<div class="st"><span>Best<b id="best">-</b></span></div>
+<button class="btn" onclick="go()">Start</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Moves<b id="mv">0</b></span><span>Pairs<b id="pr">0/${pairs}</b></span><span>Time<b id="tm">0s</b></span></div>
+<div class="grid" id="grid"></div></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">moves</p>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const js = [jsCore('mem_best'),
+    `const EM=['🎮','🎯','🚀','💎','🔥','⚡','🌟','🎵','🎨','🏆','🍕','🌈','🦊','🐙','🎃','🍀','🎲','🌸'];`,
+    `const PAIRS=${pairs};let cards,flp,done,moves,tmr,t0;`,
+    `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
+    `function go(){const pick=shuf([...EM]).slice(0,PAIRS);cards=shuf([...pick,...pick]);flp=[];done=0;moves=0;$('mv').textContent=0;$('pr').textContent='0/'+PAIRS;const g=$('grid');g.innerHTML='';cards.forEach((em,i)=>{const d=document.createElement('div');d.className='card';d.innerHTML='<div class="inn"><div class="fr">?</div><div class="bk">'+em+'</div></div>';d.onclick=()=>flip(d,i);g.appendChild(d)});t0=Date.now();tmr=setInterval(()=>{$('tm').textContent=Math.floor((Date.now()-t0)/1000)+'s'},200);show('play')}`,
+    `function flip(el,i){if(flp.length>=2||el.classList.contains('flip')||el.classList.contains('done'))return;el.classList.add('flip');flp.push({el,i,v:cards[i]});if(flp.length===2){moves++;$('mv').textContent=moves;const[a,b]=flp;if(a.v===b.v){a.el.classList.add('done');b.el.classList.add('done');done++;$('pr').textContent=done+'/'+PAIRS;flp=[];if(done===PAIRS)end()}else{setTimeout(()=>{a.el.classList.remove('flip');b.el.classList.remove('flip');flp=[]},700)}}}`,
+    `function end(){clearInterval(tmr);const sec=Math.floor((Date.now()-t0)/1000);const nb=saveBest(moves);$('fin').textContent=moves;const r=moves<=PAIRS+2?'Perfect memory!':moves<=PAIRS*2?'Great!':moves<=PAIRS*3?'Good!':'Keep practicing!';$('msg').innerHTML=r+'<br>Completed in '+sec+'s'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Snake Game Builder ──
+
+function buildSnake(title, opts) {
+  const p = GAME_PALETTES.snake;
+  const spd = opts.speed === 'fast' ? 80 : opts.difficulty === 'hard' ? 90 : 120;
+  const W = 16, S = 20;
+
+  const css = [cssVars(p), cssBase(p),
+    `canvas{border-radius:12px;background:${p.sf};display:block;margin:1rem auto;image-rendering:pixelated;touch-action:none}`,
+    `.ctl{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(2,56px);gap:6px;justify-content:center;margin:1rem auto}`,
+    `.ctl button{border:none;border-radius:10px;background:${p.sf};color:${p.tx};font-size:1.4rem;cursor:pointer;display:flex;align-items:center;justify-content:center}`,
+    `.ctl button:active{background:${p.pr}}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Arrow keys or swipe to control</p>
+<div class="st"><span>Best<b id="best">0</b></span></div>
+<button class="btn" onclick="go()">Play</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Score<b id="score">0</b></span><span>Best<b id="hi">0</b></span></div>
+<canvas id="cv" width="${W*S}" height="${W*S}"></canvas>
+<div class="ctl">
+<div></div><button ontouchstart="sd(0,-1)" onclick="sd(0,-1)">▲</button><div></div>
+<button ontouchstart="sd(-1,0)" onclick="sd(-1,0)">◀</button><button ontouchstart="sd(0,1)" onclick="sd(0,1)">▼</button><button ontouchstart="sd(1,0)" onclick="sd(1,0)">▶</button></div></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const js = [jsCore('snake_best'),
+    `const GS=${S},GW=${W},cv=$('cv'),ctx=cv.getContext('2d');`,
+    `let sn,dir,nd,food,sc,lp;$('hi').textContent=best;`,
+    `function rnd(){let p;do{p={x:Math.floor(Math.random()*GW),y:Math.floor(Math.random()*GW)}}while(sn.some(s=>s.x===p.x&&s.y===p.y));return p}`,
+    `function go(){sn=[{x:8,y:8},{x:7,y:8},{x:6,y:8}];dir={x:1,y:0};nd={x:1,y:0};food=rnd();sc=0;$('score').textContent=0;show('play');clearInterval(lp);lp=setInterval(tick,${spd})}`,
+    `function sd(x,y){if(x===-dir.x&&y===-dir.y)return;nd={x,y}}`,
+    `function tick(){dir=nd;const h={x:sn[0].x+dir.x,y:sn[0].y+dir.y};if(h.x<0||h.x>=GW||h.y<0||h.y>=GW||sn.some(s=>s.x===h.x&&s.y===h.y))return end();sn.unshift(h);if(h.x===food.x&&h.y===food.y){sc++;$('score').textContent=sc;food=rnd()}else sn.pop();draw()}`,
+    `function draw(){ctx.fillStyle='${p.sf}';ctx.fillRect(0,0,GW*GS,GW*GS);ctx.fillStyle='${p.ac}';ctx.beginPath();ctx.arc(food.x*GS+GS/2,food.y*GS+GS/2,GS/2-2,0,Math.PI*2);ctx.fill();sn.forEach((s,i)=>{const t=i/sn.length;ctx.fillStyle=i===0?'${p.pr}':'hsl('+(140+t*40)+',70%,'+(55-t*20)+'%)';ctx.beginPath();ctx.roundRect(s.x*GS+1,s.y*GS+1,GS-2,GS-2,4);ctx.fill()})}`,
+    `function end(){clearInterval(lp);const nb=saveBest(sc);$('hi').textContent=best;$('fin').textContent=sc;const r=sc>=30?'Legend!':sc>=20?'Amazing!':sc>=10?'Great!':sc>=5?'Good!':'Try again!';$('msg').innerHTML=r+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `document.addEventListener('keydown',e=>{if(e.key==='ArrowUp')sd(0,-1);if(e.key==='ArrowDown')sd(0,1);if(e.key==='ArrowLeft')sd(-1,0);if(e.key==='ArrowRight')sd(1,0)});`,
+    `let tx,ty;cv.addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});cv.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tx,dy=e.changedTouches[0].clientY-ty;if(Math.abs(dx)>Math.abs(dy))sd(dx>0?1:-1,0);else sd(0,dy>0?1:-1)},{passive:true});`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Reaction Game Builder ──
+
+function buildReaction(title, opts) {
+  const p = GAME_PALETTES.reaction;
+  const rounds = opts.difficulty === 'hard' ? 10 : 5;
+
+  const css = [cssVars(p), cssBase(p),
+    `.zone{width:min(340px,85vw);height:min(340px,85vw);border-radius:24px;display:flex;align-items:center;justify-content:center;margin:1.5rem auto;cursor:pointer;font-size:1.2rem;font-weight:600;transition:background .2s}`,
+    `.zone.wait{background:${p.sf}}`,
+    `.zone.ready{background:${p.pr};color:#fff}`,
+    `.zone.go{background:${p.ac};color:${p.bg}}`,
+    `.zone.early{background:#DC2626}`,
+    `.times{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:1rem 0}`,
+    `.times span{background:${p.sf};padding:.3rem .6rem;border-radius:6px;font-size:.85rem;font-variant-numeric:tabular-nums}`,
+    `.ms{font-size:3.5rem;font-weight:900;font-variant-numeric:tabular-nums}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Tap when it turns green — ${rounds} rounds</p>
+<div class="st"><span>Best Avg<b id="best">-</b></span></div>
+<button class="btn" onclick="go()">Start</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Round<b id="rnd">1/${rounds}</b></span><span>Avg<b id="avg">-</b></span></div>
+<div class="zone wait" id="zone" onmousedown="tap()" ontouchstart="tap()"><span id="ztxt">Wait...</span></div>
+<div class="times" id="times"></div></div>
+<div id="s-end" class="hd">
+<div class="ms" id="fin">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">ms average</p>
+<div id="msg" style="margin:1rem 0"></div>
+<div class="times" id="ftimes"></div>
+<button class="btn" style="margin-top:1rem" onclick="go()">Try Again</button></div>`;
+
+  const js = [jsCore('react_best'),
+    `if(best)$('best').textContent=best+'ms';`,
+    `const RDS=${rounds};let rd,res,phase,gAt,tmr;`,
+    `function go(){rd=0;res=[];$('times').innerHTML='';show('play');nr()}`,
+    `function nr(){if(rd>=RDS)return end();$('rnd').textContent=(rd+1)+'/'+RDS;const z=$('zone');z.className='zone ready';$('ztxt').textContent='Wait for green...';phase='wait';clearTimeout(tmr);tmr=setTimeout(()=>{z.className='zone go';$('ztxt').textContent='TAP NOW!';gAt=Date.now();phase='go'},1500+Math.random()*3000)}`,
+    `function tap(){if(phase==='wait'){clearTimeout(tmr);$('zone').className='zone early';$('ztxt').textContent='Too early! Tap to retry';phase='early'}else if(phase==='early'){nr()}else if(phase==='go'){const ms=Date.now()-gAt;res.push(ms);const t=document.createElement('span');t.textContent=ms+'ms';$('times').appendChild(t);$('avg').textContent=Math.round(res.reduce((a,b)=>a+b,0)/res.length)+'ms';rd++;phase='done';setTimeout(nr,600)}}`,
+    `function end(){const avg=Math.round(res.reduce((a,b)=>a+b,0)/res.length);const nb=saveBest(avg);if(nb)$('best').textContent=avg+'ms';$('fin').textContent=avg;$('ftimes').innerHTML=res.map((r,i)=>'<span>R'+(i+1)+': '+r+'ms</span>').join('');const r=avg<=200?'Superhuman!':avg<=250?'Lightning!':avg<=300?'Fast!':avg<=400?'Average':'Keep practicing!';$('msg').innerHTML='<span style="font-size:1.2rem">'+r+'</span>'+(nb?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Typing Game Builder ──
+
+function buildTyping(title, opts) {
+  const p = GAME_PALETTES.typing;
+  const dur = opts.duration || 30;
+
+  const css = [cssVars(p), cssBase(p), cssTimerBar(p),
+    `.wd{font-size:2rem;font-weight:700;letter-spacing:.1em;margin:1.5rem 0;min-height:3rem;display:flex;justify-content:center;gap:2px;flex-wrap:wrap}`,
+    `.wd .c{transition:color .1s}.wd .y{color:${p.ac}}.wd .n{color:#F87171}`,
+    `.wd .cur{border-bottom:3px solid ${p.pr};animation:blink 1s step-end infinite}`,
+    `@keyframes blink{50%{border-color:transparent}}`,
+    `.ti{background:${p.sf};border:2px solid ${p.pr};border-radius:12px;padding:.75rem 1rem;font-size:1.2rem;color:${p.tx};width:100%;text-align:center;outline:none;caret-color:${p.pr};font-family:inherit}`,
+    `.wq{color:${p.mt};font-size:1rem;margin:.5rem 0;height:2em;overflow:hidden;display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Type as many words as you can in ${dur} seconds</p>
+<div class="st"><span>Best WPM<b id="best">0</b></span></div>
+<button class="btn" onclick="go()">Start</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Time<b id="timer">${dur}</b></span><span>Words<b id="wc">0</b></span><span>WPM<b id="wpm">0</b></span></div>
+<div class="bar"><div class="fl" id="bar" style="width:100%"></div></div>
+<div class="wd" id="disp"></div>
+<div class="wq" id="queue"></div>
+<input class="ti" id="inp" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type here..."></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<p style="font-size:1.2rem;margin:.5rem 0">WPM</p>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const js = [jsCore('type_best'),
+    `const WDS=["the","be","to","and","in","that","have","for","not","with","you","this","but","from","they","say","she","or","will","my","one","all","would","there","what","so","up","out","if","about","who","get","which","go","when","make","can","like","time","just","know","take","people","into","year","good","some","could","them","see","other","than","then","now","look","only","come","its","over","think","also","back","after","use","two","how","work","first","well","even","new","want","give","most","find","here","thing","code","fast","type","game","play","next","open","read","test","data","file","line","word","text","long","name","part","best","help","made","move","hand","high","keep","last","same","tell","set","each","much","turn","real","show","full","form","left","start","might","run","need","home","life","old","big","end","point","still","call","live","away","right","hard","plan","team","late","mind","wait","stop","must","land","close","draw","press","mark","step","pick","rock","blue","deep","dark","hold","four","week","room","free","fall","base","rest","less","note","hear"];`,
+    `const DUR=${dur*1000};let pool,ci,pos,done,t0,tmr;`,
+    `function shuf(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}`,
+    `function go(){pool=shuf([...WDS]);ci=0;pos=0;done=0;t0=Date.now();$('wc').textContent=0;$('wpm').textContent=0;$('inp').value='';show('play');$('inp').focus();render();tmr=setInterval(tick,100)}`,
+    `function render(){const w=pool[ci%pool.length];const v=$('inp').value;$('disp').innerHTML=w.split('').map((c,i)=>{let cl=i<pos?(v[i]===c?'y':'n'):'';if(i===pos)cl+=' cur';return'<span class="c '+cl+'">'+c+'</span>'}).join('');$('queue').innerHTML='';for(let i=1;i<=5;i++)$('queue').innerHTML+='<span>'+pool[(ci+i)%pool.length]+'</span>'}`,
+    `function tick(){const e=Date.now()-t0,pc=Math.max(0,1-e/DUR)*100;$('bar').style.width=pc+'%';$('timer').textContent=Math.max(0,Math.ceil((DUR-e)/1000));if(e>=DUR)end()}`,
+    `$('inp').addEventListener('input',function(){if(Date.now()-t0>DUR)return;const w=pool[ci%pool.length],v=this.value;pos=v.length;if(v.endsWith(' ')||v.length>=w.length){if(v.trim()===w){done++;$('wc').textContent=done;$('wpm').textContent=Math.round(done/((Date.now()-t0)/60000))}ci++;pos=0;this.value=''}render()});`,
+    `function end(){clearInterval(tmr);$('inp').blur();const wpm=Math.round(done/(DUR/60000));const nb=saveBest(wpm);$('fin').textContent=wpm;const r=wpm>=80?'Blazing!':wpm>=60?'Excellent!':wpm>=40?'Good!':wpm>=20?'Decent!':'Keep practicing!';$('msg').innerHTML=r+'<br>'+done+' words in ${dur}s'+(nb&&wpm>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Breakout Game Builder ──
+
+function buildBreakout(title, opts) {
+  const p = GAME_PALETTES.breakout;
+  const COLS = 8, ROWS = opts.difficulty === 'hard' ? 7 : 5;
+
+  const css = [cssVars(p), cssBase(p),
+    `canvas{border-radius:12px;background:${p.sf};display:block;margin:1rem auto;touch-action:none}`,
+  ].join('\n');
+
+  const html = `<div id="s-menu">
+<p style="color:${p.mt};margin:1rem 0">Move the paddle to break all ${COLS * ROWS} blocks</p>
+<div class="st"><span>Best<b id="best">0</b></span></div>
+<button class="btn" onclick="go()">Play</button></div>
+<div id="s-play" class="hd">
+<div class="st"><span>Score<b id="score">0</b></span><span>Lives<b id="lives">3</b></span></div>
+<canvas id="cv" width="360" height="480"></canvas></div>
+<div id="s-end" class="hd">
+<div class="sc" id="fin">0</div>
+<div id="msg" style="font-size:1.1rem;margin:1rem 0"></div>
+<button class="btn" onclick="go()">Play Again</button></div>`;
+
+  const brickColors = `['${p.pr}','${p.sc}','#A78BFA','${p.ac}','#EC4899']`;
+  const js = [jsCore('brk_best'),
+    `const cv=$('cv'),ctx=cv.getContext('2d'),CW=360,CH=480,COLS=${COLS},ROWS=${ROWS},BW=CW/COLS-4,BH=18,PW=70,PH=12,BR=6;`,
+    `const BC=${brickColors};`,
+    `let px,ball,dx,dy,bricks,sc,lives,raf;`,
+    `function mkBricks(){bricks=[];for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)bricks.push({x:c*(BW+4)+2,y:r*(BH+4)+40,w:BW,h:BH,color:BC[r%BC.length],alive:true})}`,
+    `function go(){px=CW/2;ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5;sc=0;lives=3;mkBricks();$('score').textContent=0;$('lives').textContent=3;show('play');cancelAnimationFrame(raf);tick()}`,
+    `function tick(){update();draw();if(lives>0&&bricks.some(b=>b.alive))raf=requestAnimationFrame(tick);else end()}`,
+    `function update(){ball.x+=dx;ball.y+=dy;if(ball.x<=BR||ball.x>=CW-BR)dx=-dx;if(ball.y<=BR)dy=-dy;if(ball.y>=CH-PH-BR-8&&ball.y<=CH-8&&ball.x>=px-PW/2&&ball.x<=px+PW/2){dy=-Math.abs(dy);dx+=((ball.x-px)/(PW/2))*2}if(ball.y>CH){lives--;$('lives').textContent=lives;if(lives>0){ball={x:CW/2,y:CH-60};dx=3*(Math.random()>.5?1:-1);dy=-3.5}}for(const b of bricks){if(!b.alive)continue;if(ball.x+BR>b.x&&ball.x-BR<b.x+b.w&&ball.y+BR>b.y&&ball.y-BR<b.y+b.h){b.alive=false;dy=-dy;sc+=10;$('score').textContent=sc}}}`,
+    `function draw(){ctx.clearRect(0,0,CW,CH);for(const b of bricks){if(!b.alive)continue;ctx.fillStyle=b.color;ctx.beginPath();ctx.roundRect(b.x,b.y,b.w,b.h,4);ctx.fill()}ctx.fillStyle='${p.pr}';ctx.beginPath();ctx.roundRect(px-PW/2,CH-PH-8,PW,PH,6);ctx.fill();ctx.fillStyle='${p.ac}';ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,Math.PI*2);ctx.fill()}`,
+    `function end(){cancelAnimationFrame(raf);const won=!bricks.some(b=>b.alive);const nb=saveBest(sc);$('fin').textContent=sc;$('msg').innerHTML=(won?'You cleared it!':'Game Over')+(nb&&sc>0?' <span class=hi>★ New Best!</span>':'');show('end')}`,
+    `cv.addEventListener('mousemove',e=>{const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.clientX-r.left)*(CW/r.width)))});`,
+    `cv.addEventListener('touchmove',e=>{e.preventDefault();const r=cv.getBoundingClientRect();px=Math.max(PW/2,Math.min(CW-PW/2,(e.touches[0].clientX-r.left)*(CW/r.width)))},{passive:false});`,
+    `document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')px=Math.max(PW/2,px-20);if(e.key==='ArrowRight')px=Math.min(CW-PW/2,px+20)});`,
+  ].join('\n');
+
+  return htmlWrap(title, css, html, js);
+}
+
+// ── Game Router ──
+
+const GAME_BUILDERS = {
+  tapping: buildTapping, quiz: buildQuiz, memory: buildMemory,
+  snake: buildSnake, reaction: buildReaction, typing: buildTyping, breakout: buildBreakout,
+};
+
+function gameHTML(type, title, rawInstruction) {
+  const opts = extractGameOpts(rawInstruction || '');
+  const builder = GAME_BUILDERS[type] || buildTapping;
+  return builder(title || type, opts);
 }
 
 function gameNaideCode(title, port) {
@@ -2522,7 +2555,7 @@ export function generateProject(instruction, options = {}) {
     const gt = result.analysis.gameType;
     const title = result.analysis.gameTitle || gt;
     const projectName = safeName(gt) + '-game';
-    const html = gameHTML(gt, title);
+    const html = gameHTML(gt, title, instruction);
 
     files.push({ path: 'index.html', content: html });
     files.push({ path: 'app.naide', content: result.code });
