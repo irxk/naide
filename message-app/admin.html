@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin Dashboard</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui;background:#f5f5f5;padding:2rem}
+h1{margin-bottom:1rem}.card{background:#fff;border-radius:8px;padding:1.5rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+table{width:100%;border-collapse:collapse}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #eee}
+th{background:#f9f9f9;font-weight:600}button{padding:.4rem 1rem;border:none;border-radius:4px;cursor:pointer;background:#2563eb;color:#fff}
+button:hover{background:#1d4ed8}button.danger{background:#dc2626}button.danger:hover{background:#b91c1c}
+input,select{padding:.4rem;border:1px solid #ddd;border-radius:4px;margin-right:.5rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1.5rem}
+.stat{background:#fff;border-radius:8px;padding:1.5rem;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.stat h3{font-size:2rem;color:#2563eb}.stat p{color:#666;margin-top:.5rem}
+#toast{position:fixed;top:1rem;right:1rem;background:#22c55e;color:#fff;padding:.8rem 1.5rem;border-radius:8px;display:none}
+</style></head><body>
+<h1>Admin Dashboard</h1>
+<div id="toast"></div>
+<div class="stats" id="stats"></div>
+<div class="card"><h2>Messages</h2>
+<div style="margin:1rem 0"><input id="message-search" placeholder="Search..." oninput="messageLoad()">
+<button onclick="messageLoad()">Refresh</button> <button onclick="messageShowForm()">+ New</button></div>
+<div id="message-form" style="display:none;margin:1rem 0;padding:1rem;background:#f9f9f9;border-radius:4px">
+<input type="text" id="message-content" placeholder="content *">
+<input type="text" id="message-sender" placeholder="sender *">
+<label><input type="checkbox" id="message-deleted"> deleted</label> 
+<button onclick="messageCreate()">Save</button> <button onclick="document.getElementById('message-form').style.display='none'" class="danger">Cancel</button></div>
+<table><thead><tr><th>id</th><th>content</th><th>sender</th><th>created</th><th>deleted</th><th>Actions</th></tr></thead>
+<tbody id="message-table"></tbody></table></div>
+<script>
+const API="";function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000)}
+async function loadStats(){try{const r=await fetch(API+"/api/health");const d=await r.json();const s=document.getElementById("stats");
+s.innerHTML=Object.entries(d).filter(([k])=>k!=="status").map(([k,v])=>`<div class="stat"><h3>${v}</h3><p>${k}</p></div>`).join("")}catch(e){}}
+async function messageLoad(){const s=document.getElementById("message-search").value;
+const r=await fetch(API+"/api/messages?search="+s);const d=await r.json();const items=d.items||d;
+document.getElementById("message-table").innerHTML=items.map(i=>"<tr><td>"+i.id+"<td>"+i.content+"<td>"+i.sender+"<td>"+i.created+"<td>"+i.deleted+"<td>"+
+"<button onclick=\"messageDel("+i.id+")\">Del</button></td></tr>").join("")}
+function messageShowForm(){document.getElementById("message-form").style.display="block"}
+async function messageCreate(){const body={content:document.getElementById("message-content").value,sender:document.getElementById("message-sender").value,deleted:document.getElementById("message-deleted").checked};
+await fetch(API+"/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+document.getElementById("message-form").style.display="none";toast("Created!");messageLoad();loadStats()}
+async function messageDel(id){if(!confirm("Delete?"))return;await fetch(API+"/api/messages/"+id,{method:"DELETE"});toast("Deleted!");messageLoad();loadStats()}
+loadStats();messageLoad()
+</script></body></html>

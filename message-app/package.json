@@ -1,0 +1,17 @@
+{
+  "name": "message-app",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "naide app.naide",
+    "build": "naide app.naide --emit -o dist/app.mjs",
+    "start": "node dist/app.mjs",
+    "test": "naide test app.naide",
+    "seed": "naide app.naide --run-seed"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "naider": "^1.21.0"
+  }
+}

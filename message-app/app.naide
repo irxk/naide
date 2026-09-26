@@ -1,0 +1,47 @@
+# ── Middleware (install if needed) ──
+# npm install express-rate-limit  →  rateLimit({windowMs: 900000, max: 100})
+# npm install helmet             →  helmet() for security headers
+# npm install compression        →  compression() for gzip
+
+fn ok(any data, any meta):
+  ret {ok: true, data, error: null, meta}
+
+fn err(str message, int code):
+  ret {ok: false, data: null, error: message, code}
+
+fn sanitize(str input):
+  ret input.replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+
+schema Message:
+  id      auto
+  content str required
+  sender  str required
+  created auto
+
+db "data/"
+
+server message port 3000:
+  cors "*"
+  ws "/ws":
+    on "connection" (socket):
+      log("Client connected")
+    on "message" (data, socket):
+      socket.send(data)
+    on "close" (socket):
+      log("Client disconnected")
+  
+  post "/api/webhooks" (req, res):
+    str event = req.body.event
+    any payload = req.body.payload
+    log("Webhook received: " + event)
+    ret ok({received: true, event}, null)
+  
+  get "/api/webhooks/health" (req, res):
+    ret ok({status: "listening"}, null)
+  
+  get "/api/health" (req, res):
+    ret {status: "ok"}
+
+fn seed():
+  MessageStore.create({content: "Sample Message", sender: "Sample Message"})
+  log("Seed data inserted")
