@@ -99,6 +99,54 @@ for (let i = 0; i < args.length; i++) {
   }
 }
 
+// ── Code Generator (~~) ──
+if (files[0] === 'gen' || files[0] === '~~') {
+  const instruction = files.slice(1).join(' ');
+  if (!instruction) {
+    console.log(`
+  NAIDE Code Generator (~~)
+
+  Usage:
+    naide ~~ "REST API for users with auth"
+    naide gen "todo app with database"
+    naide gen "Discord bot with hello command"
+
+  Generates valid NAIDE code from natural language instructions.
+  No AI, no network — pure pattern matching with self-healing validation.
+
+  Examples:
+    naide ~~ "REST API for products with name price stock"
+    naide ~~ "blog app with auth and database"
+    naide ~~ "Discord bot with hello and help commands"
+    naide ~~ "CLI tool"
+    naide ~~ "chat app with websocket"
+    naide ~~ "user management fullstack app"
+
+  In .naide files:
+    ~~ "REST API for users with auth"
+    # Expands at compile time to full NAIDE code
+
+  API:
+    import { generate } from 'naider';
+    const result = generate("REST API for users");
+    console.log(result.code);
+`);
+    process.exit(0);
+  }
+
+  const { generate } = await import('../src/gen.js');
+  const result = generate(instruction);
+
+  if (flags.output) {
+    writeFileSync(flags.output, result.code, 'utf-8');
+    console.log(`  Generated: ${flags.output} (${result.intents.join(' + ')})`);
+  } else {
+    console.log(result.code);
+    process.stderr.write(`\n  ── gen ~~ [${ result.intents.join(' + ')}]${result.schema ? ` → ${result.schema}` : ''} ── valid: ${result.valid}${result.fixed ? ' (auto-fixed)' : ''}\n`);
+  }
+  process.exit(0);
+}
+
 // ── VS Code Extension Install ──
 if (files[0] === 'vscode') {
   const os = await import('os');
@@ -664,6 +712,8 @@ if (flags.help) {
     naide                        Start interactive REPL
     naide <file.naide>           Run a NAIDE file
     naide <file.nx>              Run a NAIDE-X file (auto-detected)
+    naide ~~ "instruction"       Generate NAIDE code from instruction (no AI)
+    naide gen "instruction"      Same as ~~ (alias)
     naide init [dir]             Create a new NAIDE project
     naide build [dir] [outdir]   Transpile all files to JavaScript
     naide check <files...>       Type-check without running
@@ -683,10 +733,27 @@ if (flags.help) {
     naide -w <file.naide>        Watch mode (auto-restart on changes)
     naide -d <file>              Debug mode (Node.js inspector)
 
-  Targets:
+  Code Generation (~~):
+    naide ~~ "instruction"       Generate code from instruction (no AI)
+    naide gen "instruction"      Alias for ~~
+    In .naide files: ~~ "instruction" expands at compile time
+
+  Targets (15):
     node    Node.js / JavaScript (default)
     bun     Bun-optimized JavaScript
-    python  Python (Flask for servers)
+    ts      TypeScript
+    python  Python (Flask)
+    go      Go (net/http)
+    java    Java (HttpServer)
+    rust    Rust (actix-web)
+    cpp     C++ (cpp-httplib)
+    c       C (libmicrohttpd)
+    csharp  C# (ASP.NET)
+    kotlin  Kotlin (Ktor)
+    swift   Swift (Vapor)
+    dart    Dart (shelf)
+    php     PHP
+    ruby    Ruby (Sinatra)
 
   Modes:
     .naide  Standard NAIDE (~40% fewer tokens than JS)

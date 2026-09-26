@@ -3,6 +3,7 @@ import { Parser } from './parser.js';
 import { Generator } from './generator.js';
 import { preprocess } from './preprocess.js';
 import { TypeChecker } from './typechecker.js';
+import { generate, expandDirectives } from './gen.js';
 
 async function getGenerator(target, options) {
   switch (target) {
@@ -80,6 +81,9 @@ export function compile(source, { mode = 'naide', runtimePath, sourceFile, typeC
   if (mode === 'x') {
     processedSource = preprocess(source);
   }
+  if (processedSource.includes('~~')) {
+    processedSource = expandDirectives(processedSource).source;
+  }
   try {
     const lexer = new Lexer(processedSource);
     const tokens = lexer.tokenize();
@@ -118,6 +122,9 @@ export async function compileAsync(source, { mode = 'naide', runtimePath, source
   if (mode === 'x') {
     processedSource = preprocess(source);
   }
+  if (processedSource.includes('~~')) {
+    processedSource = expandDirectives(processedSource).source;
+  }
   try {
     const lexer = new Lexer(processedSource);
     const tokens = lexer.tokenize();
@@ -155,4 +162,4 @@ export function transpile(source, opts) {
   return compile(source, opts).js;
 }
 
-export { preprocess };
+export { preprocess, generate };

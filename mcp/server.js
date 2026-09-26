@@ -64,6 +64,19 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} }
   },
   {
+    name: 'naide_generate',
+    description: 'Generate NAIDE code from a natural language instruction. No AI — uses pattern matching and template composition with self-healing parser validation. Extremely lightweight, runs in microseconds.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        instruction: { type: 'string', description: 'Natural language instruction (e.g. "REST API for users with auth", "Discord bot", "todo app")' },
+        port: { type: 'number', description: 'Server port (default: 3000)' },
+        schemaName: { type: 'string', description: 'Override schema/entity name' }
+      },
+      required: ['instruction']
+    }
+  },
+  {
     name: 'naide_spec',
     description: 'Get the NAIDE language specification. Use this to understand NAIDE syntax before writing code.',
     inputSchema: {
@@ -131,6 +144,20 @@ async function handleToolCall(name, args) {
     case 'naide_targets': {
       const text = TARGETS_INFO.map(t => `${t.name.padEnd(12)} ${t.language.padEnd(25)} ${t.server.padEnd(20)} ${t.flag}`).join('\n');
       return { content: [{ type: 'text', text: `NAIDE Compilation Targets (15):\n\n${'Target'.padEnd(12)} ${'Language'.padEnd(25)} ${'Server'.padEnd(20)} Flag\n${'─'.repeat(75)}\n${text}` }] };
+    }
+
+    case 'naide_generate': {
+      try {
+        const { generate } = await import(resolve(__dirname, '..', 'src', 'gen.js'));
+        const opts = {};
+        if (args.port) opts.port = args.port;
+        if (args.schemaName) opts.schemaName = args.schemaName;
+        const result = generate(args.instruction, opts);
+        const meta = `[${result.intents.join(' + ')}]${result.schema ? ` → ${result.schema}` : ''} | valid: ${result.valid}${result.fixed ? ' (auto-fixed)' : ''}`;
+        return { content: [{ type: 'text', text: `${result.code}\n# ${meta}` }] };
+      } catch (e) {
+        return { content: [{ type: 'text', text: `Generation error: ${e.message}` }], isError: true };
+      }
     }
 
     case 'naide_spec': {
