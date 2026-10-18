@@ -4,6 +4,7 @@ export class TypeChecker {
     this.errors = [];
     this.warnings = [];
     this.functions = new Map();
+    this.returnTypes = [];
   }
 
   pushScope() { this.scopes.push(new Map()); }
@@ -29,8 +30,19 @@ export class TypeChecker {
   }
 
   check(ast) {
+    for (const stmt of ast.body) {
+      if (stmt.type === 'Function') this.registerFunction(stmt);
+    }
     this.visitProgram(ast);
     return { errors: this.errors, warnings: this.warnings };
+  }
+
+  registerFunction(node) {
+    this.functions.set(node.name, {
+      params: node.params.map(p => ({ name: p.name, type: p.type || 'any', hasDefault: p.defaultValue !== null, spread: p.spread })),
+      returnType: node.returnType || 'any',
+      isAsync: node.isAsync || false,
+    });
   }
 
   visitProgram(node) {
@@ -80,26 +92,19 @@ export class TypeChecker {
   }
 
   visitFunction(node, line) {
-    const paramTypes = {};
-    for (const p of node.params) {
-      paramTypes[p.name] = p.varType || 'any';
-    }
-
-    this.functions.set(node.name, {
-      params: node.params.map(p => ({ name: p.name, type: p.varType || 'any' })),
-      returnType: node.returnType || 'any',
-      isAsync: node.isAsync || false,
-    });
+    this.registerFunction(node);
 
     this.setType(node.name, 'function');
 
     this.pushScope();
     for (const p of node.params) {
-      this.setType(p.name, p.varType || 'any');
+      this.setType(p.name, p.type || 'any');
     }
+    this.returnTypes.push(node.returnType || 'any');
     for (const stmt of node.body) {
       this.visitStatement(stmt);
     }
+    this.returnTypes.pop();
     this.popScope();
   }
 
@@ -118,7 +123,22 @@ export class TypeChecker {
     }
   }
 
-  visitReturn(node, line) {}
+  visitReturn(node, line) {
+    const expectedType = this.returnTypes[this.returnTypes.length - 1];
+    if (!expectedType || expectedType === 'any') return;
+
+    if (!node.value) {
+      if (expectedType !== 'void') {
+        this.error(`Return type mismatch: expected ${expectedType} but got void`, line);
+      }
+      return;
+    }
+
+    const actualType = this.inferType(node.value);
+    if (actualType !== 'any' && !this.typesCompatible(expectedType, actualType)) {
+      this.error(`Return type mismatch: expected ${expectedType} but got ${actualType}`, line);
+    }
+  }
 
   visitIf(node, line) {
     this.visitBlock(node.body, line);
@@ -220,7 +240,10 @@ export class TypeChecker {
   inferCallType(node) {
     if (node.callee.type === 'Identifier') {
       const fn = this.functions.get(node.callee.name);
-      if (fn) return fn.returnType;
+      if (fn) {
+        this.checkCallArguments(node, fn);
+        return fn.returnType;
+      }
 
       const builtins = {
         'uuid': 'str', 'hash': 'str', 'verify': 'bool',
@@ -249,6 +272,30 @@ export class TypeChecker {
     }
 
     return 'any';
+  }
+
+  checkCallArguments(node, fn) {
+    const params = fn.params;
+    const line = node._line || 0;
+    const requiredCount = params.filter(p => !p.hasDefault && !p.spread).length;
+    const hasSpread = params.some(p => p.spread);
+
+    if (node.args.length < requiredCount || (!hasSpread && node.args.length > params.length)) {
+      const expected = hasSpread ? `at least ${requiredCount}` : `${requiredCount}${params.length === requiredCount ? '' : ` to ${params.length}`}`;
+      this.error(`Argument count mismatch for '${node.callee.name}': expected ${expected}, got ${node.args.length}`, line);
+    }
+
+    const spreadIndex = params.findIndex(param => param.spread);
+    for (let i = 0; i < node.args.length; i++) {
+      const paramIndex = spreadIndex >= 0 && i >= spreadIndex ? spreadIndex : i;
+      const param = params[paramIndex];
+      if (!param) continue;
+      const expectedType = param.type;
+      const actualType = this.inferType(node.args[i]);
+      if (expectedType !== 'any' && actualType !== 'any' && !this.typesCompatible(expectedType, actualType)) {
+        this.error(`Argument '${param.name}' of '${node.callee.name}' expects ${expectedType} but got ${actualType}`, line);
+      }
+    }
   }
 
   typesCompatible(declared, actual) {

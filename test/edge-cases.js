@@ -437,7 +437,7 @@ const tests = [
 
   // v1.6 edge cases - Inter-file imports
   ['import from .naide file', 'use {handler} from "./routes.naide"'],
-  ['import from .nx file', 'use utils from "./helpers.nx"'],
+  ['import from .naide file', 'use utils from "./helpers.naide"'],
   ['import default + destructured .naide', 'use {auth, validate} from "./middleware.naide"'],
 
   // v1.6 edge cases - Deploy

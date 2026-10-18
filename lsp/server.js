@@ -96,11 +96,10 @@ function validateDocument(uri) {
   const text = documents.get(uri);
   if (!text) return;
 
-  const mode = uri.endsWith('.nx') ? 'x' : 'naide';
   const diagnostics = [];
 
   try {
-    const result = compile(text, { mode });
+    const result = compile(text);
 
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {

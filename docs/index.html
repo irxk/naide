@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NAIDE — AI-Optimized Language for 15 Targets</title>
-  <meta name="description" content="NAIDE is a programming language simpler than Python, designed for AI-speed code generation. Write once, compile to JavaScript, Python, Go, Rust, Java, C++, and 9 more targets.">
-  <meta property="og:title" content="NAIDE — Write Once, Compile to 15 Languages">
-  <meta property="og:description" content="AI-optimized programming language simpler than Python. 40+ built-in functions, syntax sugar, and 55+ features. Compiles to JS, Python, Go, Rust, Java, C++, Swift, Kotlin, Dart, C#, PHP, Ruby, C, TypeScript, Bun.">
+  <title>NAIDE — One Readable Language, Built to Ship</title>
+  <meta name="description" content="NAIDE is a practical programming language with one readable syntax, built-in diagnostics and tools, and compiler targets for 15 languages.">
+  <meta property="og:title" content="NAIDE — One Readable Language, Built to Ship">
+  <meta property="og:description" content="Write NAIDE once with one consistent syntax. Build, check, test, and compile applications with built-in tools.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://naide.k-r.lol/">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="NAIDE — Write Once, Compile to 15 Languages">
-  <meta name="twitter:description" content="AI-optimized programming language simpler than Python. 40+ built-in functions, 15 compilation targets. npm install -g naider">
+  <meta name="twitter:description" content="One readable syntax for people and tools, with built-in diagnostics and compiler output for 15 target languages. npm install -g naider">
   <meta name="theme-color" content="#4178DC">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -21,14 +21,13 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v1.24.5</span>
+      <span class="version">v2.0.0</span>
     </div>
     <nav>
       <a href="index.html" class="active">Home</a>
       <a href="guide.html">Getting Started</a>
       <span class="nav-section">Language</span>
       <a href="syntax.html">Syntax Reference</a>
-      <a href="nx.html">NAIDE-X Syntax</a>
       <span class="nav-section">Features</span>
       <a href="server.html">Server &amp; API</a>
       <a href="bot.html">Bots</a>
@@ -51,7 +50,7 @@
 
       <div class="hero">
         <h1>NAIDE</h1>
-        <p class="tagline">AI-optimized language that transpiles to 15 targets</p>
+        <p class="tagline">One readable language, built to ship</p>
         <div class="install-cmd"><span>$ </span>npm install -g naider</div>
         <p style="color: var(--text-dim); font-size: 14px;">Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, Ruby</p>
       </div>
@@ -75,12 +74,12 @@
           <p>Servers, bots (Discord/Slack/Telegram/LINE), CLI apps, HTML pages, email, GraphQL, desktop, mobile, cron &mdash; all built into the language.</p>
         </div>
         <div class="feature-card">
-          <h3>Minimal Tokens</h3>
-          <p>NAIDE uses ~40% fewer tokens than JavaScript. NAIDE-X uses ~80% fewer. Faster AI generation, more room in context windows.</p>
+          <h3>One Consistent Syntax</h3>
+          <p>One readable syntax for people and AI alike. Write less boilerplate without learning a second symbolic language.</p>
         </div>
         <div class="feature-card">
-          <h3>Two Syntax Modes</h3>
-          <p><code>.naide</code> is human-readable. <code>.nx</code> is AI-optimized. Convert freely between them with <code>naide convert</code>.</p>
+          <h3>Useful by Default</h3>
+          <p>NAIDE uses one consistent syntax in source files, examples, editor tools, and generated projects.</p>
         </div>
         <div class="feature-card">
           <h3>MCP Server</h3>
@@ -131,18 +130,17 @@ Build to JavaScript:
       </div>
 
       <!-- Benchmark -->
-      <h2>Token Efficiency</h2>
+      <h2>Compact, without a second dialect</h2>
       <table>
         <thead>
-          <tr><th>Language</th><th>Tokens</th><th>Chars</th><th>Lines</th><th>Savings</th></tr>
+          <tr><th>Source</th><th>Whitespace units</th><th>Characters</th><th>Lines</th></tr>
         </thead>
         <tbody>
-          <tr><td>JavaScript</td><td>330</td><td>2590</td><td>78</td><td>&mdash;</td></tr>
-          <tr><td>NAIDE</td><td>66</td><td>517</td><td>19</td><td style="color: var(--green);">-80%</td></tr>
-          <tr><td>NAIDE-X</td><td>39</td><td>435</td><td>19</td><td style="color: var(--green);">-88%</td></tr>
+          <tr><td>JavaScript</td><td>330</td><td>2590</td><td>78</td></tr>
+          <tr><td>NAIDE</td><td>66</td><td>517</td><td>19</td></tr>
         </tbody>
       </table>
-      <p>Benchmark compares equivalent server applications. Fewer tokens means faster AI code generation and more room in context windows.</p>
+      <p>These are rough whitespace-separated source-size counts, not model-token measurements. NAIDE uses one readable syntax rather than maintaining a separate compressed dialect.</p>
 
       <!-- Links -->
       <h2>Learn More</h2>
@@ -155,7 +153,6 @@ Build to JavaScript:
         <li><a href="database.html">Database</a> &mdash; JSON storage, SQLite, PostgreSQL</li>
         <li><a href="testing.html">Testing</a> &mdash; test blocks, assertions, mock/spy</li>
         <li><a href="cli.html">CLI Reference</a> &mdash; all 15 compilation targets, flags, MCP server</li>
-        <li><a href="nx.html">NAIDE-X Syntax</a> &mdash; compressed AI-only syntax</li>
         <li><a href="playground/index.html">Playground</a> &mdash; try NAIDE in your browser</li>
       </ul>
 

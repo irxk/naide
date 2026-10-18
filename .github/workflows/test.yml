@@ -22,7 +22,6 @@ jobs:
       - name: Verify examples compile
         run: |
           node bin/naide.js --emit examples/todo-api.naide > /dev/null
-          node bin/naide.js --emit examples/todo-api.nx > /dev/null
       - name: Verify code generation
         run: |
           node -e "import('./src/gen.js').then(m => { const r = m.generate('REST API for users with auth'); if (!r.valid) { console.error('gen: invalid output'); process.exit(1); } console.log('gen: ok (' + r.intents.join('+') + ')'); })"

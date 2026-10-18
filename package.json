@@ -1,7 +1,7 @@
 {
   "name": "naider",
-  "version": "1.24.5",
-  "description": "NAIDE - Simpler than Python, compiles to 15 targets. AI-specialized language with 35+ built-in functions, syntax sugar (unless/until/repeat/swap/is/isnt), and 47 features. Targets: Node.js, Python, TypeScript, C, C++, Java, Go, Rust, PHP, Ruby, Kotlin, Swift, Dart, C#, Bun.",
+  "version": "2.0.0",
+  "description": "NAIDE is a readable, practical programming language with a single syntax, a compiler, type checking, and batteries-included development tools.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -21,14 +21,12 @@
     "examples/",
     "vscode-naide/",
     "SPEC.naide",
-    "SPEC-X.nx",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "test": "node --test test/test.js",
     "example": "node bin/naide.js examples/hello.naide",
-    "example:x": "node bin/naide.js examples/hello.nx",
     "postinstall": "node bin/postinstall.js"
   },
   "keywords": [

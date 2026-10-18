@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Token count comparison: JavaScript vs NAIDE vs NAIDE-X
-// Measures the same application logic across all three representations
+// Rough source-size comparison: JavaScript vs NAIDE
+// Whitespace-delimited units are not model-token counts.
 
 const jsCode = `
 import express from 'express';
@@ -125,32 +125,7 @@ server app port 3000:
     ret.status 500 {error: err.message}
 `;
 
-const nxCode = `
-db "data/"
-
-schema Todo:
-  id auto
-  title str required min(1) max(200)
-  done bool default(false)
-  created timestamp auto
-
-$app:3000
-  cors "*"
-  crud "/api/todos" Todo
-  G"/api/stats"(req,res)
-    l:all=TodoStore.all()
-    i:total=all.length
-    i:done=all.filter((t)=>t.done).length
-    >{total,done,pending:total-done}
-  G"/"
-    >.h "<h1>Todo API</h1>"
-  error (err,req,res):
-    log.e err.message
-    >.s 500 {error:err.message}
-`;
-
-function countTokens(code) {
-  // GPT-style tokenizer approximation: split on whitespace and punctuation
+function countWhitespaceUnits(code) {
   return code
     .trim()
     .split(/[\s]+/)
@@ -169,28 +144,21 @@ function countLines(code) {
 const results = [
   { name: 'JavaScript', code: jsCode },
   { name: 'NAIDE',      code: naideCode },
-  { name: 'NAIDE-X',    code: nxCode },
 ];
 
-console.log('\n  NAIDE Token Benchmark');
+console.log('\n  NAIDE Source-Size Comparison');
 console.log('  ═══════════════════════════════════════════════\n');
 console.log('  Same TODO API with CRUD, stats, error handling\n');
 
-const jsTokens = countTokens(jsCode);
-const jsChars = countChars(jsCode);
-const jsLines = countLines(jsCode);
-
-console.log('  Language     Tokens    Chars    Lines    Savings');
-console.log('  ─────────────────────────────────────────────────');
+console.log('  Language     Units    Chars    Lines');
+console.log('  ─────────────────────────────────────');
 
 for (const { name, code } of results) {
-  const tokens = countTokens(code);
+  const units = countWhitespaceUnits(code);
   const chars = countChars(code);
   const lines = countLines(code);
-  const tokenSave = name === 'JavaScript' ? '—' : `-${Math.round((1 - tokens / jsTokens) * 100)}%`;
-  const charSave = name === 'JavaScript' ? '—' : `-${Math.round((1 - chars / jsChars) * 100)}%`;
 
-  console.log(`  ${name.padEnd(12)} ${String(tokens).padStart(6)}  ${String(chars).padStart(7)}  ${String(lines).padStart(5)}    ${tokenSave}`);
+  console.log(`  ${name.padEnd(12)} ${String(units).padStart(6)}  ${String(chars).padStart(7)}  ${String(lines).padStart(5)}`);
 }
 
 console.log('\n');

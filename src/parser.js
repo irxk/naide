@@ -345,13 +345,13 @@ export class Parser {
 
     if (this.match(T.ASSIGN)) {
       const expr = this.parseExpression();
-      return new ASTNode('Function', { name, params, returnType, body: [new ASTNode('Return', { value: expr })], isAsync, isPublic });
+      return new ASTNode('Function', { name, params, returnType, body: [new ASTNode('Return', { value: expr }, tok.line)], isAsync, isPublic }, tok.line);
     }
 
     this.expect(T.COLON);
     const body = this.parseBlock();
 
-    return new ASTNode('Function', { name, params, returnType, body, isAsync, isPublic });
+    return new ASTNode('Function', { name, params, returnType, body, isAsync, isPublic }, tok.line);
   }
 
   parseFnParams() {
@@ -418,9 +418,9 @@ export class Parser {
   }
 
   parseReturn() {
-    this.advance(); // ret
+    const returnToken = this.advance(); // ret
     if (this.at(T.NEWLINE) || this.at(T.EOF) || this.at(T.DEDENT)) {
-      return new ASTNode('Return', { value: null });
+      return new ASTNode('Return', { value: null }, returnToken.line);
     }
     if (this.match(T.DOT)) {
       const method = this.expect(T.IDENT).value;
@@ -457,7 +457,7 @@ export class Parser {
       return new ASTNode('ReturnMethod', { method, value });
     }
     const value = this.parseExpression();
-    return new ASTNode('Return', { value });
+    return new ASTNode('Return', { value }, returnToken.line);
   }
 
   expectIdentLike() {
@@ -467,7 +467,8 @@ export class Parser {
   }
 
   parseTypedVariable() {
-    const varType = this.advance().value;
+    const typeToken = this.advance();
+    const varType = typeToken.value;
     if (this.at(T.LBRACE)) {
       return this.parseDestructure(varType, false);
     }
@@ -477,11 +478,11 @@ export class Parser {
     const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
-    return new ASTNode('TypedVar', { varType, name, value, isMut: false, isPublic: false });
+    return new ASTNode('TypedVar', { varType, name, value, isMut: false, isPublic: false }, typeToken.line);
   }
 
   parseMutVariable() {
-    this.advance(); // mut
+    const mutToken = this.advance(); // mut
     if (TYPE_TOKENS.has(this.peek().type)) {
       const node = this.parseTypedVariable();
       node.isMut = true;
@@ -493,7 +494,7 @@ export class Parser {
     const name = this.expectIdentLike();
     this.expect(T.ASSIGN);
     const value = this.parseExpression();
-    return new ASTNode('TypedVar', { varType: null, name, value, isMut: true });
+    return new ASTNode('TypedVar', { varType: null, name, value, isMut: true }, mutToken.line);
   }
 
   parseDestructure(varType, isMut) {
@@ -865,8 +866,7 @@ export class Parser {
     const name = this.expect(T.IDENT).value;
 
     let parent = null;
-    if (this.at(T.IDENT) && this.peek().value === 'extends') {
-      this.advance();
+    if (this.match(T.EXTENDS)) {
       parent = this.expect(T.IDENT).value;
     }
 
@@ -1161,10 +1161,11 @@ export class Parser {
         const prop = this.expectPropertyName();
         expr = new ASTNode('OptionalAccess', { object: expr, property: prop });
       } else if (this.at(T.LPAREN)) {
+        const callLine = this.peek().line;
         this.advance();
         const args = this.parseArgList();
         this.expect(T.RPAREN);
-        expr = new ASTNode('Call', { callee: expr, args });
+        expr = new ASTNode('Call', { callee: expr, args }, callLine);
       } else if (this.at(T.LBRACKET)) {
         this.advance();
         const index = this.parseExpression();
@@ -1466,10 +1467,10 @@ export class Parser {
     }
     this.match(T.DEDENT);
 
-    if (parent || methods.length > 0 || init) {
+    if (methods.length > 0 || init) {
       return new ASTNode('ClassDecl', { name, parent, fields, methods, init });
     }
-    return new ASTNode('SchemaDecl', { name, fields });
+    return new ASTNode('SchemaDecl', { name, parent, fields });
   }
 
   parseSchemaField() {

@@ -18,10 +18,9 @@ function activate(context) {
   const clientOptions = {
     documentSelector: [
       { scheme: 'file', language: 'naide' },
-      { scheme: 'file', language: 'naidex' },
     ],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.{naide,nx}'),
+      fileEvents: vscode.workspace.createFileSystemWatcher('**/*.naide'),
     },
   };
 

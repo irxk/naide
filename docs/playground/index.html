@@ -6,12 +6,12 @@
 <title>NAIDE Playground — Try NAIDE Online</title>
 <meta name="description" content="Write and compile NAIDE code in your browser. Targets: JavaScript, Python, TypeScript, Go, Rust, Java, C, C++, C#, Kotlin, Swift, Dart, PHP, Ruby.">
 <meta property="og:title" content="NAIDE Playground — Write Once, Compile to 15 Languages">
-<meta property="og:description" content="Try NAIDE online — an AI-optimized programming language that compiles to JavaScript, Python, Go, Rust, Java, C++, and 9 more targets. No install needed.">
+<meta property="og:description" content="Try NAIDE online — one readable programming language with compiler targets for JavaScript, Python, Go, Rust, Java, C++, and more. No install needed.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://naide.k-r.lol/playground/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="NAIDE Playground — Write Once, Compile to 15 Languages">
-<meta name="twitter:description" content="Try NAIDE online — an AI-optimized programming language that compiles to JavaScript, Python, Go, Rust, Java, C++, and 9 more targets.">
+<meta name="twitter:description" content="Try NAIDE online — one readable programming language with compiler targets for 15 languages.">
 <meta name="theme-color" content="#4178DC">
 <style>
 /* ===== VARIABLES ===== */
@@ -86,30 +86,6 @@ body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: 
 .logo-play { color: var(--text-muted); font-weight: 400; margin-left: 2px; }
 
 /* Mode toggle */
-.mode-toggle {
-  display: flex;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.mode-toggle button {
-  padding: 4px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: var(--font-sans);
-}
-.mode-toggle button:hover { color: var(--text); }
-.mode-toggle button.active {
-  background: var(--blue);
-  color: #fff;
-}
-.mode-toggle button + button { border-left: 1px solid var(--border); }
 
 /* Dropdowns (target, examples) */
 .header-select {
@@ -399,7 +375,6 @@ body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: 
   .divider::after { top: -3px; bottom: -3px; left: 0; right: 0; cursor: row-resize; }
   .panel { min-height: 200px; }
   .header-select { font-size: 11px; padding: 3px 24px 3px 8px; }
-  .mode-toggle button { padding: 3px 8px; font-size: 11px; }
   .btn { padding: 3px 8px; font-size: 11px; }
   .btn span.btn-label { display: none; }
   .line-numbers { min-width: 34px; padding-left: 6px; padding-right: 8px; }
@@ -414,16 +389,11 @@ body { font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: 
 <div class="app">
   <!-- HEADER -->
   <header class="header">
-    <a class="logo" href="../docs/index.html" title="NAIDE Documentation">
+    <a class="logo" href="../index.html" title="NAIDE Documentation">
       <span class="logo-n">N</span>
       <span class="logo-text">NAIDE</span>
       <span class="logo-play">Playground</span>
     </a>
-
-    <div class="mode-toggle">
-      <button class="active" data-mode="naide" title="Standard NAIDE syntax">NAIDE</button>
-      <button data-mode="x" title="NAIDE-X compressed syntax">NAIDE-X</button>
-    </div>
 
     <select id="target-select" class="header-select" title="Compilation target">
       <optgroup label="Primary">
@@ -632,7 +602,6 @@ function highlightCode(text) {
 }
 
 // ========== STATE ==========
-let mode = 'naide';
 let target = 'node';
 let compileTimer = null;
 let outputCode = '';
@@ -645,7 +614,6 @@ const editorScroll = document.getElementById('editor-scroll');
 const outputPre = document.getElementById('output-pre');
 const inputStats = document.getElementById('input-stats');
 const outputStats = document.getElementById('output-stats');
-const modeLabel = document.getElementById('mode-label');
 const outputLabel = document.getElementById('output-label');
 const targetSelect = document.getElementById('target-select');
 const exampleSelect = document.getElementById('example-select');
@@ -669,40 +637,32 @@ const TARGET_LABELS = {
 const EXAMPLES = {
   hello: {
     naide: `# Hello World in NAIDE\nstr name = "World"\n\nfn greet(str who) -> str:\n  ret "Hello, {who}!"\n\nlog greet(name)\nlog "Welcome to NAIDE!"`,
-    x: `# Hello World in NAIDE-X\ns:name="World"\n\nf greet(s:who)s\n  >"Hello, {who}!"\n\nlog greet(name)\nlog "Welcome to NAIDE!"`,
   },
   variables: {
     naide: `# Variables & Types\n\n# Typed declarations\nstr greeting = "Hello"\nint count = 42\nnum pi = 3.14159\nbool active = true\nlist items = [1, 2, 3, 4, 5]\nmap config = {debug: true, port: 3000}\n\n# Auto type inference\nauto x = 42\nauto msg = "inferred as string"\nmut auto counter = 0\n\n# Destructuring\nmap user = {name: "Alice", age: 25, role: "admin"}\nauto {name, age} = user\nauto {role, ...rest} = user\n\nlist coords = [10, 20, 30]\nauto [cx, cy] = coords\nauto [head, ...tail] = coords\n\n# Spread operator\nlist all = [...items, 6, 7, 8]\nmap merged = {...config, verbose: false}`,
-    x: `# Variables & Types\n\ns:greeting="Hello"\ni:count=42\nn:pi=3.14159\nb:active=true\nl:items=[1,2,3,4,5]\nm:config={debug:true,port:3000}\n\nauto x=42\nauto msg="inferred as string"\n~auto counter=0\n\nm:user={name:"Alice",age:25,role:"admin"}\nauto {name,age}=user\nauto {role,...rest}=user\n\nl:coords=[10,20,30]\nauto [cx,cy]=coords\nauto [head,...tail]=coords\n\nl:all=[...items,6,7,8]\nm:merged={...config,verbose:false}`,
   },
   functions: {
     naide: `# Functions & Lambda\n\n# Basic function\nfn add(int a, int b) -> int:\n  ret a + b\n\n# One-line function\nfn double(int x) -> int = x * 2\nfn greet(str name) -> str = "Hello, {name}!"\n\n# Lambda / arrow functions\nauto multiply = (a, b) => a * b\nauto square = (x) => x * x\n\n# Higher-order functions\nfn apply(fn callback, int value) -> int:\n  ret callback(value)\n\nlog apply(double, 5)\nlog apply(square, 4)\n\n# Async function\nasync fn fetchData(str url):\n  auto data = await fetch_json(url)\n  ret data`,
-    x: `# Functions & Lambda\n\nf add(i:a,i:b)i\n  >a+b\n\nf double(i:x)i=x*2\nf greet(s:name)s="Hello, {name}!"\n\nauto multiply=(a,b)=>a*b\nauto square=(x)=>x*x\n\nf apply(fn:callback,i:value)i\n  >callback(value)\n\nlog apply(double,5)\nlog apply(square,4)\n\nasync f fetchData(s:url)\n  auto data=await fetch_json(url)\n  >data`,
   },
   server: {
     naide: `# Server & REST API\n\ndb "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\nserver app port 3000:\n  cors "*"\n\n  get "/":\n    ret {message: "Todo API", version: "1.0"}\n\n  get "/health":\n    ret {status: "ok"}\n\n  crud "/api/todos" Todo\n  validate "/api/todos" Todo\n\n  get "/api/stats":\n    auto todos = TodoStore.all()\n    auto done = filter(todos, (t) => t.done)\n    ret {total: len(todos), completed: len(done)}`,
-    x: `# Server & REST API\n\ndb "data/"\n\nschema Todo:\n  id auto\n  title str required min(1) max(200)\n  done bool default(false)\n\n$app:3000\n  cors "*"\n  G"/"\n    >{message:"Todo API",version:"1.0"}\n  G"/health"\n    >{status:"ok"}\n  crud "/api/todos" Todo\n  validate "/api/todos" Todo\n  G"/api/stats"\n    auto todos=TodoStore.all()\n    auto done=filter(todos,(t)=>t.done)\n    >{total:len(todos),completed:len(done)}`,
   },
   schema: {
     naide: `# Class Inheritance (Schema Extends)\n\ndb "data/"\n\nschema Entity:\n  id auto\n  createdAt str default("now")\n\nschema User extends Entity:\n  name str required min(2) max(50)\n  email str required email\n  role str default("user")\n\nschema Admin extends User:\n  permissions list default(["read", "write"])\n  department str required\n\nserver app port 3000:\n  cors "*"\n  crud "/api/users" User\n  crud "/api/admins" Admin\n  validate "/api/users" User\n  validate "/api/admins" Admin\n\n  get "/":\n    ret {message: "User Management API"}`,
-    x: `# Class Inheritance\n\ndb "data/"\n\nschema Entity:\n  id auto\n  createdAt str default("now")\n\nschema User extends Entity:\n  name str required min(2) max(50)\n  email str required email\n  role str default("user")\n\nschema Admin extends User:\n  permissions list default(["read","write"])\n  department str required\n\n$app:3000\n  cors "*"\n  crud "/api/users" User\n  crud "/api/admins" Admin\n  validate "/api/users" User\n  validate "/api/admins" Admin\n  G"/"\n    >{message:"User Management API"}`,
   },
   pipe: {
     naide: `# Pipe & Functional Programming\n\nlist numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n\n# map / filter / reduce\nlist doubled = map(numbers, (x) => x * 2)\nlist evens = filter(numbers, (x) => x % 2 == 0)\nint total = reduce(numbers, (a, b) => a + b, 0)\nany found = find(numbers, (x) => x > 7)\nbool allPos = every(numbers, (x) => x > 0)\nbool hasNeg = some(numbers, (x) => x < 0)\n\n# Pipe operator |>\nlist result = numbers\n  |> filter((x) => x > 3)\n  |> map((x) => x * 10)\n  |> sort()\n\nlog result\n\n# Chaining transformations\nlist words = ["hello", "world", "naide"]\nlist processed = words\n  |> map((w) => upper(w))\n  |> filter((w) => len(w) > 4)\n  |> sort()\n\nlog processed`,
-    x: `# Pipe & Functional\n\nl:numbers=[1,2,3,4,5,6,7,8,9,10]\n\nl:doubled=map(numbers,(x)=>x*2)\nl:evens=filter(numbers,(x)=>x%2==0)\ni:total=reduce(numbers,(a,b)=>a+b,0)\na:found=find(numbers,(x)=>x>7)\nb:allPos=every(numbers,(x)=>x>0)\nb:hasNeg=some(numbers,(x)=>x<0)\n\nl:result=numbers|>filter((x)=>x>3)|>map((x)=>x*10)|>sort()\n\nlog result\n\nl:words=["hello","world","naide"]\nl:processed=words|>map((w)=>upper(w))|>filter((w)=>len(w)>4)|>sort()\n\nlog processed`,
   },
   modern: {
     naide: `# Modern Features\n\n# Optional chaining\nmap user = {profile: {name: "Alice", address: {city: "Tokyo"}}}\nauto city = user?.profile?.address?.city\nauto zip = user?.profile?.address?.zip\n\n# Null coalescing\nstr displayName = user?.profile?.name ?? "Anonymous"\nint timeout = config?.timeout ?? 5000\n\n# Pattern matching\nstr status = "active"\nmatch status:\n  "active":\n    log "User is active"\n  "inactive":\n    log "User is inactive"\n  _:\n    log "Unknown status"\n\n# unless / until / repeat\nint val = 5\nunless val > 10:\n  log "Value is small"\n\nmut int i = 0\nuntil i >= 3:\n  log "Count: {i}"\n  i = i + 1\n\nrepeat 3 as n:\n  log "Iteration {n}"\n\n# Enum\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n# Swap\nmut int a = 1\nmut int b = 2\nswap a, b\nlog "a={a}, b={b}"`,
-    x: `# Modern Features\n\nm:user={profile:{name:"Alice",address:{city:"Tokyo"}}}\nauto city=user?.profile?.address?.city\nauto zip=user?.profile?.address?.zip\n\ns:displayName=user?.profile?.name??"Anonymous"\ni:timeout=config?.timeout??5000\n\ns:status="active"\nmatch status:\n  "active"\n    log "User is active"\n  "inactive"\n    log "User is inactive"\n  _\n    log "Unknown status"\n\ni:val=5\nunless val>10\n  log "Value is small"\n\n~i:i=0\nuntil i>=3\n  log "Count: {i}"\n  i=i+1\n\nrepeat 3 as n\n  log "Iteration {n}"\n\nenum Color:\n  RED\n  GREEN\n  BLUE\n\n~i:a=1\n~i:b=2\nswap a,b\nlog "a={a}, b={b}"`,
   },
   bot: {
     naide: `# Discord Bot\n\nbot mybot token env.DISCORD_TOKEN:\n  prefix "!"\n\n  slash "hello" "Say hello":\n    ret "Hello from NAIDE bot!"\n\n  slash "ping" "Check latency":\n    ret "Pong! Bot is alive."\n\n  slash "echo" "Echo a message":\n    str text = opt "text" str required "Text to echo"\n    ret text\n\n  slash "roll" "Roll a dice":\n    int sides = opt "sides" int default(6) "Number of sides"\n    int result = floor(random() * sides) + 1\n    ret "You rolled: {result}"`,
-    x: `# Discord Bot\n\nbot mybot token env.DISCORD_TOKEN:\n  prefix "!"\n  slash "hello" "Say hello"\n    >"Hello from NAIDE bot!"\n  slash "ping" "Check latency"\n    >"Pong! Bot is alive."\n  slash "echo" "Echo a message"\n    s:text=opt "text" str required "Text to echo"\n    >text\n  slash "roll" "Roll a dice"\n    i:sides=opt "sides" int default(6) "Number of sides"\n    i:result=floor(random()*sides)+1\n    >"You rolled: {result}"`,
   },
 };
 
 // ========== UTILITY ==========
-function countTokens(code) {
+function countWhitespaceUnits(code) {
   return code.trim().split(/[\s]+/).filter(t => t.length > 0).length;
 }
 
@@ -737,9 +697,9 @@ function syncScroll() {
 // ========== COMPILE ==========
 async function doCompile() {
   const code = textarea.value;
-  const tokens = countTokens(code);
+  const units = countWhitespaceUnits(code);
   const lines = code.split('\n').filter(l => l.trim()).length;
-  inputStats.textContent = tokens + ' tokens · ' + lines + ' lines';
+  inputStats.textContent = units + ' source units · ' + lines + ' lines';
 
   if (!code.trim()) {
     outputPre.textContent = 'Compiled output will appear here...';
@@ -754,20 +714,18 @@ async function doCompile() {
   try {
     let result;
     if (target === 'node') {
-      result = compile(code, { mode, target: 'node' });
+      result = compile(code, { target: 'node' });
       outputCode = result.js;
     } else {
-      result = await compileAsync(code, { mode, target });
+      result = await compileAsync(code, { target });
       outputCode = result.code || result.js;
     }
     outputPre.textContent = outputCode;
     outputPre.className = 'output-pre';
 
-    const outTokens = countTokens(outputCode);
+    const outUnits = countWhitespaceUnits(outputCode);
     const outLines = outputCode.split('\n').filter(l => l.trim()).length;
-    const saving = outTokens > 0 ? Math.round((1 - tokens / outTokens) * 100) : 0;
-    const savingStr = saving > 0 ? '−' + saving + '%' : '+' + Math.abs(saving) + '%';
-    outputStats.textContent = outTokens + ' tokens · ' + outLines + ' lines (' + savingStr + ')';
+    outputStats.textContent = outUnits + ' source units · ' + outLines + ' lines';
     statusDot.className = 'status-dot';
     statusText.textContent = 'Compiled successfully';
   } catch (e) {
@@ -787,7 +745,7 @@ function scheduleCompile() {
 
 // ========== SHARE ==========
 function encodeShare() {
-  const payload = JSON.stringify({ c: textarea.value, m: mode, t: target });
+  const payload = JSON.stringify({ c: textarea.value, t: target });
   return '#' + btoa(unescape(encodeURIComponent(payload)));
 }
 
@@ -803,23 +761,8 @@ function loadFromHash() {
   const data = decodeShare(location.hash);
   if (!data || !data.c) return false;
   textarea.value = data.c;
-  if (data.m) setMode(data.m, true);
   if (data.t) setTarget(data.t, true);
   return true;
-}
-
-// ========== MODE SWITCH ==========
-function setMode(m, silent) {
-  mode = m;
-  modeLabel.textContent = m === 'x' ? 'NAIDE-X' : 'NAIDE';
-  document.querySelectorAll('.mode-toggle button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.mode === m);
-  });
-  if (!silent) {
-    updateHighlight();
-    updateLineNumbers();
-    doCompile();
-  }
 }
 
 // ========== TARGET SWITCH ==========
@@ -832,11 +775,6 @@ function setTarget(t, silent) {
 }
 
 // ========== EVENTS ==========
-// Mode toggle
-document.querySelectorAll('.mode-toggle button').forEach(btn => {
-  btn.addEventListener('click', () => setMode(btn.dataset.mode));
-});
-
 // Target select
 targetSelect.addEventListener('change', () => setTarget(targetSelect.value));
 
@@ -844,7 +782,7 @@ targetSelect.addEventListener('change', () => setTarget(targetSelect.value));
 exampleSelect.addEventListener('change', () => {
   const name = exampleSelect.value;
   if (!name || !EXAMPLES[name]) return;
-  textarea.value = EXAMPLES[name][mode] || EXAMPLES[name].naide;
+  textarea.value = EXAMPLES[name].naide;
   updateHighlight();
   updateLineNumbers();
   syncScroll();

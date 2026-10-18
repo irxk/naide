@@ -33,7 +33,7 @@ function respondError(id, code, message) {
 const TOOLS = [
   {
     name: 'naide_compile',
-    description: 'Compile NAIDE code to a target language. NAIDE is an AI-optimized language that transpiles to 15 targets.',
+    description: 'Compile readable NAIDE source code to a target language.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,7 +192,7 @@ async function handleMessage(msg) {
       respond(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'naide-mcp', version: '1.24.5' }
+        serverInfo: { name: 'naide-mcp', version: '2.0.0' }
       });
       break;
 

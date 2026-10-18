@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { compile, transpile, compileAsync, preprocess } from '../src/index.js';
+import { compile, transpile, compileAsync } from '../src/index.js';
 import * as lexerMod from '../src/lexer.js';
 
-describe('NAIDE v1', () => {
+describe('NAIDE v2', () => {
   it('compiles variables', () => {
     const js = transpile('str name = "hello"');
     assert.ok(js.includes('const name = "hello"'));
@@ -59,6 +59,11 @@ describe('NAIDE v1', () => {
     assert.ok(js.includes('constructor(name, age = 0)'));
   });
 
+  it('compiles model inheritance', () => {
+    const js = transpile('model Animal:\n  str name\nmodel Dog extends Animal:\n  str breed');
+    assert.ok(js.includes('class Dog extends Animal'));
+  });
+
   it('compiles match', () => {
     const js = transpile('match x:\n  1: log "one"\n  _: log "other"');
     assert.ok(js.includes('switch (x)'));
@@ -71,115 +76,9 @@ describe('NAIDE v1', () => {
     assert.ok(js.includes('.filter('));
     assert.ok(js.includes('.map('));
   });
-});
 
-describe('NAIDE-X preprocessor', () => {
-  it('converts typed variables', () => {
-    const out = preprocess('s:name="hello"');
-    assert.ok(out.includes('str name = "hello"'));
-  });
-
-  it('converts mutable variables', () => {
-    const out = preprocess('~i:counter=0');
-    assert.ok(out.includes('mut int counter = 0'));
-  });
-
-  it('converts functions', () => {
-    const out = preprocess('f add(i:a,i:b)i');
-    assert.ok(out.includes('fn add(int a, int b) -> int:'));
-  });
-
-  it('converts async functions', () => {
-    const out = preprocess('~f load(s:url)a');
-    assert.ok(out.includes('fn.async load(str url) -> any:'));
-  });
-
-  it('converts return', () => {
-    const out = preprocess('  >result');
-    assert.ok(out.includes('ret result'));
-  });
-
-  it('converts if/elif/else', () => {
-    const out = preprocess('?x>1\n|x>0\n:');
-    assert.ok(out.includes('if x>1:'));
-    assert.ok(out.includes('elif x>0:'));
-    assert.ok(out.includes('else:'));
-  });
-
-  it('converts each loop', () => {
-    const out = preprocess('@item<items');
-    assert.ok(out.includes('each item in items:'));
-  });
-
-  it('converts for range', () => {
-    const out = preprocess('@i<0..10');
-    assert.ok(out.includes('for i in 0..10:'));
-  });
-
-  it('converts while', () => {
-    const out = preprocess('*active');
-    assert.ok(out.includes('while active:'));
-  });
-
-  it('converts try/catch', () => {
-    const out = preprocess('!\n!!e');
-    assert.ok(out.includes('try:'));
-    assert.ok(out.includes('fail e:'));
-  });
-
-  it('converts server', () => {
-    const out = preprocess('$app:3000');
-    assert.ok(out.includes('server app port 3000:'));
-  });
-
-  it('converts routes', () => {
-    const out = preprocess('G"/users"');
-    assert.ok(out.includes('get "/users":'));
-  });
-
-  it('converts model', () => {
-    const out = preprocess('^User');
-    assert.ok(out.includes('model User:'));
-  });
-
-  it('converts model with inheritance', () => {
-    const out = preprocess('^Dog<Animal');
-    assert.ok(out.includes('model Dog extends Animal:'));
-  });
-
-  it('converts import', () => {
-    const out = preprocess('<express');
-    assert.ok(out.includes('use express'));
-  });
-
-  it('converts destructured import', () => {
-    const out = preprocess('<{readFile}"fs/promises"');
-    assert.ok(out.includes('use {readFile} from "fs/promises"'));
-  });
-
-  it('converts comments', () => {
-    const out = preprocess('-- hello');
-    assert.ok(out.includes('# hello'));
-  });
-
-  it('converts await', () => {
-    const out = preprocess('  a:data=~fetch(url)');
-    assert.ok(out.includes('await fetch(url)'));
-  });
-
-  it('converts ret.redirect shorthand', () => {
-    const out = preprocess('  >.r "/login"');
-    assert.ok(out.includes('ret.redirect "/login"'));
-  });
-
-  it('converts ret.html shorthand', () => {
-    const out = preprocess('  >.h "<h1>Hi</h1>"');
-    assert.ok(out.includes('ret.html "<h1>Hi</h1>"'));
-  });
-
-  it('converts ret.text shorthand', () => {
-    const out = preprocess('  >.t "pong"');
-    assert.ok(out.includes('ret.text "pong"'));
+  it('does not accept the retired symbolic dialect', () => {
+    assert.throws(() => transpile('s:name="hello"'));
   });
 });
 
@@ -198,6 +97,23 @@ describe('NAIDE high-level features', () => {
     assert.ok(js.includes("min: 2"));
     assert.ok(js.includes("max: 50"));
     assert.ok(js.includes('default: "user"'));
+  });
+
+  it('inherits schema fields consistently across targets', async () => {
+    const src = 'schema User extends Entity:\n  contactEmail str required\nschema Entity:\n  displayName str required';
+    const targets = ['node', 'typescript', 'python', 'go', 'java', 'rust', 'cpp', 'c', 'csharp', 'kotlin', 'swift', 'dart', 'php', 'ruby', 'bun'];
+
+    for (const target of targets) {
+      const { code } = await compileAsync(src, { target });
+      const output = code.toLowerCase();
+      assert.ok(output.includes('displayname'), `${target} output should include the inherited field`);
+      assert.ok(output.includes('contactemail'), `${target} output should include the child field`);
+    }
+  });
+
+  it('rejects circular schema inheritance', () => {
+    const src = 'schema First extends Second:\n  first str\nschema Second extends First:\n  second str';
+    assert.throws(() => transpile(src), /Circular schema inheritance/);
   });
 
   it('compiles schema with enum type', () => {
@@ -665,72 +581,6 @@ describe('NAIDE high-level features', () => {
   });
 });
 
-describe('NAIDE-X full pipeline', () => {
-  it('compiles .nx to JS', () => {
-    const source = 's:name="World"\nf greet(s:who)s\n  >"Hello, {who}!"\nlog greet(name)';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('const name = "World"'));
-    assert.ok(js.includes('function greet(who)'));
-    assert.ok(js.includes('return `Hello, ${who}!`'));
-    assert.ok(js.includes('console.log(greet(name))'));
-  });
-
-  it('compiles async .nx to JS', () => {
-    const source = '~f load(s:url)a\n  a:res=~fetch(url)\n  >~res.json()';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('async function load(url)'));
-    assert.ok(js.includes('await fetch(url)'));
-  });
-
-  it('compiles server .nx to JS', () => {
-    const source = '$app:3000\n  G"/"\n    >{msg:"hi"}';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('express'));
-    assert.ok(js.includes("app.get"));
-    assert.ok(js.includes('listen(3000'));
-  });
-
-  it('compiles .nx with ret.redirect shorthand', () => {
-    const source = '$app:3000\n  G"/old"\n    >.r "/new"';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('res.redirect'));
-  });
-
-  it('compiles .nx PATCH route', () => {
-    const source = '$app:3000\n  X"/api/users/:id"(req,res)\n    >{updated:true}';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('app.patch'));
-  });
-
-  it('compiles .nx ret.render shorthand', () => {
-    const source = '$app:3000\n  G"/"\n    >.v "home" {title: "Hi"}';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('__render'));
-    assert.ok(js.includes('"home"'));
-  });
-
-  it('compiles .nx log.i and log.d shorthands', () => {
-    const source = 'log.i"info msg"\nlog.d"debug msg"';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('console.info("info msg")'));
-    assert.ok(js.includes('console.debug("debug msg")'));
-  });
-
-  it('compiles .nx !!! ensure shorthand', () => {
-    const source = '!\n  log"start"\n!!e\n  log.e e.message\n!!!\n  log"cleanup"';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('try {'));
-    assert.ok(js.includes('catch (e)'));
-    assert.ok(js.includes('finally {'));
-  });
-
-  it('compiles .nx ret.download shorthand', () => {
-    const source = '$app:3000\n  G"/dl"\n    >.d "/file.zip"';
-    const js = transpile(source, { mode: 'x' });
-    assert.ok(js.includes('res.download'));
-  });
-});
-
 describe('AI integration', () => {
   it('auto-imports ai on ai.ask()', () => {
     const src = 'fn.async main():\n  any answer = await ai.ask("What is 2+2?")\n  log answer';
@@ -961,11 +811,11 @@ describe('Inter-file imports', () => {
     assert.ok(!js.includes('.naide'));
   });
 
-  it('rewrites .nx imports to .mjs', () => {
-    const src = 'use utils from "./helpers.nx"';
+  it('rewrites .naide imports to .mjs', () => {
+    const src = 'use utils from "./helpers.naide"';
     const js = transpile(src);
     assert.ok(js.includes('./helpers.mjs'));
-    assert.ok(!js.includes('.nx'));
+    assert.ok(!js.includes('.naide'));
   });
 
   it('does not rewrite non-naide imports', () => {
@@ -1334,13 +1184,6 @@ describe('Runtime unit tests', () => {
     assert.ok(!result.js.includes('(1 + 2)'));
   });
 
-  // ===== NX mode compile =====
-  it('compiles NX mode via preprocess', () => {
-    const result = compile('s:name="World"\nf greet(s:who)s\n  >"Hello, {who}!"', { mode: 'x' });
-    assert.ok(result.js.includes('function greet'));
-    assert.ok(result.naide);
-  });
-
   // ===== Type-annotated variable compilation =====
   it('compiles typed variables (str, int, num, bool)', () => {
     const js1 = compile('str name = "hello"\n').js;
@@ -1363,6 +1206,28 @@ describe('Runtime unit tests', () => {
     const result = compile('int x = 42\nstr name = "hello"\nbool flag = true\n', { typeCheck: true });
     assert.ok(result.typeErrors);
     assert.strictEqual(result.typeErrors.errors.length, 0);
+  });
+
+  it('type checker validates function argument types even before declaration', () => {
+    const result = compile('int count = add("one", 2)\nfn add(int a, int b) -> int:\n  ret a + b', { typeCheck: true });
+    assert.ok(result.typeErrors.errors.some(error => error.message.includes("Argument 'a' of 'add' expects int but got str")));
+  });
+
+  it('type checker validates explicit function return types', () => {
+    const result = compile('fn count() -> int:\n  ret "many"', { typeCheck: true });
+    const error = result.typeErrors.errors.find(entry => entry.message.includes('Return type mismatch: expected int but got str'));
+    assert.ok(error);
+    assert.strictEqual(error.line, 2);
+  });
+
+  it('type checker accepts omitted default arguments', () => {
+    const result = compile('fn greet(str name, str prefix = "Hi") -> str:\n  ret prefix\nstr message = greet("Ada")', { typeCheck: true });
+    assert.strictEqual(result.typeErrors.errors.length, 0);
+  });
+
+  it('type checker validates every variadic argument', () => {
+    const result = compile('fn sum(...int values) -> int:\n  ret 0\nint total = sum(1, "two")', { typeCheck: true });
+    assert.ok(result.typeErrors.errors.some(error => error.message.includes("Argument 'values' of 'sum' expects int but got str")));
   });
 
   it('type checker allows num = int', () => {
@@ -1426,6 +1291,7 @@ describe('Runtime unit tests', () => {
     assert.ok(help.includes('naide pkg'));
     assert.ok(help.includes('--target'));
     assert.ok(help.includes('python'));
+    assert.ok(!help.includes('NAIDE-X'));
     assert.ok(help.includes('bun'));
   });
 
@@ -2277,6 +2143,16 @@ describe('New features (auto, destructure, class, map/filter/reduce)', () => {
     assert.ok(js.includes('super()'));
     assert.ok(js.includes('this.name = name'));
     assert.ok(js.includes('bark()'));
+  });
+
+  it('inherits fields when extending a schema used by CRUD', () => {
+    const js = transpile('schema User extends Entity:\n  email str required\nschema Entity:\n  id auto\n  name str required\nserver app port 3000:\n  crud "/users" User');
+    assert.ok(js.includes("const UserSchema = createSchema('User'"));
+    assert.ok(js.includes('id: { type: \'id\', auto: true }'));
+    assert.ok(js.includes('name: { type: \'string\', required: true }'));
+    assert.ok(js.includes('email: { type: \'string\', required: true }'));
+    assert.ok(js.includes('registerCrud(app, "/users", UserSchema, UserStore'));
+    assert.ok(!js.includes('class User extends Entity'));
   });
 
   it('compiles schema with methods only', () => {

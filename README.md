@@ -1,8 +1,8 @@
 # NAIDE
 
-**Node AI Development Environment** — A programming language simpler than Python, designed for AI-speed code generation, that transpiles to **15 languages**.
+**Node AI Development Environment** — One readable syntax for building, checking, and running applications, with compiler targets for **15 languages**.
 
-NAIDE is built on four principles: simpler than Python (built-in functions, syntax sugar, zero boilerplate), one way to write everything (zero ambiguity), keyword-driven intent (the first token decides meaning), and minimal token count (fewer tokens = faster AI generation). Write once, compile to any target. 40+ built-in functions, syntax sugar (`unless`, `until`, `repeat`, `swap`, `is`/`isnt`, one-line functions, `auto` type inference, destructuring, pipe operator), and 55+ built-in features including servers, databases, authentication, bots, GraphQL, gRPC, WebRTC, blockchain, and more.
+NAIDE is designed around one canonical syntax shared by people, AI tools, the compiler, editor support, and examples. It combines familiar control flow and types with concise inference, a built-in application toolkit, diagnostics, and a compiler that can emit multiple targets. The goal is not to hide how programs work, but to make common work direct and errors easier to find.
 
 ### Compilation Targets
 
@@ -24,10 +24,7 @@ NAIDE is built on four principles: simpler than Python (built-in functions, synt
 | `php` | `--target php` | PHP | Built-in / Laravel |
 | `ruby` / `rb` | `--target ruby` | Ruby | Sinatra |
 
-Two syntax modes:
-
-- **NAIDE** (`.naide`) — Human-readable, ~40% fewer tokens than JavaScript
-- **NAIDE-X** (`.nx`) — AI-only readability, ~80% fewer tokens than JavaScript
+NAIDE source files use the `.naide` extension. There is one language syntax; no separate compressed or AI-only dialect.
 
 ## Install
 
@@ -61,7 +58,7 @@ naide app.naide
 ## CLI
 
 ```bash
-naide <file>                  # Run a .naide or .nx file
+naide <file.naide>             # Check and run a NAIDE file
 naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
@@ -71,7 +68,6 @@ naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
 naide vscode                  # Install VS Code extension
 naide deploy [dir]            # Generate Dockerfile for deployment
-naide convert <files...>      # Convert .nx ↔ .naide (bidirectional)
 naide pkg init                # Create naide.pkg.json manifest
 naide pkg install <name>      # Install a NAIDE package
 naide pkg publish             # Publish package to npm
@@ -82,7 +78,6 @@ naide gen "instruction"       # Same as ~~ (alias)
 naide --expand <file>         # Show ~~ directive expansion results
 naide --emit <file>           # Print generated JavaScript
 naide -o <out.js> <file>      # Write JavaScript to file
-naide --mid <file.nx>         # Show intermediate NAIDE v1 (debug X mode)
 naide --ast <file>            # Print AST
 naide --tokens <file>         # Print token stream
 ```
@@ -178,7 +173,7 @@ Type `.eval` to switch to evaluation mode (runs the code instead of showing JS).
 
 ### Playground
 
-Open `playground/index.html` in a browser (via a local server) for a live in-browser transpiler with examples and token count comparison.
+Open `playground/index.html` in a browser (via a local server) for a live in-browser compiler with examples and source-size indicators.
 
 ### Benchmark
 
@@ -187,11 +182,12 @@ node benchmark/compare.js
 ```
 
 ```
-  Language     Tokens    Chars    Lines    Savings
-  JavaScript      330     2590     78    —
-  NAIDE            66      517     19    -80%
-  NAIDE-X          39      435     19    -88%
+  Source         Whitespace units   Chars   Lines
+  JavaScript                  330    2590      78
+  NAIDE                        66     517      19
 ```
+
+The benchmark's "whitespace units" are a rough source-size comparison, not model-token counts or evidence of faster generation.
 
 ## Language Reference
 
@@ -1285,7 +1281,7 @@ naide lsp
 naide vscode
 ```
 
-One command installs the extension — syntax highlighting, LSP diagnostics, autocomplete, and hover docs for `.naide` and `.nx` files. Restart VS Code after install.
+One command installs the extension — syntax highlighting, LSP diagnostics, autocomplete, and hover docs for `.naide` files. Restart VS Code after install.
 
 ## Deploy
 
@@ -1321,7 +1317,7 @@ server app port 3000:
     ret {ok: true}
 ```
 
-Build all files with `naide build`, which compiles every `.naide`/`.nx` file to `.mjs`.
+Build all files with `naide build`, which compiles every `.naide` file to `.mjs`.
 
 ## Full Example
 
@@ -1414,63 +1410,21 @@ every "30m":
 
 This generates a complete production API — SQLite database, AI/LLM integration, auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, route middleware, file downloads, redirects with status codes, type checking, error handling with ensure/finally, and event-driven hooks — from ~75 lines.
 
-## NAIDE-X Syntax (.nx)
+## One syntax, end to end
 
-Every keyword is a single character. Line-start symbol = intent.
+NAIDE has one source syntax for people and tools. Type inference and concise built-ins reduce ceremony; ordinary keywords keep control flow explicit:
 
-```
-s:name="World"              -- str name = "World"
-i:count=42                  -- int count = 42
-~i:counter=0                -- mut int counter = 0
+```naide
+auto name = "World"
 
-f greet(s:who)s             -- fn greet(str who) -> str:
-  >"Hello, {who}!"          --   ret "Hello, {who}!"
+fn greet(str who) -> str:
+  ret "Hello, {who}!"
 
-~f fetchData(s:url)a        -- fn.async fetchData(str url) -> any:
-  >~fetch(url)              --   ret await fetch(url)
-
-?count>5                    -- if count > 5:
-  log"many"                 --   log "many"
-|count>2                    -- elif count > 2:
-  log"some"                 --   log "some"
-:                           -- else:
-  log"few"                  --   log "few"
-
-@item<items                 -- each item in items:
-@i<0..10                    -- for i in 0..10:
-*active                     -- while active:
-
-$app:3000                   -- server app port 3000:
-  G"/users"                 --   get "/users":
-    >users                  --     ret users
-  P"/users"(req,res)        --   post "/users" (req, res):
-    >req.body               --     ret req.body
+if name:
+  log greet(name)
 ```
 
-### NAIDE-X Cheat Sheet
-
-| Symbol | Meaning | Symbol | Meaning |
-|--------|---------|--------|---------|
-| `>` | return | `?` | if |
-| `\|` | elif | `:` | else |
-| `@` | loop | `*` | while |
-| `!` | try | `!!` | catch |
-| `!!!` | ensure/finally | `>.d` | ret.download |
-| `$` | server | `^` | model |
-| `<` | import | `%` | match |
-| `f` | function | `~f` | async function |
-| `+` | export | `~` | await |
-| `G` | GET | `P` | POST |
-| `U` | PUT | `D` | DELETE |
-| `X` | PATCH | `>.s` | ret.status |
-| `>.r` | ret.redirect | `>.h` | ret.html |
-| `>.t` | ret.text | `>.v` | ret.render |
-
-Types: `s`=str `i`=int `n`=num `b`=bool `l`=list `m`=map `a`=any
-
-High-level keywords work in both modes: `schema`, `crud`, `auth`, `cors`, `limit`, `env`, `every`, `watch`, `static`, `ws`, `db`, `db.sql`, `group`, `cookie`, `error`, `session`, `upload`, `view`, `sse`, `cache`, `patch`, `validate`, `test`, `assert`, `queue`, `openapi`, `typeof`, `instanceof`, `ensure`, `ai`, `prompt`, `bot`, `slash`.
-
-NAIDE-X log shorthands: `log.e` = error, `log.w` = warn, `log.i` = info, `log.d` = debug.
+New projects, generated examples, editor tooling, and compiler input all use `.naide`. There is no separate symbolic or AI-only form to learn.
 
 ## Plugin System
 
@@ -1489,15 +1443,6 @@ list names = listPlugins()
 
 `registerPlugin(name, setup)` — registers a plugin factory. `usePlugin(name, opts?)` — initializes on first call, returns cached exports. `listPlugins()` — returns registered plugin names.
 
-## Convert (NX ↔ NAIDE)
-
-Bidirectional conversion between `.nx` and `.naide`:
-
-```bash
-naide convert file.nx         # → file.naide (expand to readable syntax)
-naide convert file.naide      # → file.nx (compress to NX syntax)
-```
-
 ## Source Maps & Error Remapping
 
 Runtime errors are automatically remapped to source file line numbers:
@@ -1509,7 +1454,7 @@ Error in app.naide:12
 >>12 |     throw "not found"
 ```
 
-The CLI tracks source-to-output line mappings and shows context from your `.naide`/`.nx` file, not the generated JavaScript.
+The CLI tracks source-to-output line mappings and shows context from your `.naide` file, not the generated JavaScript.
 
 ## Native Dependency Detection
 
@@ -1648,14 +1593,14 @@ server app port 3000:
 
 ## Why NAIDE?
 
-AI code generation speed depends on:
+An approachable language should reduce incidental complexity without obscuring program behavior:
 
-1. **Token count** — fewer output tokens = faster generation
-2. **Predictability** — one way to write everything = better next-token prediction
-3. **Context window** — shorter code = more room for complex projects
-4. **Simplicity** — built-in functions mean zero imports and less boilerplate
+1. **One syntax** — no human-only and machine-only dialects to keep in sync
+2. **Direct feedback** — type checks, tests, and source-mapped diagnostics help find mistakes
+3. **Useful defaults** — common application patterns need less setup
+4. **Escape hatches** — generated code and ordinary packages remain inspectable and usable
 
-NAIDE-X is designed as an **AI-internal representation** — the AI thinks in NAIDE-X, users receive standard JavaScript.
+NAIDE aims to make one readable source representation work well for both people and AI tools. Generated code and compiler diagnostics remain inspectable rather than treating the source as an opaque prompt format.
 
 ## License
 

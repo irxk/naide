@@ -22,6 +22,10 @@ export class Generator {
   }
 
   generate(ast) {
+    for (const node of ast.body) {
+      if (node.type === 'SchemaDecl') this.schemas.set(node.name, node);
+    }
+
     this.visitProgram(ast);
 
     const preamble = [];
@@ -185,7 +189,7 @@ export class Generator {
   }
 
   rewriteNaideImport(source) {
-    return source.replace(/\.(naide|nx)(['"])/g, '.mjs$2');
+    return source.replace(/\.naide(['"])/g, '.mjs$1');
   }
 
   visitFunction(node) {

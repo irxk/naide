@@ -1,7 +1,6 @@
 import { Lexer } from './lexer.js';
 import { Parser } from './parser.js';
 import { Generator } from './generator.js';
-import { preprocess } from './preprocess.js';
 import { TypeChecker } from './typechecker.js';
 import { generate, expandDirectives } from './gen.js';
 
@@ -76,11 +75,35 @@ async function getGenerator(target, options) {
   }
 }
 
-export function compile(source, { mode = 'naide', runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
-  let processedSource = source;
-  if (mode === 'x') {
-    processedSource = preprocess(source);
+function resolveSchemaInheritance(ast) {
+  const schemas = new Map(ast.body.filter(node => node.type === 'SchemaDecl').map(node => [node.name, node]));
+  const resolved = new Map();
+  const resolving = new Set();
+
+  function resolveFields(schema) {
+    if (resolved.has(schema.name)) return resolved.get(schema.name);
+    if (resolving.has(schema.name)) {
+      throw new Error(`Circular schema inheritance involving '${schema.name}'`);
+    }
+
+    resolving.add(schema.name);
+    const parent = schema.parent ? schemas.get(schema.parent) : null;
+    const fields = new Map((parent ? resolveFields(parent) : []).map(field => [field.name, field]));
+    for (const field of schema.fields) fields.set(field.name, field);
+    const result = [...fields.values()];
+    resolving.delete(schema.name);
+    resolved.set(schema.name, result);
+    return result;
   }
+
+  for (const schema of schemas.values()) {
+    schema.fields = resolveFields(schema);
+  }
+  return ast;
+}
+
+export function compile(source, { runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
+  let processedSource = source;
   if (processedSource.includes('~~')) {
     processedSource = expandDirectives(processedSource).source;
   }
@@ -88,7 +111,7 @@ export function compile(source, { mode = 'naide', runtimePath, sourceFile, typeC
     const lexer = new Lexer(processedSource);
     const tokens = lexer.tokenize();
     const parser = new Parser(tokens);
-    const ast = parser.parse();
+    const ast = resolveSchemaInheritance(parser.parse());
 
     let typeErrors = null;
     if (typeCheck) {
@@ -98,7 +121,7 @@ export function compile(source, { mode = 'naide', runtimePath, sourceFile, typeC
 
     const generator = new Generator({ runtimePath, sourceFile });
     const js = generator.generate(ast);
-    return { js, ast, tokens, sourceMap: generator.sourceMap, naide: mode === 'x' ? processedSource : null, typeErrors };
+    return { js, ast, tokens, sourceMap: generator.sourceMap, typeErrors };
   } catch (e) {
     const lineMatch = e.message.match(/line (\d+)/);
     if (lineMatch) {
@@ -117,11 +140,8 @@ export function compile(source, { mode = 'naide', runtimePath, sourceFile, typeC
   }
 }
 
-export async function compileAsync(source, { mode = 'naide', runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
+export async function compileAsync(source, { runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
   let processedSource = source;
-  if (mode === 'x') {
-    processedSource = preprocess(source);
-  }
   if (processedSource.includes('~~')) {
     processedSource = expandDirectives(processedSource).source;
   }
@@ -129,7 +149,7 @@ export async function compileAsync(source, { mode = 'naide', runtimePath, source
     const lexer = new Lexer(processedSource);
     const tokens = lexer.tokenize();
     const parser = new Parser(tokens);
-    const ast = parser.parse();
+    const ast = resolveSchemaInheritance(parser.parse());
 
     let typeErrors = null;
     if (typeCheck) {
@@ -139,7 +159,7 @@ export async function compileAsync(source, { mode = 'naide', runtimePath, source
 
     const generator = await getGenerator(target, { runtimePath, sourceFile });
     const code = generator.generate(ast);
-    return { js: code, code, ast, tokens, sourceMap: generator.sourceMap, naide: mode === 'x' ? processedSource : null, typeErrors, target };
+    return { js: code, code, ast, tokens, sourceMap: generator.sourceMap, typeErrors, target };
   } catch (e) {
     const lineMatch = e.message.match(/line (\d+)/);
     if (lineMatch) {
@@ -162,4 +182,4 @@ export function transpile(source, opts) {
   return compile(source, opts).js;
 }
 
-export { preprocess, generate };
+export { generate };

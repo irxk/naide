@@ -32,19 +32,14 @@ function registerWindows() {
   const regAdd = (key, value) => run(`reg add "${key}" /ve /d "${value}" /f`);
 
   regAdd('HKCU\\Software\\Classes\\.naide', 'NAIDEFile');
-  regAdd('HKCU\\Software\\Classes\\.nx', 'NAIDEXFile');
   regAdd('HKCU\\Software\\Classes\\NAIDEFile', 'NAIDE Source File');
-  regAdd('HKCU\\Software\\Classes\\NAIDEXFile', 'NAIDE-X Source File');
   regAdd('HKCU\\Software\\Classes\\NAIDEFile\\shell\\open\\command', cmd);
-  regAdd('HKCU\\Software\\Classes\\NAIDEXFile\\shell\\open\\command', cmd);
 
   const assetsDir = resolve(__dirname, '..', 'assets');
   const naideIco = resolve(assetsDir, 'naide.ico');
-  const nxIco = resolve(assetsDir, 'nx.ico');
   regAdd('HKCU\\Software\\Classes\\NAIDEFile\\DefaultIcon', naideIco);
-  regAdd('HKCU\\Software\\Classes\\NAIDEXFile\\DefaultIcon', nxIco);
 
-  console.log('  .naide and .nx file associations registered (Windows)');
+  console.log('  .naide file association registered (Windows)');
 }
 
 function registerMacOS() {
@@ -68,7 +63,7 @@ function registerMacOS() {
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
-      <key>CFBundleTypeExtensions</key><array><string>naide</string><string>nx</string></array>
+      <key>CFBundleTypeExtensions</key><array><string>naide</string></array>
       <key>CFBundleTypeName</key><string>NAIDE Source</string>
       <key>CFBundleTypeRole</key><string>Editor</string>
     </dict>
@@ -81,7 +76,7 @@ function registerMacOS() {
 
   run(`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${handlerApp}"`);
 
-  console.log('  .naide and .nx file associations registered (macOS)');
+  console.log('  .naide file association registered (macOS)');
 }
 
 function registerLinux() {
@@ -96,26 +91,21 @@ function registerLinux() {
     <comment>NAIDE Source File</comment>
     <glob pattern="*.naide"/>
   </mime-type>
-  <mime-type type="text/x-naidex">
-    <comment>NAIDE-X Source File</comment>
-    <glob pattern="*.nx"/>
-  </mime-type>
 </mime-info>`);
 
   writeFileSync(join(appDir, 'naide.desktop'), `[Desktop Entry]
 Type=Application
 Name=NAIDE
 Exec=node "${naideBin}" %f
-MimeType=text/x-naide;text/x-naidex;
+MimeType=text/x-naide;
 Terminal=true
 Categories=Development;
 `);
 
   run('update-mime-database ~/.local/share/mime');
   run('xdg-mime default naide.desktop text/x-naide');
-  run('xdg-mime default naide.desktop text/x-naidex');
 
-  console.log('  .naide and .nx file associations registered (Linux)');
+  console.log('  .naide file association registered (Linux)');
 }
 
 console.log('NAIDE: Registering file extensions...');

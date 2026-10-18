@@ -12,14 +12,13 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v1.24.5</span>
+      <span class="version">v2.0.0</span>
     </div>
     <nav>
       <a href="index.html">Home</a>
       <a href="guide.html" class="active">Getting Started</a>
       <span class="nav-section">Language</span>
       <a href="syntax.html">Syntax Reference</a>
-      <a href="nx.html">NAIDE-X Syntax</a>
       <span class="nav-section">Features</span>
       <a href="server.html">Server &amp; API</a>
       <a href="bot.html">Bots</a>
@@ -40,7 +39,7 @@
   <main class="main">
     <div class="content">
       <h1>Getting Started</h1>
-      <p>NAIDE is a programming language that transpiles to 15 targets including Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, and Ruby. It is designed for AI-speed code generation: one way to write everything, keyword-driven intent, and minimal token count.</p>
+      <p>NAIDE uses one readable syntax for people and tools. It combines familiar control flow, optional type annotations, built-in application features, diagnostics, tests, and compiler output for 15 target languages.</p>
 
       <h2>Installation</h2>
       <p>Install the CLI globally via npm:</p>
@@ -98,7 +97,7 @@ naide app.naide -t ruby         # Ruby</code></pre>
       <pre><code>naide -w app.naide</code></pre>
 
       <h2>Build a Project</h2>
-      <p>Transpile all <code>.naide</code> and <code>.nx</code> files to JavaScript:</p>
+      <p>Transpile all <code>.naide</code> files to JavaScript:</p>
       <pre><code>naide build</code></pre>
       <p>Output goes to <code>dist/</code> by default. You can specify source and output directories:</p>
       <pre><code>naide build src/ dist/</code></pre>
@@ -106,14 +105,14 @@ naide app.naide -t ruby         # Ruby</code></pre>
       <h2>Editor Support</h2>
       <p>Install the VS Code extension with one command:</p>
       <pre><code>naide vscode</code></pre>
-      <p>This provides syntax highlighting, LSP diagnostics, autocomplete, and hover docs for <code>.naide</code> and <code>.nx</code> files. Restart VS Code after installation.</p>
+      <p>This provides syntax highlighting, LSP diagnostics, autocomplete, and hover docs for <code>.naide</code> files. Restart VS Code after installation.</p>
       <p>For other editors, start the Language Server:</p>
       <pre><code>naide lsp</code></pre>
 
       <h2>REPL</h2>
       <p>Start an interactive session to experiment with NAIDE syntax:</p>
       <pre><code>$ naide
-NAIDE REPL v1.24.5 -- type NAIDE code, see JavaScript output
+NAIDE REPL v2.0.0 -- type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 &gt;&gt;&gt; <span style="color: var(--accent);">str name = "hello"</span>

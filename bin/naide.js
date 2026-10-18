@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '1.24.5';
+const NAIDE_VERSION = '2.0.0';
 
 function crashReport(err, context = {}) {
   const info = [
@@ -32,6 +32,10 @@ function crashReport(err, context = {}) {
   console.error(`  │ Report: https://github.com/irxk/naide/issues/new`);
   console.error(`  │   Include the .naide file and the info above.`);
   console.error(`  └──────────────────────────────────────────────────\n`);
+}
+
+function reportRetiredNx(file) {
+  console.error(`  Error: ${file} uses retired NAIDE-X syntax. Use standard NAIDE syntax in a .naide file.`);
 }
 
 process.on('uncaughtException', (err) => {
@@ -107,8 +111,6 @@ const flags = {
   tokens: false,
   output: null,
   help: false,
-  mode: null,
-  mid: false,
   watch: false,
   debug: false,
   check: false,
@@ -129,8 +131,6 @@ for (let i = 0; i < args.length; i++) {
     case '--tokens': flags.tokens = true; flags.run = false; break;
     case '--output': case '-o': flags.output = args[++i]; break;
     case '--help': case '-h': flags.help = true; break;
-    case '--x': case '-x': flags.mode = 'x'; break;
-    case '--mid': flags.mid = true; flags.run = false; break;
     case '--watch': case '-w': flags.watch = true; break;
     case '--debug': case '-d': flags.debug = true; break;
     case '--check': flags.check = true; flags.run = false; break;
@@ -221,11 +221,11 @@ if (files[0] === 'gen' || files[0] === '~~') {
 
   const { generate, generateProject, updateProject, writeToFile } = await import('../src/gen.js');
 
-  // Write mode: inject into existing .naide/.nx file
-  const targetFile = instruction.match(/\S+\.(?:naide|nx)$/)?.[0];
+  // Write mode: inject into existing .naide file
+  const targetFile = instruction.match(/\S+\.naide$/)?.[0];
   if (targetFile || flags.write) {
     const file = flags.write || targetFile;
-    const cleanInstruction = targetFile ? instruction.replace(/\s+\S+\.(?:naide|nx)$/, '') : instruction;
+    const cleanInstruction = targetFile ? instruction.replace(/\s+\S+\.naide$/, '') : instruction;
     const mode = flags.replace ? 'replace' : 'append';
     const result = writeToFile(resolve(file), cleanInstruction, { mode });
     const a = result.analysis;
@@ -271,8 +271,11 @@ if (files[0] === 'gen' || files[0] === '~~') {
     }
 
     const isGame = result.analysis && result.analysis.gameType;
+    const isApp = result.analysis && result.analysis.appType;
     if (isGame && !flags.output && !isUpdate) {
       dir = result.analysis.gameType + '-game';
+    } else if (isApp && !flags.output && !isUpdate) {
+      dir = result.analysis.appType + '-app';
     } else {
       const primaryName = (result.entities[0] || 'app').toLowerCase().replace(/[^a-z0-9]/g, '');
       if (!flags.output && !isUpdate) dir = primaryName + '-app';
@@ -424,7 +427,7 @@ if (flags.expand && files.length > 0) {
 if (files[0] === 'vscode') {
   const os = await import('os');
   const extSrc = new URL('../vscode-naide', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
-  const extName = 'irxk.naide-lang-1.1.0';
+  const extName = 'irxk.naide-lang-2.0.0';
   const extDir = join(os.homedir(), '.vscode', 'extensions', extName);
 
   if (existsSync(extDir)) {
@@ -457,7 +460,7 @@ if (files[0] === 'vscode') {
 `);
   } catch (e) {
     console.error(`  Error: ${e.message}`);
-    console.log('\n  Manual install: copy vscode-naide/ to ~/.vscode/extensions/irxk.naide-lang-1.1.0/');
+    console.log('\n  Manual install: copy vscode-naide/ to ~/.vscode/extensions/irxk.naide-lang-2.0.0/');
     process.exit(1);
   }
   process.exit(0);
@@ -663,31 +666,34 @@ if (files[0] === 'build') {
       if (statSync(full).isDirectory()) {
         if (entry === 'node_modules' || entry === '.git' || entry === 'dist') continue;
         found.push(...walkDir(full));
-      } else if (entry.endsWith('.naide') || entry.endsWith('.nx')) {
+      } else if (entry.endsWith('.naide')) {
         found.push(full);
+      } else if (entry.endsWith('.nx')) {
+        retiredFiles.push(full);
       }
     }
     return found;
   }
 
+  const retiredFiles = [];
   const sourceFiles = walkDir(dir);
+  for (const file of retiredFiles) reportRetiredNx(relative(dir, file));
   if (sourceFiles.length === 0) {
-    console.log('  No .naide or .nx files found.');
-    process.exit(0);
+    console.log('  No .naide files found.');
+    process.exit(retiredFiles.length > 0 ? 1 : 0);
   }
 
   console.log(`\n  NAIDE build — ${sourceFiles.length} file(s)\n`);
-  let errors = 0;
+  let errors = retiredFiles.length;
   const schemaMap = {};
   const routeMap = {};
 
   for (const srcFile of sourceFiles) {
     const rel = relative(dir, srcFile);
-    const mode = srcFile.endsWith('.nx') ? 'x' : 'naide';
     try {
       const source = readFileSync(srcFile, 'utf-8');
-      const { js, ast } = compile(source, { mode });
-      const outName = rel.replace(/\.(naide|nx)$/, '.mjs');
+      const { js, ast } = compile(source);
+      const outName = rel.replace(/\.naide$/, '.mjs');
       const outPath = outDir ? join(outDir, outName) : join(dir, outName);
       const outDirPath = resolve(outPath, '..');
       if (!existsSync(outDirPath)) mkdirSync(outDirPath, { recursive: true });
@@ -742,81 +748,26 @@ if (files[0] === 'build') {
   process.exit(errors > 0 ? 1 : 0);
 }
 
-// ── Convert (NX ↔ NAIDE) ──
-if (files[0] === 'convert') {
-  const targets = files.slice(1);
-  if (targets.length === 0) {
-    console.log('  Usage: naide convert <file.nx|file.naide>');
-    console.log('    .nx → .naide    Expand NX shorthand to readable NAIDE');
-    console.log('    .naide → .nx    Compress NAIDE to AI-optimized NX');
-    process.exit(0);
-  }
-
-  for (const file of targets) {
-    const filePath = resolve(file);
-    const ext = extname(file);
-    try {
-      const source = readFileSync(filePath, 'utf-8');
-
-      if (ext === '.nx') {
-        const { preprocess } = await import('../src/preprocess.js');
-        const naide = preprocess(source);
-        const outPath = filePath.replace(/\.nx$/, '.naide');
-        writeFileSync(outPath, naide);
-        console.log(`  ${file} → ${basename(outPath)}`);
-      } else if (ext === '.naide') {
-        const lines = source.split('\n');
-        const nxLines = [];
-        for (const line of lines) {
-          let nx = line;
-          nx = nx.replace(/^(\s*)#\s?(.*)/, '$1-- $2');
-          nx = nx.replace(/^(\s*)fn\.async\s+/, '$1~f ');
-          nx = nx.replace(/^(\s*)fn\s+/, '$1f ');
-          nx = nx.replace(/^(\s*)use\s+\{(.+?)\}\s+from\s+/, '$1<{$2}');
-          nx = nx.replace(/^(\s*)use\s+/, '$1<');
-          nx = nx.replace(/\bret\b/, '>');
-          nx = nx.replace(/\beach\s+(\w+)\s+in\s+/, '@$1<');
-          nx = nx.replace(/\bawait\s+/, '~');
-          nx = nx.replace(/\bstr\b/g, 's');
-          nx = nx.replace(/\bint\b/g, 'i');
-          nx = nx.replace(/\bnum\b/g, 'n');
-          nx = nx.replace(/\bbool\b/g, 'b');
-          nx = nx.replace(/\blist\b/g, 'l');
-          nx = nx.replace(/\bmap\b/g, 'm');
-          nx = nx.replace(/\bany\b/g, 'a');
-          nx = nx.replace(/\bconsole\.log\b/, 'log');
-          nxLines.push(nx);
-        }
-        const outPath = filePath.replace(/\.naide$/, '.nx');
-        writeFileSync(outPath, nxLines.join('\n'));
-        console.log(`  ${file} → ${basename(outPath)}`);
-      } else {
-        console.error(`  Unsupported: ${file} (use .naide or .nx)`);
-      }
-    } catch (e) {
-      console.error(`  Error: ${file} — ${e.message}`);
-    }
-  }
-  process.exit(0);
-}
-
 // ── Type Check ──
 if (files[0] === 'check') {
   const targets = files.slice(1);
   if (targets.length === 0) {
-    console.log('  Usage: naide check <file.naide|file.nx> [files...]');
+    console.log('  Usage: naide check <file.naide> [files...]');
     process.exit(0);
   }
 
   let totalErrors = 0;
   let totalWarnings = 0;
   for (const file of targets) {
+    if (extname(file) === '.nx') {
+      reportRetiredNx(file);
+      totalErrors++;
+      continue;
+    }
     const filePath = resolve(file);
     try {
       const source = readFileSync(filePath, 'utf-8');
-      const ext = extname(file);
-      const mode = ext === '.nx' ? 'x' : 'naide';
-      const result = compile(source, { mode, typeCheck: true });
+      const result = compile(source, { typeCheck: true });
       const { typeErrors } = result;
 
       if (typeErrors) {
@@ -931,7 +882,7 @@ if (files[0] === 'pkg') {
         type: 'module',
         main: manifest.main,
         keywords: manifest.keywords,
-        files: ['*.naide', '*.nx', 'src/', 'naide.pkg.json'],
+        files: ['*.naide', 'src/', 'naide.pkg.json'],
       }, null, 2) + '\n');
     }
 
@@ -985,7 +936,6 @@ CMD ["node", "dist/app.mjs"]
   const dockerignoreContent = `node_modules
 .git
 *.naide
-*.nx
 .naide_tmp_*
 dist
 `;
@@ -1022,12 +972,11 @@ dist
 if (flags.help) {
   console.log(`
   NAIDE - Node AI Development Environment
-  A language designed for AI-speed code generation
+  One readable syntax for people and tools
 
   Usage:
     naide                        Start interactive REPL
     naide <file.naide>           Run a NAIDE file
-    naide <file.nx>              Run a NAIDE-X file (auto-detected)
     naide ~~ "instruction"       Generate NAIDE code from instruction (no AI)
     naide gen "instruction"      Same as ~~ (alias)
     naide init [dir]             Create a new NAIDE project
@@ -1037,15 +986,12 @@ if (flags.help) {
     naide lsp                    Start language server (LSP)
     naide vscode                 Install VS Code extension
     naide deploy [dir]           Generate Dockerfile for deployment
-    naide convert <files...>     Convert between .naide and .nx formats
     naide fmt <files...>         Format NAIDE files
     naide pkg init               Create naide.pkg.json manifest
     naide pkg install <name>     Install a NAIDE package
     naide pkg publish            Publish package to npm
     naide pkg list               List NAIDE dependencies
     naide --emit <file>          Output generated JavaScript
-    naide --mid <file.nx>        Output intermediate NAIDE v1 (debug)
-    naide -x <file.naide>        Force NAIDE-X mode
     naide -w <file.naide>        Watch mode (auto-restart on changes)
     naide -d <file>              Debug mode (Node.js inspector)
 
@@ -1072,19 +1018,13 @@ if (flags.help) {
     php     PHP
     ruby    Ruby (Sinatra)
 
-  Modes:
-    .naide  Standard NAIDE (~40% fewer tokens than JS)
-    .nx     NAIDE-X extreme (~80% fewer tokens than JS)
-
   Options:
     -e, --emit     Print generated JavaScript
     -o, --output   Write generated JavaScript to file
-    -x             Force NAIDE-X mode
     -w, --watch    Watch mode: restart on file changes
     -d, --debug    Start with Node.js debugger (--inspect-brk)
     -t, --target   Compile target: node (default), bun, python/py
     --check        Type-check files without running
-    --mid          Show intermediate NAIDE v1 (X mode only)
     --expand       Show ~~ directive expansion (debug)
     --ast          Print AST
     --tokens       Print tokens
@@ -1094,6 +1034,7 @@ if (flags.help) {
     Intent     server api rest bot cli page test database ai crud auth ws mail graphql game
     Composite  todo blog chat shop fullstack board
     Game       tapping quiz memory snake typing reaction breakout dodge color pong
+    App        calculator timer counter pomodoro clock drawing notes
     Platform   discord slack telegram line
     JP Intent  サーバー 認証 ログイン 会員 CRUD 管理 データベース ボット テスト ページ ゲーム
     JP Entity  ユーザー 商品 記事 タスク 注文 コメント イベント 問い合わせ 掲示板 決済
@@ -1115,15 +1056,13 @@ for (const file of files) {
   }
 
   const ext = extname(file);
-  const mode = flags.mode || (ext === '.nx' ? 'x' : 'naide');
+  if (ext === '.nx') {
+    reportRetiredNx(file);
+    process.exitCode = 1;
+    continue;
+  }
 
   try {
-    if (flags.mid && mode === 'x') {
-      const { preprocess } = await import('../src/preprocess.js');
-      console.log(preprocess(source));
-      continue;
-    }
-
     const runtimePath = flags.emit || flags.output ? 'naider/runtime' : runtimeUrl;
 
     if (flags.watch) {
@@ -1133,7 +1072,7 @@ for (const file of files) {
       function start() {
         try {
           source = readFileSync(filePath, 'utf-8');
-          const result = compile(source, { mode, runtimePath });
+          const result = compile(source, { runtimePath });
           writeFileSync(tempFile, result.js, 'utf-8');
           child = spawn(process.execPath, [tempFile], { stdio: 'inherit' });
           child.on('error', (err) => console.error(`[NAIDE] Process error: ${err.message}`));
@@ -1176,8 +1115,8 @@ for (const file of files) {
 
     const useAsync = flags.target !== 'node';
     const result = useAsync
-      ? await compileAsync(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check, target: flags.target })
-      : compile(source, { mode, runtimePath, sourceFile: file, typeCheck: flags.check });
+      ? await compileAsync(source, { runtimePath, sourceFile: file, typeCheck: flags.check, target: flags.target })
+      : compile(source, { runtimePath, sourceFile: file, typeCheck: flags.check });
 
     if (flags.check) {
       const { typeErrors } = result;

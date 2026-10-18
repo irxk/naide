@@ -1,15 +1,14 @@
 {
   "name": "naide-lang",
   "displayName": "NAIDE Language",
-  "description": "Syntax highlighting, diagnostics, and autocomplete for NAIDE (.naide) and NAIDE-X (.nx)",
-  "version": "1.1.0",
+  "description": "Syntax highlighting, diagnostics, and autocomplete for NAIDE (.naide)",
+  "version": "2.0.0",
   "publisher": "irxk",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages"],
   "main": "./extension.js",
   "activationEvents": [
-    "onLanguage:naide",
-    "onLanguage:naidex"
+    "onLanguage:naide"
   ],
   "repository": {
     "type": "git",
@@ -22,12 +21,6 @@
         "aliases": ["NAIDE", "naide"],
         "extensions": [".naide"],
         "configuration": "./language-configuration-naide.json"
-      },
-      {
-        "id": "naidex",
-        "aliases": ["NAIDE-X", "naidex", "nx"],
-        "extensions": [".nx"],
-        "configuration": "./language-configuration-nx.json"
       }
     ],
     "grammars": [
@@ -35,11 +28,6 @@
         "language": "naide",
         "scopeName": "source.naide",
         "path": "./syntaxes/naide.tmLanguage.json"
-      },
-      {
-        "language": "naidex",
-        "scopeName": "source.naidex",
-        "path": "./syntaxes/naidex.tmLanguage.json"
       }
     ],
     "configuration": {

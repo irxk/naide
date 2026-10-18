@@ -1,5 +1,5 @@
 # NAIDE - Model (Class) の例
-# AIがクラスを最速で書ける構文
+# NAIDEでクラスの継承を表す例
 
 model Animal:
   str name
