@@ -10,6 +10,20 @@
       "url": "http://localhost:3000"
     }
   ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
   "paths": {
     "/api/messages": {
       "get": {
@@ -142,6 +156,7 @@
     "/api/health": {
       "get": {
         "summary": "Health check",
+        "security": [],
         "responses": {
           "200": {
             "description": "Status"
@@ -149,12 +164,23 @@
         }
       }
     },
-    "/api/upload": {
+    "/api/webhooks": {
       "post": {
-        "summary": "Upload file",
+        "summary": "Receive webhook event",
         "responses": {
           "200": {
-            "description": "File info"
+            "description": "Webhook received"
+          }
+        }
+      }
+    },
+    "/api/webhooks/health": {
+      "get": {
+        "summary": "Webhook health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Webhook status"
           }
         }
       }

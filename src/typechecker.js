@@ -1,8 +1,17 @@
+const EXPRESSION_TYPES = new Set([
+  'Number', 'String', 'InterpolatedString', 'Bool', 'Null', 'Array', 'Object',
+  'Identifier', 'Binary', 'Unary', 'Call', 'MemberAccess', 'Ternary', 'Await',
+  'ArrowFunction', 'Spread', 'New', 'IndexAccess',
+]);
+
 export class TypeChecker {
   constructor() {
     this.scopes = [new Map()];
     this.errors = [];
     this.warnings = [];
+    this.errorKeys = new Set();
+    this.warningKeys = new Set();
+    this.visitedStatements = new WeakSet();
     this.functions = new Map();
     this.returnTypes = [];
   }
@@ -22,11 +31,19 @@ export class TypeChecker {
   }
 
   error(msg, line) {
-    this.errors.push({ message: msg, line: line || 0, severity: 'error' });
+    const diagnostic = { message: msg, line: line || 0, severity: 'error' };
+    const key = `${diagnostic.line}:${diagnostic.message}`;
+    if (this.errorKeys.has(key)) return;
+    this.errorKeys.add(key);
+    this.errors.push(diagnostic);
   }
 
   warn(msg, line) {
-    this.warnings.push({ message: msg, line: line || 0, severity: 'warning' });
+    const diagnostic = { message: msg, line: line || 0, severity: 'warning' };
+    const key = `${diagnostic.line}:${diagnostic.message}`;
+    if (this.warningKeys.has(key)) return;
+    this.warningKeys.add(key);
+    this.warnings.push(diagnostic);
   }
 
   check(ast) {
@@ -52,7 +69,10 @@ export class TypeChecker {
   }
 
   visitStatement(node) {
+    if (this.visitedStatements.has(node)) return;
+    this.visitedStatements.add(node);
     const line = node._line || 0;
+    this.checkExpressions(node);
     switch (node.type) {
       case 'TypedVar': return this.visitTypedVar(node, line);
       case 'Function': return this.visitFunction(node, line);
@@ -63,9 +83,57 @@ export class TypeChecker {
       case 'For': return this.visitFor(node, line);
       case 'While': return this.visitWhile(node, line);
       case 'Try': return this.visitTry(node, line);
-      case 'Server': return this.visitBlock(node.body, line);
-      default: return;
+      case 'Server': return this.visitServer(node, line);
+      default: return this.visitNestedStatements(node);
     }
+  }
+
+  checkExpressions(node) {
+    const seen = new WeakSet();
+    const visit = value => {
+      if (Array.isArray(value)) {
+        if (seen.has(value)) return;
+        seen.add(value);
+        for (const item of value) visit(item);
+        return;
+      }
+      if (!value || typeof value !== 'object') return;
+      if (seen.has(value)) return;
+      seen.add(value);
+
+      if (typeof value.type === 'string') {
+        if (!EXPRESSION_TYPES.has(value.type)) return;
+        this.inferType(value);
+        for (const [key, child] of Object.entries(value)) {
+          if (key !== 'type' && key !== '_line') visit(child);
+        }
+        return;
+      }
+
+      for (const child of Object.values(value)) visit(child);
+    };
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== 'type' && key !== '_line') visit(value);
+    }
+  }
+
+  visitNestedStatements(value, seen = new WeakSet()) {
+    if (Array.isArray(value)) {
+      if (seen.has(value)) return;
+      seen.add(value);
+      for (const item of value) this.visitNestedStatements(item, seen);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (typeof value.type === 'string') {
+      if (EXPRESSION_TYPES.has(value.type)) return;
+      this.visitStatement(value);
+      return;
+    }
+    for (const child of Object.values(value)) this.visitNestedStatements(child, seen);
   }
 
   visitBlock(body, _line) {
@@ -99,6 +167,7 @@ export class TypeChecker {
     this.pushScope();
     for (const p of node.params) {
       this.setType(p.name, p.type || 'any');
+      if (p.defaultValue) this.inferType(p.defaultValue);
     }
     this.returnTypes.push(node.returnType || 'any');
     for (const stmt of node.body) {
@@ -188,6 +257,19 @@ export class TypeChecker {
     }
   }
 
+  visitServer(node, line) {
+    for (const route of node.routes || []) {
+      this.pushScope();
+      for (const param of route.params || []) {
+        this.setType(typeof param === 'string' ? param : param.name, 'any');
+      }
+      this.visitBlock(route.body, line);
+      this.popScope();
+    }
+    this.visitNestedStatements(node.middleware || []);
+    this.visitNestedStatements(node.body || []);
+  }
+
   inferType(node) {
     if (!node) return 'any';
     switch (node.type) {
@@ -197,7 +279,7 @@ export class TypeChecker {
       }
       case 'String': return 'str';
       case 'InterpolatedString': return 'str';
-      case 'Boolean': return 'bool';
+      case 'Bool': return 'bool';
       case 'Null': return 'any';
       case 'Array': return 'list';
       case 'Object': return 'map';

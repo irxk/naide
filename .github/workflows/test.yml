@@ -17,8 +17,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - run: npm test
-      - run: node --test test/edge-cases.js
       - name: Verify examples compile
         run: |
           node bin/naide.js --emit examples/todo-api.naide > /dev/null
@@ -28,8 +34,12 @@ jobs:
           node -e "import('./src/gen.js').then(m => { const r = m.generate('todo app'); if (!r.valid) { console.error('gen: invalid output'); process.exit(1); } console.log('gen: ok (' + r.intents.join('+') + ')'); })"
           node -e "import('./src/gen.js').then(m => { const r = m.generate('users and products and orders with auth'); if (!r.valid || r.entities.length < 3) { console.error('gen: multi-entity failed'); process.exit(1); } console.log('gen: multi-entity ok (' + r.entities.join('+') + ')'); })"
           node -e "import('./src/gen.js').then(m => { const r = m.generate('ECサイト'); if (!r.valid || r.entities.length < 3) { console.error('gen: JP composite failed'); process.exit(1); } console.log('gen: JP composite ok (' + r.entities.join('+') + ')'); })"
-      - name: Verify cross-target compilation
+      - name: Verify cross-target code generation
         run: |
+          set -euo pipefail
           for target in python bun typescript go java rust cpp c csharp kotlin swift dart php ruby; do
-            node bin/naide.js --emit -t $target examples/todo-api.naide > /dev/null 2>&1 && echo "  $target: ok" || echo "  $target: FAIL"
+            echo "::group::Verify $target code generation"
+            node bin/naide.js --emit -t "$target" examples/todo-api.naide > /dev/null
+            echo "  $target: generated successfully"
+            echo "::endgroup::"
           done

@@ -20,15 +20,17 @@ schema Message:
 
 db "data/"
 
-server message port 3000:
-  cors "*"
-  ws "/ws":
-    on "connection" (socket):
-      log("Client connected")
-    on "message" (data, socket):
-      socket.send(data)
-    on "close" (socket):
-      log("Client disconnected")
+env:
+  PORT int default(3000)
+  JWT_SECRET str required
+
+server message port PORT:
+  cors "http://localhost:3000"
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/health"
+    public "/api/webhooks/health"
+  crud "/api/messages" Message
   
   post "/api/webhooks" (req, res):
     str event = req.body.event

@@ -15,6 +15,9 @@ input,select{padding:.4rem;border:1px solid #ddd;border-radius:4px;margin-right:
 <h1>Admin Dashboard</h1>
 <div id="toast"></div>
 <div class="stats" id="stats"></div>
+<div class="card"><label for="api-token">API bearer token</label>
+<input type="password" id="api-token" autocomplete="off" placeholder="Paste a trusted JWT">
+<span>Stored only in this page while it remains open.</span></div>
 <div class="card"><h2>Messages</h2>
 <div style="margin:1rem 0"><input id="message-search" placeholder="Search..." oninput="messageLoad()">
 <button onclick="messageLoad()">Refresh</button> <button onclick="messageShowForm()">+ New</button></div>
@@ -27,16 +30,21 @@ input,select{padding:.4rem;border:1px solid #ddd;border-radius:4px;margin-right:
 <tbody id="message-table"></tbody></table></div>
 <script>
 const API="";function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";setTimeout(()=>t.style.display="none",2000)}
-async function loadStats(){try{const r=await fetch(API+"/api/health");const d=await r.json();const s=document.getElementById("stats");
-s.innerHTML=Object.entries(d).filter(([k])=>k!=="status").map(([k,v])=>`<div class="stat"><h3>${v}</h3><p>${k}</p></div>`).join("")}catch(e){}}
-async function messageLoad(){const s=document.getElementById("message-search").value;
-const r=await fetch(API+"/api/messages?search="+s);const d=await r.json();const items=d.items||d;
-document.getElementById("message-table").innerHTML=items.map(i=>"<tr><td>"+i.id+"<td>"+i.content+"<td>"+i.sender+"<td>"+i.created+"<td>"+i.deleted+"<td>"+
-"<button onclick=\"messageDel("+i.id+")\">Del</button></td></tr>").join("")}
+function apiHeaders(headers={}){const result=new Headers(headers);const token=document.getElementById("api-token").value.trim();if(token)result.set("Authorization","Bearer "+token);return result}
+async function apiJson(path,options={}){const headers=apiHeaders(options.headers);if(options.body&&!headers.has("Content-Type"))headers.set("Content-Type","application/json");
+const response=await fetch(API+path,{...options,headers});let data;try{data=await response.json()}catch{data=null}
+if(!response.ok)throw new Error(data?.error||"Request failed ("+response.status+")");return data}
+async function loadStats(){try{const d=await apiJson("/api/health");const s=document.getElementById("stats");s.replaceChildren();
+for(const [k,v] of Object.entries(d).filter(([k])=>k!=="status")){const card=document.createElement("div");card.className="stat";const value=document.createElement("h3");value.textContent=String(v);const label=document.createElement("p");label.textContent=k;card.append(value,label);s.append(card)}}catch(e){console.error(e);toast("Could not load dashboard stats")}}
+async function messageLoad(){try{const params=new URLSearchParams({search:document.getElementById("message-search").value});
+const d=await apiJson("/api/messages?"+params);const items=d.items||d;if(!Array.isArray(items))throw new Error("Unexpected messages response");
+const table=document.getElementById("message-table");table.replaceChildren();for(const item of items){const row=document.createElement("tr");
+for(const value of [item.id,item.content,item.sender,item.created,item.deleted]){const cell=document.createElement("td");cell.textContent=String(value??"");row.append(cell)}
+const actions=document.createElement("td");const button=document.createElement("button");button.textContent="Del";button.addEventListener("click",()=>messageDel(item.id));actions.append(button);row.append(actions);table.append(row)}
+}catch(e){console.error(e);toast(e.message)}}
 function messageShowForm(){document.getElementById("message-form").style.display="block"}
 async function messageCreate(){const body={content:document.getElementById("message-content").value,sender:document.getElementById("message-sender").value,deleted:document.getElementById("message-deleted").checked};
-await fetch(API+"/api/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-document.getElementById("message-form").style.display="none";toast("Created!");messageLoad();loadStats()}
-async function messageDel(id){if(!confirm("Delete?"))return;await fetch(API+"/api/messages/"+id,{method:"DELETE"});toast("Deleted!");messageLoad();loadStats()}
+try{await apiJson("/api/messages",{method:"POST",body:JSON.stringify(body)});document.getElementById("message-form").style.display="none";toast("Created!");messageLoad();loadStats()}catch(e){console.error(e);toast(e.message)}}
+async function messageDel(id){if(!confirm("Delete?"))return;try{await apiJson("/api/messages/"+encodeURIComponent(id),{method:"DELETE"});toast("Deleted!");messageLoad();loadStats()}catch(e){console.error(e);toast(e.message)}}
 loadStats();messageLoad()
 </script></body></html>

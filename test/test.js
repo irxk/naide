@@ -1208,6 +1208,11 @@ describe('Runtime unit tests', () => {
     assert.strictEqual(result.typeErrors.errors.length, 0);
   });
 
+  it('type checker infers boolean literals', () => {
+    const result = compile('int flag = true', { typeCheck: true });
+    assert.ok(result.typeErrors.errors.some(error => error.message.includes('cannot assign bool to int')));
+  });
+
   it('type checker validates function argument types even before declaration', () => {
     const result = compile('int count = add("one", 2)\nfn add(int a, int b) -> int:\n  ret a + b', { typeCheck: true });
     assert.ok(result.typeErrors.errors.some(error => error.message.includes("Argument 'a' of 'add' expects int but got str")));
@@ -1228,6 +1233,24 @@ describe('Runtime unit tests', () => {
   it('type checker validates every variadic argument', () => {
     const result = compile('fn sum(...int values) -> int:\n  ret 0\nint total = sum(1, "two")', { typeCheck: true });
     assert.ok(result.typeErrors.errors.some(error => error.message.includes("Argument 'values' of 'sum' expects int but got str")));
+  });
+
+  it('type checker detects missing required function arguments', () => {
+    const result = compile('fn greet(str name) -> str:\n  ret name\nstr message = greet()', { typeCheck: true });
+    assert.ok(result.typeErrors.errors.some(error => error.message.includes("Argument count mismatch for 'greet'")));
+  });
+
+  it('type checker validates calls used as standalone expressions', () => {
+    const result = compile('fn greet(str name) -> str:\n  ret name\ngreet(42)\nlog greet(42)', { typeCheck: true });
+    assert.equal(
+      result.typeErrors.errors.filter(error => error.message.includes("Argument 'name' of 'greet' expects str but got int")).length,
+      2,
+    );
+  });
+
+  it('treats unknown dynamic member access as any', () => {
+    const result = compile('str name = user.profile.name', { typeCheck: true });
+    assert.strictEqual(result.typeErrors.errors.length, 0);
   });
 
   it('type checker allows num = int', () => {

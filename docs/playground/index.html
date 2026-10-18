@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NAIDE Playground — Try NAIDE Online</title>
 <meta name="description" content="Write and compile NAIDE code in your browser. Targets: JavaScript, Python, TypeScript, Go, Rust, Java, C, C++, C#, Kotlin, Swift, Dart, PHP, Ruby.">
-<meta property="og:title" content="NAIDE Playground — Write Once, Compile to 15 Languages">
+<meta property="og:title" content="NAIDE Playground — One Syntax, 15 Code Generation Targets">
 <meta property="og:description" content="Try NAIDE online — one readable programming language with compiler targets for JavaScript, Python, Go, Rust, Java, C++, and more. No install needed.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://naide.k-r.lol/playground/">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="NAIDE Playground — Write Once, Compile to 15 Languages">
-<meta name="twitter:description" content="Try NAIDE online — one readable programming language with compiler targets for 15 languages.">
+<meta name="twitter:title" content="NAIDE Playground — One Syntax, 15 Code Generation Targets">
+<meta name="twitter:description" content="Try NAIDE online — one readable programming language with code generation for 15 targets. Generated code is not executed in the playground.">
 <meta name="theme-color" content="#4178DC">
 <style>
 /* ===== VARIABLES ===== */
@@ -727,7 +727,7 @@ async function doCompile() {
     const outLines = outputCode.split('\n').filter(l => l.trim()).length;
     outputStats.textContent = outUnits + ' source units · ' + outLines + ' lines';
     statusDot.className = 'status-dot';
-    statusText.textContent = 'Compiled successfully';
+    statusText.textContent = 'Generated successfully (not run)';
   } catch (e) {
     outputPre.textContent = e.message;
     outputPre.className = 'output-pre error';

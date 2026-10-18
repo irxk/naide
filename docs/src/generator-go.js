@@ -2,6 +2,7 @@ export class GoGenerator {
   constructor(options = {}) {
     this.indent = 0;
     this.output = [];
+    this.mainBody = [];
     this.imports = new Set();
     this.models = new Map();
     this.schemas = new Map();
@@ -16,6 +17,9 @@ export class GoGenerator {
 
   generate(ast) {
     this.visitProgram(ast);
+    this.output.push('func main() {');
+    this.output.push(...this.mainBody);
+    this.output.push('}');
 
     const preamble = ['package main', ''];
     if (this.imports.size > 0) {
@@ -46,8 +50,30 @@ export class GoGenerator {
   }
 
   visitProgram(node) {
+    const declarations = new Set([
+      'Use',
+      'UseDestructured',
+      'Function',
+      'TypedVar',
+      'Model',
+      'SchemaDecl',
+      'EnumDecl',
+      'ClassDecl',
+    ]);
+
     for (const stmt of node.body) {
+      if (declarations.has(stmt.type)) {
+        this.visitStatement(stmt);
+        continue;
+      }
+
+      const output = this.output;
+      const indent = this.indent;
+      this.output = this.mainBody;
+      this.indent = 1;
       this.visitStatement(stmt);
+      this.output = output;
+      this.indent = indent;
     }
   }
 

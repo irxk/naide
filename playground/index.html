@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NAIDE Playground — Try NAIDE Online</title>
-<meta name="description" content="Write and compile NAIDE code in your browser. Targets: JavaScript, Python, TypeScript, Go, Rust, Java, C, C++, C#, Kotlin, Swift, Dart, PHP, Ruby.">
+<meta name="description" content="Write NAIDE code and generate output for 15 targets in your browser. Generated code is not executed here.">
 <style>
 /* ===== VARIABLES ===== */
 :root {
@@ -719,7 +719,7 @@ async function doCompile() {
     const outLines = outputCode.split('\n').filter(l => l.trim()).length;
     outputStats.textContent = outUnits + ' source units · ' + outLines + ' lines';
     statusDot.className = 'status-dot';
-    statusText.textContent = 'Compiled successfully';
+    statusText.textContent = 'Generated successfully (not run)';
   } catch (e) {
     outputPre.textContent = e.message;
     outputPre.className = 'output-pre error';

@@ -1,24 +1,74 @@
 import { compile } from '../src/index.js';
+import { Lexer } from '../src/lexer.js';
 
 const documents = new Map();
 const symbolIndex = new Map();
-let buffer = '';
+let buffer = Buffer.alloc(0);
+const MAX_HEADER_BYTES = 8 * 1024;
+const MAX_MESSAGE_BYTES = 32 * 1024 * 1024;
 
-process.stdin.setEncoding('utf-8');
 process.stdin.on('data', (chunk) => {
-  buffer += chunk;
+  buffer = Buffer.concat([buffer, chunk]);
   while (true) {
-    const headerEnd = buffer.indexOf('\r\n\r\n');
-    if (headerEnd === -1) break;
-    const header = buffer.slice(0, headerEnd);
-    const lengthMatch = header.match(/Content-Length: (\d+)/);
-    if (!lengthMatch) { buffer = buffer.slice(headerEnd + 4); continue; }
-    const contentLength = parseInt(lengthMatch[1]);
+    const headerEnd = buffer.indexOf('\r\n\r\n', 0, 'ascii');
+    if (headerEnd === -1) {
+      if (buffer.length > MAX_HEADER_BYTES) {
+        console.error('NAIDE LSP: rejected an oversized message header');
+        process.exit(1);
+      }
+      break;
+    }
+    if (headerEnd > MAX_HEADER_BYTES) {
+      console.error('NAIDE LSP: rejected an oversized message header');
+      process.exit(1);
+    }
+    const header = buffer.toString('ascii', 0, headerEnd);
+    const lengthMatch = header.match(/^Content-Length:\s*(\d+)\s*$/im);
+    if (!lengthMatch) {
+      buffer = buffer.subarray(headerEnd + 4);
+      console.error('NAIDE LSP: discarded a message with no Content-Length header');
+      continue;
+    }
+    const contentLength = Number(lengthMatch[1]);
+    if (!Number.isSafeInteger(contentLength) || contentLength > MAX_MESSAGE_BYTES) {
+      console.error('NAIDE LSP: rejected an oversized or invalid message body');
+      process.exit(1);
+    }
     const start = headerEnd + 4;
     if (buffer.length < start + contentLength) break;
-    const content = buffer.slice(start, start + contentLength);
-    buffer = buffer.slice(start + contentLength);
-    try { handleMessage(JSON.parse(content)); } catch {}
+    const content = buffer.toString('utf8', start, start + contentLength);
+    buffer = buffer.subarray(start + contentLength);
+
+    let message;
+    try {
+      message = JSON.parse(content);
+    } catch (error) {
+      console.error(`NAIDE LSP: invalid JSON-RPC message: ${error.message}`);
+      send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+      continue;
+    }
+
+    if (!isValidMessage(message)) {
+      const id = message && typeof message === 'object' && !Array.isArray(message)
+        && (typeof message.id === 'string' || typeof message.id === 'number' || message.id === null)
+        ? message.id
+        : null;
+      send({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } });
+      continue;
+    }
+
+    try {
+      handleMessage(message);
+    } catch (error) {
+      console.error(`NAIDE LSP: failed to handle ${message.method}: ${error.stack || error}`);
+      if (message.id !== undefined) {
+        send({
+          jsonrpc: '2.0',
+          id: message.id,
+          error: { code: -32603, message: 'Internal error' },
+        });
+      }
+    }
   }
 });
 
@@ -30,6 +80,20 @@ function send(msg) {
 function respond(id, result) { send({ jsonrpc: '2.0', id, result }); }
 function notify(method, params) { send({ jsonrpc: '2.0', method, params }); }
 
+function isValidMessage(message) {
+  return Boolean(message)
+    && typeof message === 'object'
+    && !Array.isArray(message)
+    && message.jsonrpc === '2.0'
+    && typeof message.method === 'string'
+    && (message.id === undefined
+      || message.id === null
+      || typeof message.id === 'string'
+      || (typeof message.id === 'number' && Number.isFinite(message.id)))
+    && (message.params === undefined
+      || (message.params !== null && typeof message.params === 'object'));
+}
+
 function handleMessage(msg) {
   switch (msg.method) {
     case 'initialize':
@@ -40,6 +104,7 @@ function handleMessage(msg) {
           hoverProvider: true,
           definitionProvider: true,
           referencesProvider: true,
+          documentSymbolProvider: true,
         }
       });
       break;
@@ -60,6 +125,7 @@ function handleMessage(msg) {
 
     case 'textDocument/didClose':
       documents.delete(msg.params.textDocument.uri);
+      symbolIndex.delete(msg.params.textDocument.uri);
       notify('textDocument/publishDiagnostics', { uri: msg.params.textDocument.uri, diagnostics: [] });
       break;
 
@@ -79,6 +145,25 @@ function handleMessage(msg) {
       respond(msg.id, getReferences(msg.params));
       break;
 
+    case 'textDocument/documentSymbol': {
+      const index = symbolIndex.get(msg.params.textDocument.uri);
+      const symbols = [];
+      if (index) {
+        for (const [name, definition] of index.definitions) {
+          const symbolKind = definition.kind === 'function' ? 12
+            : definition.kind === 'class' ? 5
+              : definition.kind === 'schema' ? 23 : 13;
+          const range = {
+            start: { line: definition.line, character: definition.col },
+            end: { line: definition.line, character: definition.col + name.length },
+          };
+          symbols.push({ name, kind: symbolKind, range, selectionRange: range });
+        }
+      }
+      respond(msg.id, symbols);
+      break;
+    }
+
     case 'shutdown':
       respond(msg.id, null);
       break;
@@ -94,42 +179,36 @@ function handleMessage(msg) {
 
 function validateDocument(uri) {
   const text = documents.get(uri);
-  if (!text) return;
+  if (text === undefined) return;
 
   const diagnostics = [];
 
   try {
-    const result = compile(text);
-
+    const result = compile(text, { typeCheck: true });
     const lines = text.split('\n');
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || line.startsWith('#') || line.startsWith('--')) continue;
-
-      const typeMatch = line.match(/^(str|int|num|bool|auto)\s+\w+\s*=\s*(.+)/);
-      if (typeMatch) {
-        const declType = typeMatch[1];
-        const val = typeMatch[2].trim();
-        if (declType === 'int' && /^["']/.test(val)) {
-          diagnostics.push({
-            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
-            severity: 2, source: 'naide',
-            message: `Type hint: assigning string to int variable`
-          });
-        } else if (declType === 'str' && /^\d+$/.test(val)) {
-          diagnostics.push({
-            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
-            severity: 2, source: 'naide',
-            message: `Type hint: assigning number to str variable`
-          });
-        } else if (declType === 'bool' && !['true', 'false'].includes(val) && !/\b(not|and|or|==|!=|>|<)\b/.test(val)) {
-          diagnostics.push({
-            range: { start: { line: i, character: 0 }, end: { line: i, character: lines[i].length } },
-            severity: 2, source: 'naide',
-            message: `Type hint: value may not be boolean`
-          });
-        }
-      }
+    for (const diagnostic of result.typeErrors.errors) {
+      const line = Math.max(0, diagnostic.line - 1);
+      diagnostics.push({
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: lines[line]?.length || 0 },
+        },
+        severity: 1,
+        source: 'naide',
+        message: diagnostic.message,
+      });
+    }
+    for (const diagnostic of result.typeErrors.warnings) {
+      const line = Math.max(0, diagnostic.line - 1);
+      diagnostics.push({
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: lines[line]?.length || 0 },
+        },
+        severity: 2,
+        source: 'naide',
+        message: diagnostic.message,
+      });
     }
   } catch (e) {
     const lineMatch = e.message.match(/line (\d+):(\d+)/);
@@ -148,8 +227,15 @@ function validateDocument(uri) {
 }
 
 function indexSymbols(uri, text) {
-  const symbols = { definitions: new Map(), references: new Map() };
+  const symbols = { definitions: new Map(), references: new Map(), identifiers: [] };
   const lines = text.split('\n');
+  let tokens;
+  try {
+    tokens = new Lexer(text).tokenize();
+  } catch {
+    symbolIndex.delete(uri);
+    return;
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -190,46 +276,59 @@ function indexSymbols(uri, text) {
       symbols.definitions.set(name, { line: i, col, kind: 'prompt' });
     }
 
-    for (const def of symbols.definitions.keys()) {
-      const re = new RegExp(`\\b${def}\\b`, 'g');
-      let m;
-      while ((m = re.exec(line)) !== null) {
-        if (i === symbols.definitions.get(def)?.line && m.index === symbols.definitions.get(def)?.col) continue;
-        if (!symbols.references.has(def)) symbols.references.set(def, []);
-        symbols.references.get(def).push({ line: i, col: m.index });
-      }
-    }
+  }
+
+  const declarationPositions = new Set(
+    [...symbols.definitions.entries()].map(([name, location]) =>
+      `${location.line}:${location.col}:${name}`,
+    ),
+  );
+  for (const [index, token] of tokens.entries()) {
+    if (token.type !== 'IDENT') continue;
+    const line = token.line - 1;
+    const col = token.col - 1;
+    symbols.identifiers.push({ name: token.value, line, col });
+    const previous = tokens[index - 1];
+    const next = tokens[index + 1];
+    if (previous?.type === 'DOT' || previous?.type === 'OPTIONAL' || next?.type === 'COLON') continue;
+    if (declarationPositions.has(`${line}:${col}:${token.value}`)) continue;
+    if (!symbols.references.has(token.value)) symbols.references.set(token.value, []);
+    symbols.references.get(token.value).push({ line, col });
   }
 
   symbolIndex.set(uri, symbols);
 }
 
-function getWordAtPosition(text, line, col) {
-  const lines = text.split('\n');
-  if (line >= lines.length) return null;
-  const lineText = lines[line];
-  let start = col, end = col;
-  while (start > 0 && /\w/.test(lineText[start - 1])) start--;
-  while (end < lineText.length && /\w/.test(lineText[end])) end++;
-  return lineText.slice(start, end) || null;
+function getIdentifierAtPosition(symbols, position) {
+  return symbols.identifiers?.find(identifier =>
+    identifier.line === position.line
+    && position.character >= identifier.col
+    && position.character < identifier.col + identifier.name.length,
+  )?.name || null;
 }
 
 function getDefinition(params) {
   const uri = params.textDocument.uri;
-  const text = documents.get(uri);
-  if (!text) return null;
-
-  const word = getWordAtPosition(text, params.position.line, params.position.character);
-  if (!word) return null;
-
   const symbols = symbolIndex.get(uri);
   if (!symbols) return null;
+  const word = getIdentifierAtPosition(symbols, params.position);
+  if (!word) return null;
 
-  const def = symbols.definitions.get(word);
+  let definitionUri = uri;
+  let def = symbols.definitions.get(word);
+  if (!def) {
+    for (const [candidateUri, index] of symbolIndex) {
+      def = index.definitions.get(word);
+      if (def) {
+        definitionUri = candidateUri;
+        break;
+      }
+    }
+  }
   if (!def) return null;
 
   return {
-    uri,
+    uri: definitionUri,
     range: {
       start: { line: def.line, character: def.col },
       end: { line: def.line, character: def.col + word.length },
@@ -239,43 +338,40 @@ function getDefinition(params) {
 
 function getReferences(params) {
   const uri = params.textDocument.uri;
-  const text = documents.get(uri);
-  if (!text) return [];
-
-  const word = getWordAtPosition(text, params.position.line, params.position.character);
-  if (!word) return [];
-
   const symbols = symbolIndex.get(uri);
   if (!symbols) return [];
+  const word = getIdentifierAtPosition(symbols, params.position);
+  if (!word) return [];
 
   const results = [];
 
-  const def = symbols.definitions.get(word);
-  if (def) {
-    results.push({
-      uri,
-      range: {
-        start: { line: def.line, character: def.col },
-        end: { line: def.line, character: def.col + word.length },
-      },
-    });
-  }
+  for (const [documentUri, index] of symbolIndex) {
+    const def = index.definitions.get(word);
+    if (def) {
+      results.push({
+        uri: documentUri,
+        range: {
+          start: { line: def.line, character: def.col },
+          end: { line: def.line, character: def.col + word.length },
+        },
+      });
+    }
 
-  const refs = symbols.references.get(word) || [];
-  for (const ref of refs) {
-    results.push({
-      uri,
-      range: {
-        start: { line: ref.line, character: ref.col },
-        end: { line: ref.line, character: ref.col + word.length },
-      },
-    });
+    for (const ref of index.references.get(word) || []) {
+      results.push({
+        uri: documentUri,
+        range: {
+          start: { line: ref.line, character: ref.col },
+          end: { line: ref.line, character: ref.col + word.length },
+        },
+      });
+    }
   }
 
   return results;
 }
 
-function getCompletions() {
+function getCompletions(params = {}) {
   const keywords = [
     'fn', 'ret', 'if', 'elif', 'else', 'each', 'for', 'while', 'match',
     'try', 'fail', 'ensure', 'server', 'model', 'schema', 'use', 'pub', 'mut',
@@ -368,12 +464,28 @@ function getCompletions() {
     { label: 'init(params):', detail: 'Constructor method', insertText: 'init(' },
   ];
 
-  return [
+  const items = [
     ...keywords.map(k => ({ label: k, kind: 14 })),
     ...types.map(t => ({ label: t, kind: 25 })),
     ...features.map(f => ({ label: f, kind: 14 })),
     ...builtins.map(b => ({ label: b.label, kind: 3, detail: b.detail, insertText: b.insertText })),
   ];
+  const uri = params.textDocument?.uri;
+  const text = uri ? documents.get(uri) : null;
+  const lineText = text?.split('\n')[params.position?.line] || '';
+  const beforeCursor = lineText.slice(0, params.position?.character || 0);
+  const prefix = beforeCursor.match(/[A-Za-z_]\w*$/)?.[0] || '';
+  if (uri) {
+    for (const index of symbolIndex.values()) {
+      for (const identifier of index.identifiers || []) {
+        items.push({ label: identifier.name, kind: 6, detail: 'Project symbol' });
+      }
+    }
+  }
+  const uniqueItems = [...new Map(items.map(item => [item.label, item])).values()];
+  return prefix
+    ? uniqueItems.filter(item => item.label.startsWith(prefix))
+    : uniqueItems;
 }
 
 const HOVER_DOCS = {
@@ -438,10 +550,8 @@ function getHover(params) {
   const line = text.split('\n')[params.position.line];
   if (!line) return null;
   const col = params.position.character;
-  let start = col, end = col;
-  while (start > 0 && /\w/.test(line[start - 1])) start--;
-  while (end < line.length && /\w/.test(line[end])) end++;
-  const word = line.slice(start, end);
+  const symbols = symbolIndex.get(params.textDocument.uri);
+  const word = symbols ? getIdentifierAtPosition(symbols, params.position) : null;
   if (HOVER_DOCS[word]) return { contents: { kind: 'markdown', value: HOVER_DOCS[word] } };
   return null;
 }

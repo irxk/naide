@@ -41,6 +41,9 @@
       <h1>Testing</h1>
       <p>NAIDE has built-in test and assertion support, powered by Node.js <code>node:test</code>.</p>
 
+      <h2>Type checks are partial</h2>
+      <p><code>naide check app.naide</code> checks supported annotations, known function arguments and return expressions, and straightforward assignments. Unknown expressions may be treated as <code>any</code>; a clean check does not prove runtime correctness or safety.</p>
+
       <h2>Writing Tests</h2>
       <pre><code>test "addition works":
   assert 1 + 1 == 2

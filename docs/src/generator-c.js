@@ -8,6 +8,7 @@ export class CGenerator {
     this.typedefs = [];
     this.functions = [];
     this.mainBody = [];
+    this.variableTypes = new Map();
     this.sourceMap = [];
     this.currentSourceLine = 0;
     this.sourceFile = options.sourceFile || null;
@@ -252,7 +253,37 @@ export class CGenerator {
 
   visitTypedVar(node) {
     const type = node.varType ? this.mapType(node.varType) : this.inferCType(node.value);
+    this.variableTypes.set(node.name, type);
     this.emit(`${type} ${node.name} = ${this.expr(node.value)};`);
+  }
+
+  formatSpecifierForType(type) {
+    if (type === 'int') return '%d';
+    if (type === 'double') return '%g';
+    if (type === 'const char*') return '%s';
+    return '%p';
+  }
+
+  formatSpecifierForExpression(node) {
+    if (!node) return '%p';
+    if (node.type === 'String' || node.type === 'InterpolatedString') return '%s';
+    if (node.type === 'Bool') return '%d';
+    if (node.type === 'Number') {
+      return Number.isInteger(Number(node.value)) ? '%d' : '%g';
+    }
+    if (node.type === 'Identifier') {
+      return this.formatSpecifierForType(this.variableTypes.get(node.name));
+    }
+    if (node.type === 'Binary') {
+      if (['==', '!=', '<', '<=', '>', '>=', '&&', '||'].includes(node.op)) {
+        return '%d';
+      }
+      return this.formatSpecifierForExpression(node.left) === '%g'
+        || this.formatSpecifierForExpression(node.right) === '%g'
+        ? '%g'
+        : '%d';
+    }
+    return '%p';
   }
 
   inferCType(valueNode) {
@@ -421,25 +452,14 @@ export class CGenerator {
   visitLog(node) {
     this.includes.add('<stdio.h>');
     const args = node.args.map(a => this.expr(a));
-    if (args.length === 1) {
-      const arg = args[0];
-      if (node.args[0] && node.args[0].type === 'String') {
-        this.emit(`printf(${arg});`);
-        this.emit(`printf("\\n");`);
-      } else {
-        this.emit(`printf("%s\\n", ${arg});`);
-      }
-    } else {
-      // Multiple args: print each separated by space
-      const fmtParts = args.map(() => '%s').join(' ');
-      this.emit(`printf("${fmtParts}\\n", ${args.join(', ')});`);
-    }
+    const format = node.args.map(arg => this.formatSpecifierForExpression(arg)).join(' ');
+    this.emit(`printf("${format}\\n", ${args.join(', ')});`);
   }
 
   visitThrow(node) {
     this.includes.add('<stdio.h>');
     this.includes.add('<stdlib.h>');
-    this.emit(`fprintf(stderr, "Error: %s\\n", ${this.expr(node.value)});`);
+    this.emit(`fprintf(stderr, "Error: ${this.formatSpecifierForExpression(node.value)}\\n", ${this.expr(node.value)});`);
     this.emit('exit(1);');
   }
 

@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { resolve, basename, extname, join, relative } from 'path';
+import { resolve, basename, dirname, extname, join, relative } from 'path';
+import { randomBytes } from 'crypto';
 import { compile, compileAsync } from '../src/index.js';
 import { spawn } from 'child_process';
+import { createPackageInstallPlan, getDoctorReport, inspectProject, listPackageAdapters, recordPackageDependency, runPackageInstall, runProjectTests, spawnNativeTool } from '../src/project-tools.js';
 
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
 
-const NAIDE_VERSION = '2.0.0';
+const NAIDE_VERSION = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+).version;
 
 function crashReport(err, context = {}) {
   const info = [
@@ -36,6 +40,24 @@ function crashReport(err, context = {}) {
 
 function reportRetiredNx(file) {
   console.error(`  Error: ${file} uses retired NAIDE-X syntax. Use standard NAIDE syntax in a .naide file.`);
+}
+
+function parseNpmPackageSpec(spec) {
+  const match = spec.match(/^(?<name>@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)(?:@(?<version>latest|[A-Za-z][A-Za-z0-9._-]*|[~^]?v?\d+(?:\.\d+){0,2}(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?))?$/);
+  return match ? { name: match.groups.name, version: match.groups.version } : null;
+}
+
+function spawnNpm(args, options = {}) {
+  const npmCliCandidates = [
+    process.env.npm_execpath,
+    join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dirname(dirname(process.execPath)), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ].filter(Boolean).map(path => resolve(path));
+  const npmCli = npmCliCandidates.find(path => existsSync(path));
+
+  if (npmCli) return spawn(process.execPath, [npmCli, ...args], options);
+  if (process.platform !== 'win32') return spawn('npm', args, options);
+  throw new Error('Could not locate npm-cli.js. Run this command from an npm installation or set npm_execpath.');
 }
 
 process.on('uncaughtException', (err) => {
@@ -141,6 +163,65 @@ for (let i = 0; i < args.length; i++) {
     case '--replace': flags.replace = true; break;
     default: files.push(arg);
   }
+}
+
+if (files[0] === 'doctor') {
+  const directory = files[1] && !files[1].startsWith('--') ? files[1] : '.';
+  const report = await getDoctorReport(resolve(directory));
+  if (files.includes('--json')) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    console.log(`\n  NAIDE doctor — ${report.project.directory}`);
+    console.log(`  Node.js ${report.node.version}${report.node.supported ? '' : ' (unsupported; NAIDE requires >=18)'}`);
+    console.log(`  Platform: ${report.platform}`);
+    console.log(`  Project manifests: ${report.project.manifests.join(', ') || 'none found'}`);
+    for (const tool of report.tools) {
+      console.log(`  ${tool.available ? 'OK' : '--'} ${tool.executable}${tool.version ? ` (${tool.version})` : ''}`);
+    }
+    for (const check of report.project.checks) console.log(`  OK ${check}`);
+    for (const warning of report.project.warnings) console.log(`  WARN ${warning}`);
+    for (const error of report.project.errors) console.error(`  ERROR ${error}`);
+    console.log(`\n  ${report.project.ok ? 'Project checks passed.' : 'Project checks found errors.'}`);
+  }
+  process.exit(report.node.supported && report.project.ok ? 0 : 1);
+}
+
+if (files[0] === 'verify') {
+  const directory = resolve(files[1] && !files[1].startsWith('--') ? files[1] : '.');
+  const report = inspectProject(directory);
+  if (files.includes('--json')) {
+    console.log(JSON.stringify(report, null, 2));
+  } else {
+    console.log(`\n  NAIDE verify — ${report.directory}`);
+    for (const check of report.checks) console.log(`  OK ${check}`);
+    for (const warning of report.warnings) console.log(`  WARN ${warning}`);
+    for (const error of report.errors) console.error(`  ERROR ${error}`);
+    console.log(`\n  ${report.ok ? 'Project verification passed.' : 'Project verification failed.'}`);
+  }
+  process.exit(report.ok ? 0 : 1);
+}
+
+if (files[0] === 'test') {
+  const directory = files[1] && !files[1].startsWith('--') ? files[1] : '.';
+  let report;
+  try {
+    report = await runProjectTests(resolve(directory));
+  } catch (error) {
+    console.error(`  Could not inspect test project: ${error.message}`);
+    process.exit(1);
+  }
+  if (report.plans.length === 0) {
+    console.error('  No configured native test suite found. Add a test script or a supported test project.');
+    process.exit(1);
+  }
+  for (const outcome of report.outcomes) {
+    console.log(`\n  > ${outcome.label}`);
+    if (outcome.stdout) process.stdout.write(outcome.stdout);
+    if (outcome.stderr) process.stderr.write(outcome.stderr);
+    if (outcome.error) console.error(`  ${outcome.error}`);
+    console.log(`  ${outcome.code === 0 ? 'PASS' : 'FAIL'} ${outcome.label}`);
+  }
+  process.exit(report.ok ? 0 : 1);
 }
 
 // ── Code Generator (~~) ──
@@ -477,7 +558,7 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
   const { transpile } = await import('../src/index.js');
 
-  console.log(`\n  NAIDE REPL v1.11.0 — type NAIDE code, see JavaScript output`);
+  console.log(`\n  NAIDE REPL v${NAIDE_VERSION} — type NAIDE code, see JavaScript output`);
   console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
 
   const rl = createInterface({
@@ -612,12 +693,38 @@ if (files[0] === 'init') {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const name = basename(dir === process.cwd() ? dir : dir);
 
-  if (!existsSync(resolve(dir, 'package.json'))) {
-    writeFileSync(resolve(dir, 'package.json'), JSON.stringify({
-      name, version: '1.0.0', type: 'module',
-      scripts: { start: 'naide app.naide', dev: 'naide -w app.naide', build: 'naide --emit app.naide -o dist/app.mjs' },
-      dependencies: { naider: '^1.9.0' }
-    }, null, 2) + '\n');
+  const packagePath = resolve(dir, 'package.json');
+  const defaultScripts = {
+    start: 'node -r dotenv/config ./node_modules/naider/bin/naide.js app.naide',
+    dev: 'node -r dotenv/config ./node_modules/naider/bin/naide.js -w app.naide',
+    check: 'naide check app.naide',
+    test: 'node --test',
+    build: 'naide --emit app.naide -o dist/app.mjs',
+  };
+  const projectPackage = existsSync(packagePath)
+    ? JSON.parse(readFileSync(packagePath, 'utf8'))
+    : { name, version: '1.0.0', type: 'module' };
+  let packageChanged = false;
+  projectPackage.scripts ||= {};
+  for (const [script, command] of Object.entries(defaultScripts)) {
+    if (!projectPackage.scripts[script]) {
+      projectPackage.scripts[script] = command;
+      packageChanged = true;
+    }
+  }
+  projectPackage.dependencies ||= {};
+  for (const [dependency, version] of Object.entries({
+    naider: `^${NAIDE_VERSION}`,
+    express: '^4.21.2',
+    dotenv: '^16.4.7',
+  })) {
+    if (!projectPackage.dependencies[dependency] && !projectPackage.devDependencies?.[dependency]) {
+      projectPackage.dependencies[dependency] = version;
+      packageChanged = true;
+    }
+  }
+  if (packageChanged || !existsSync(packagePath)) {
+    writeFileSync(packagePath, JSON.stringify(projectPackage, null, 2) + '\n');
   }
 
   if (!existsSync(resolve(dir, 'app.naide'))) {
@@ -625,32 +732,279 @@ if (files[0] === 'init') {
 
 env:
   PORT int default(3000)
+  JWT_SECRET str required
+
+schema User:
+  id auto
+  name str required min(1) max(80)
+  email str required email max(254)
+  password str required min(12) max(128)
 
 schema Item:
   id auto
+  ownerId str required
   name str required min(1) max(100)
   done bool default(false)
 
 server app port PORT:
-  cors "*"
-  cookie
+  cors ["http://localhost:3000", "http://localhost:5173"]
+  limit "/api/*" 60 "1m"
+  limit "/api/auth/*" 10 "1m"
+  auth JWT_SECRET:
+    protect "/api/*"
+    public "/api/auth/register"
+    public "/api/auth/login"
+    public "/api/health"
   static "/public"
-  crud "/api/items" Item
 
   get "/":
-    ret.text "NAIDE server running"
+    ret {name: "NAIDE API", health: "/api/health"}
 
   get "/api/health":
-    ret {status: "ok", items: ItemStore.count()}
+    ret {status: "ok"}
+
+  post "/api/auth/register" (req, res):
+    if typeof req.body.name != "string" or typeof req.body.email != "string" or typeof req.body.password != "string":
+      ret.status 400 {error: "name, email, and password are required"}
+    if req.body.name.length < 1 or req.body.name.length > 80 or req.body.email.length > 254:
+      ret.status 400 {error: "name or email is too long"}
+    if req.body.password.length < 12 or req.body.password.length > 128:
+      ret.status 400 {error: "password must be between 12 and 128 characters"}
+    str email = req.body.email.toLowerCase().trim()
+    if UserStore.where({email})[0]:
+      ret.status 409 {error: "An account with that email already exists"}
+    str hashed = hash(req.body.password)
+    user = UserStore.create({name: req.body.name.trim(), email, password: hashed})
+    if user.error:
+      ret.status 400 {errors: user.error}
+    token = auth.sign({id: user.id})
+    ret.status 201 {token, user: {id: user.id, name: user.name, email: user.email}}
+
+  post "/api/auth/login" (req, res):
+    if typeof req.body.email != "string" or typeof req.body.password != "string":
+      ret.status 401 {error: "Invalid credentials"}
+    if req.body.password.length > 128:
+      ret.status 401 {error: "Invalid credentials"}
+    str email = req.body.email.toLowerCase().trim()
+    user = UserStore.where({email})[0]
+    if not user:
+      ret.status 401 {error: "Invalid credentials"}
+    if not verify(req.body.password, user.password):
+      ret.status 401 {error: "Invalid credentials"}
+    token = auth.sign({id: user.id})
+    ret {token}
+
+  get "/api/items" (req, res):
+    items = ItemStore.where({ownerId: req.user.id})
+    ret {data: items, total: items.length}
+
+  post "/api/items" (req, res):
+    if typeof req.body.name != "string" or req.body.name.length < 1 or req.body.name.length > 100:
+      ret.status 400 {error: "name must be between 1 and 100 characters"}
+    item = ItemStore.create({ownerId: req.user.id, name: req.body.name.trim(), done: false})
+    if item.error:
+      ret.status 400 {errors: item.error}
+    ret.status 201 item
+
+  get "/api/items/:id" (req, res):
+    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    if not item:
+      ret.status 404 {error: "Item not found"}
+    ret item
+
+  put "/api/items/:id" (req, res):
+    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    if not item:
+      ret.status 404 {error: "Item not found"}
+    str name = item.name
+    bool done = item.done
+    if req.body.name != undefined:
+      if typeof req.body.name != "string" or req.body.name.length < 1 or req.body.name.length > 100:
+        ret.status 400 {error: "name must be between 1 and 100 characters"}
+      name = req.body.name.trim()
+    if req.body.done != undefined:
+      if typeof req.body.done != "boolean":
+        ret.status 400 {error: "done must be a boolean"}
+      done = req.body.done
+    updated = ItemStore.update(item.id, {name, done})
+    ret updated
+
+  del "/api/items/:id" (req, res):
+    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    if not item:
+      ret.status 404 {error: "Item not found"}
+    bool deleted = ItemStore.delete(item.id)
+    ret {deleted}
+`);
+  }
+
+  if (!existsSync(resolve(dir, '.env'))) {
+    writeFileSync(resolve(dir, '.env'), `JWT_SECRET=${randomBytes(32).toString('hex')}\n`, { mode: 0o600 });
+  }
+
+  const gitignorePath = resolve(dir, '.gitignore');
+  const ignoredPaths = ['.env', 'data/', 'dist/', 'node_modules/'];
+  const existingGitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf8') : '';
+  const missingIgnoredPaths = ignoredPaths.filter(path => !existingGitignore.split(/\r?\n/).includes(path));
+  if (missingIgnoredPaths.length > 0) {
+    const separator = existingGitignore && !existingGitignore.endsWith('\n') ? '\n' : '';
+    writeFileSync(gitignorePath, `${existingGitignore}${separator}${missingIgnoredPaths.join('\n')}\n`);
+  }
+
+  if (!existsSync(resolve(dir, 'README.md'))) {
+    writeFileSync(resolve(dir, 'README.md'), `# ${name}
+
+A small NAIDE API starter with registration, login, and an items API scoped to the authenticated user.
+
+## Start
+
+\`\`\`sh
+npm install
+npm run dev
+\`\`\`
+
+The initializer creates a random \`JWT_SECRET\` in \`.env\`. Keep that file private; it is excluded by \`.gitignore\`. The development server loads it automatically.
+
+## API
+
+- \`GET /api/health\` — public health check
+- \`POST /api/auth/register\` — create an account (password: 12–128 characters)
+- \`POST /api/auth/login\` — receive a bearer token
+- \`/api/items\` — protected CRUD API; send \`Authorization: Bearer <token>\`
+
+The default CORS allowlist is limited to local development origins. Change it deliberately when connecting a deployed frontend. The generated in-memory/file-backed starter and single-process rate limiter are for local development, not production deployment; use a production database, shared rate limiting, HTTPS, and an operational secret store before exposing it publicly.
+
+## Checks
+
+\`\`\`sh
+npm run check
+npm test
+\`\`\`
+`);
+  }
+
+  const testDir = resolve(dir, 'test');
+  if (!existsSync(testDir)) mkdirSync(testDir, { recursive: true });
+  const starterTestPath = resolve(testDir, 'api.test.js');
+  if (!existsSync(starterTestPath)) {
+    writeFileSync(starterTestPath, `import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
+import { test } from 'node:test';
+
+test('starter API separates each authenticated user’s items', async () => {
+  const portProbe = createServer();
+  await new Promise((resolve, reject) => {
+    portProbe.once('error', reject);
+    portProbe.listen(0, '127.0.0.1', resolve);
+  });
+  const { port } = portProbe.address();
+  await new Promise((resolve, reject) => portProbe.close(error => error ? reject(error) : resolve()));
+
+  const child = spawn(process.execPath, [
+    '-r', 'dotenv/config',
+    './node_modules/naider/bin/naide.js',
+    'app.naide',
+  ], {
+    cwd: process.cwd(),
+    env: { ...process.env, PORT: String(port) },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.setEncoding('utf8').on('data', chunk => { output += chunk; });
+  child.stderr.setEncoding('utf8').on('data', chunk => { output += chunk; });
+
+  try {
+    const baseUrl = \`http://127.0.0.1:\${port}\`;
+    let health;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (child.exitCode !== null) throw new Error(\`Starter server exited early:\\n\${output}\`);
+      try {
+        health = await fetch(\`\${baseUrl}/api/health\`);
+        break;
+      } catch {
+        await delay(100);
+      }
+    }
+    assert.ok(health, \`Starter server did not become ready:\\n\${output}\`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), { status: 'ok' });
+
+    const unauthenticated = await fetch(\`\${baseUrl}/api/items\`);
+    assert.equal(unauthenticated.status, 401);
+
+    const email = \`test-\${Date.now()}@example.com\`;
+    const registration = await fetch(\`\${baseUrl}/api/auth/register\`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Test User',
+        email,
+        password: 'correct-horse-battery-staple',
+      }),
+    });
+    assert.equal(registration.status, 201, await registration.text());
+    const account = await registration.json();
+    assert.ok(account.token);
+    assert.equal(account.user.password, undefined);
+
+    const created = await fetch(\`\${baseUrl}/api/items\`, {
+      method: 'POST',
+      headers: {
+        Authorization: \`Bearer \${account.token}\`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Private item' }),
+    });
+    assert.equal(created.status, 201);
+    const privateItem = await created.json();
+
+    const items = await fetch(\`\${baseUrl}/api/items\`, {
+      headers: { Authorization: \`Bearer \${account.token}\` },
+    });
+    assert.equal(items.status, 200);
+    assert.equal((await items.json()).data[0].id, privateItem.id);
+
+    const otherRegistration = await fetch(\`\${baseUrl}/api/auth/register\`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Other User',
+        email: \`other-\${Date.now()}@example.com\`,
+        password: 'another-correct-horse-battery',
+      }),
+    });
+    assert.equal(otherRegistration.status, 201);
+    const otherAccount = await otherRegistration.json();
+
+    const otherItems = await fetch(\`\${baseUrl}/api/items\`, {
+      headers: { Authorization: \`Bearer \${otherAccount.token}\` },
+    });
+    assert.deepEqual((await otherItems.json()).data, []);
+
+    const hiddenItem = await fetch(\`\${baseUrl}/api/items/\${privateItem.id}\`, {
+      headers: { Authorization: \`Bearer \${otherAccount.token}\` },
+    });
+    assert.equal(hiddenItem.status, 404);
+  } finally {
+    child.kill();
+    if (child.exitCode === null) await new Promise(resolve => child.once('exit', resolve));
+  }
+});
 `);
   }
 
   if (!existsSync(resolve(dir, 'public'))) mkdirSync(resolve(dir, 'public'), { recursive: true });
+  if (!existsSync(resolve(dir, 'dist'))) mkdirSync(resolve(dir, 'dist'), { recursive: true });
 
   console.log(`\n  NAIDE project initialized!
 
   ${dir === process.cwd() ? '' : `  cd ${basename(dir)}\n`}  npm install
+  npm run check
   npm run dev
+
+  A random JWT secret and a local-development API test were created.
 `);
   process.exit(0);
 }
@@ -805,6 +1159,8 @@ if (files[0] === 'pkg') {
   Usage:
     naide pkg init                Create naide.pkg.json manifest
     naide pkg install <name>      Install a NAIDE package from npm
+    naide pkg add <manager> <spec> Install through a native package manager
+    naide pkg managers            List supported package ecosystems
     naide pkg publish             Publish current package to npm
     naide pkg list                List installed NAIDE packages
 `);
@@ -812,6 +1168,57 @@ if (files[0] === 'pkg') {
   }
 
   const pkgManifestPath = resolve('naide.pkg.json');
+
+  if (subcmd === 'managers') {
+    console.log('\n  Native package ecosystems:\n');
+    for (const adapter of listPackageAdapters()) {
+      console.log(`    ${adapter.name.padEnd(10)} ${adapter.description}`);
+    }
+    console.log('\n  Packages run in their native runtimes. Calling one from NAIDE requires an explicit bridge or adapter.\n');
+    process.exit(0);
+  }
+
+  if (subcmd === 'add') {
+    const manager = files[2];
+    const spec = files[3];
+    if (!manager || !spec) {
+      console.error('  Usage: naide pkg add <manager> <package[@version]>');
+      process.exit(1);
+    }
+
+    let plan;
+    try {
+      plan = createPackageInstallPlan(manager, spec);
+    } catch (error) {
+      console.error(`  Error: ${error.message}`);
+      process.exit(1);
+    }
+
+    console.log(`  Installing ${spec} via ${manager}...`);
+    try {
+      const code = await runPackageInstall(plan, {
+        directory: process.cwd(),
+        spawnCommand: (packagePlan, cwd) => packagePlan.manager === 'npm'
+          ? spawnNpm(packagePlan.args, { cwd, stdio: 'inherit' })
+          : spawnNativeTool(packagePlan, cwd, { stdio: 'inherit' }),
+      });
+      if (code === 0) {
+        try {
+          recordPackageDependency(process.cwd(), plan);
+        } catch (error) {
+          console.error(`  Error: ${spec} was installed, but package metadata could not be saved: ${error.message}`);
+          process.exit(1);
+        }
+        console.log(`\n  Installed ${spec} via ${manager}.`);
+        console.log(`  Recorded dependency in ${manager === 'pip' ? 'naide.pkg.json and requirements.txt' : 'naide.pkg.json'}.`);
+        if (plan.note) console.log(`  Note: ${plan.note}`);
+      }
+      process.exit(code);
+    } catch (error) {
+      console.error(`  Error: could not start ${plan.executable}: ${error.message}`);
+      process.exit(1);
+    }
+  }
 
   if (subcmd === 'init') {
     if (existsSync(pkgManifestPath)) {
@@ -831,6 +1238,7 @@ if (files[0] === 'pkg') {
       keywords: ['naide', 'naide-plugin'],
       exports: {},
       dependencies: {},
+      languageDependencies: {},
     };
     writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
     console.log(`\n  Created naide.pkg.json\n`);
@@ -843,25 +1251,43 @@ if (files[0] === 'pkg') {
       console.log('  Usage: naide pkg install <package-name>');
       process.exit(1);
     }
+    const packageSpec = parseNpmPackageSpec(pkgName);
+    if (!packageSpec) {
+      console.error('  Error: expected a package name, optional scope, and optional tag or version.');
+      process.exit(1);
+    }
 
     console.log(`  Installing ${pkgName}...`);
-    const child = spawn('npm', ['install', pkgName], { stdio: 'inherit', shell: true });
+    let child;
+    try {
+      child = spawnNpm(['install', '--', pkgName], { stdio: 'inherit' });
+    } catch (error) {
+      console.error(`  Error: ${error.message}`);
+      process.exit(1);
+    }
+    child.once('error', (error) => {
+      console.error(`  Error: failed to start npm: ${error.message}`);
+      process.exit(1);
+    });
     child.on('close', (code) => {
       if (code === 0) {
         if (existsSync(pkgManifestPath)) {
           try {
             const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
-            const npmPkg = resolve('node_modules', pkgName, 'package.json');
+            manifest.dependencies ||= {};
+            const npmPkg = resolve('node_modules', packageSpec.name, 'package.json');
             if (existsSync(npmPkg)) {
               const ver = JSON.parse(readFileSync(npmPkg, 'utf-8')).version;
-              manifest.dependencies[pkgName] = `^${ver}`;
+              manifest.dependencies[packageSpec.name] = `^${ver}`;
               writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
             }
-          } catch {}
+          } catch (error) {
+            console.error(`  Warning: package installed, but naide.pkg.json could not be updated: ${error.message}`);
+          }
         }
         console.log(`\n  Installed ${pkgName}`);
       }
-      process.exit(code);
+      process.exit(code ?? 1);
     });
     await new Promise(() => {});
   }
@@ -887,10 +1313,20 @@ if (files[0] === 'pkg') {
     }
 
     console.log(`  Publishing ${manifest.name}@${manifest.version}...`);
-    const child = spawn('npm', ['publish', '--access', 'public'], { stdio: 'inherit', shell: true });
+    let child;
+    try {
+      child = spawnNpm(['publish', '--access', 'public'], { stdio: 'inherit' });
+    } catch (error) {
+      console.error(`  Error: ${error.message}`);
+      process.exit(1);
+    }
+    child.once('error', (error) => {
+      console.error(`  Error: failed to start npm: ${error.message}`);
+      process.exit(1);
+    });
     child.on('close', (code) => {
       if (code === 0) console.log(`\n  Published ${manifest.name}@${manifest.version}`);
-      process.exit(code);
+      process.exit(code ?? 1);
     });
     await new Promise(() => {});
   }
@@ -902,12 +1338,17 @@ if (files[0] === 'pkg') {
     }
     const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
     const deps = Object.entries(manifest.dependencies || {});
-    if (deps.length === 0) {
+    const languageDeps = Object.entries(manifest.languageDependencies || {})
+      .flatMap(([manager, packages]) => Object.entries(packages).map(([name, spec]) => [name, spec, manager]));
+    if (deps.length === 0 && languageDeps.length === 0) {
       console.log('  No NAIDE packages installed.');
     } else {
       console.log('\n  NAIDE packages:\n');
       for (const [name, ver] of deps) {
         console.log(`    ${name}  ${ver}`);
+      }
+      for (const [name, spec, manager] of languageDeps) {
+        console.log(`    ${name}  ${spec}  (${manager})`);
       }
       console.log('');
     }
@@ -986,9 +1427,14 @@ if (flags.help) {
     naide lsp                    Start language server (LSP)
     naide vscode                 Install VS Code extension
     naide deploy [dir]           Generate Dockerfile for deployment
+    naide doctor [dir]           Diagnose local tools and project setup
+    naide verify [dir]           Check project manifests and setup
+    naide test [dir]             Run detected native project test suites
     naide fmt <files...>         Format NAIDE files
     naide pkg init               Create naide.pkg.json manifest
     naide pkg install <name>     Install a NAIDE package
+    naide pkg add <manager> <spec> Install with a native package manager
+    naide pkg managers           List supported package ecosystems
     naide pkg publish            Publish package to npm
     naide pkg list               List NAIDE dependencies
     naide --emit <file>          Output generated JavaScript
@@ -1163,7 +1609,7 @@ for (const file of files) {
       const tempFile = resolve(`.naide_tmp_${basename(file, ext)}.mjs`);
       writeFileSync(tempFile, outputCode, 'utf-8');
       console.log(`[NAIDE] Running with Bun — ${file}`);
-      const bunChild = spawn('bun', ['run', tempFile], { stdio: 'inherit', shell: true });
+      const bunChild = spawn('bun', ['run', tempFile], { stdio: 'inherit' });
       bunChild.on('close', (code) => {
         try { unlinkSync(tempFile); } catch {}
         process.exit(code || 0);

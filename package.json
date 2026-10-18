@@ -25,7 +25,12 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/test.js",
+    "test": "node --test",
+    "test:targets": "node --test test/targets.js",
+    "test:runtimes": "node --test test/target-runtimes.js",
+    "test:parity": "node --test test/compiler-parity.js",
+    "test:onboarding": "node --test test/onboarding.js",
+    "test:features": "node --test test/project-tools.js test/mcp.js test/lsp.js test/security.js test/onboarding.js",
     "example": "node bin/naide.js examples/hello.naide",
     "postinstall": "node bin/postinstall.js"
   },

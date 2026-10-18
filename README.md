@@ -6,25 +6,31 @@ NAIDE is designed around one canonical syntax shared by people, AI tools, the co
 
 ### Compilation Targets
 
-| Target | Flag | Language | Server Framework |
-|--------|------|----------|-----------------|
-| `node` | default | JavaScript (ES Modules) | Express |
-| `python` / `py` | `--target python` | Python | Flask |
-| `bun` | `--target bun` | JavaScript (Bun) | Bun.serve |
-| `typescript` / `ts` | `--target ts` | TypeScript | Express |
-| `go` | `--target go` | Go | net/http |
-| `java` | `--target java` | Java | HttpServer |
-| `rust` / `rs` | `--target rust` | Rust | actix-web |
-| `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib |
-| `c` | `--target c` | C | libmicrohttpd |
-| `csharp` / `cs` | `--target csharp` | C# | ASP.NET |
-| `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor |
-| `swift` | `--target swift` | Swift | Vapor |
-| `dart` | `--target dart` | Dart | shelf |
-| `php` | `--target php` | PHP | Built-in / Laravel |
-| `ruby` / `rb` | `--target ruby` | Ruby | Sinatra |
+| Target | Flag | Language | Server Framework | CI validation |
+|--------|------|----------|-----------------|---------------|
+| `node` | default | JavaScript (ES Modules) | Express | Code generation + basic runtime smoke |
+| `python` / `py` | `--target python` | Python | Flask | Code generation + basic runtime smoke |
+| `bun` | `--target bun` | JavaScript (Bun) | Bun.serve | Code generation + basic runtime smoke |
+| `typescript` / `ts` | `--target ts` | TypeScript | Express | Code generation smoke test |
+| `go` | `--target go` | Go | net/http | Code generation + basic runtime smoke |
+| `java` | `--target java` | Java | HttpServer | Code generation smoke test |
+| `rust` / `rs` | `--target rust` | Rust | actix-web | Code generation smoke test |
+| `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib | Code generation + basic runtime smoke |
+| `c` | `--target c` | C | libmicrohttpd | Code generation + basic runtime smoke |
+| `csharp` / `cs` | `--target csharp` | C# | ASP.NET | Code generation smoke test |
+| `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor | Code generation smoke test |
+| `swift` | `--target swift` | Swift | Vapor | Code generation smoke test |
+| `dart` | `--target dart` | Dart | shelf | Code generation smoke test |
+| `php` | `--target php` | PHP | Built-in / Laravel | Code generation smoke test |
+| `ruby` / `rb` | `--target ruby` | Ruby | Sinatra | Code generation smoke test |
 
 NAIDE source files use the `.naide` extension. There is one language syntax; no separate compressed or AI-only dialect.
+
+#### What "supported target" means
+
+The table describes exactly what CI currently verifies: all 15 targets have automated code-generation smoke tests; Node.js, Python, Bun, Go, C, and C++ also run a minimal output program (C/C++ are compiled first). This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
+
+The server-framework column identifies the backend's intended framework; it is not a promise that every NAIDE server feature is implemented for that target. Some backends emit TODO comments instead of working behavior—for example, the C backend's CRUD, authentication, and WebSocket paths, and the Rust backend's CRUD and WebSocket paths. Treat those generated sections as unsupported until the backend emits executable implementations and the corresponding integration tests pass.
 
 ## Install
 
@@ -39,6 +45,7 @@ npm install -g naider
 naide init my-app
 cd my-app
 npm install
+npm run check
 npm run dev
 ```
 
@@ -55,6 +62,27 @@ server app port 3000:
 naide app.naide
 ```
 
+### Japanese Learning Path
+
+1. **Values and variables** — `str` / `int` / `bool` declare values; add `mut` only when a value must change.
+2. **Decisions and repetition** — use `if` / `elif` / `else` and `each`.
+3. **Functions** — declare reusable behavior with `fn` and return with `ret`.
+4. **Applications** — start with a route, then add validation, authentication, and storage deliberately.
+
+```naide
+str name = "NAIDE"
+mut int visits = 0
+
+fn greet(str who) -> str:
+  ret "こんにちは、{who}さん"
+
+if visits == 0:
+  log greet(name)
+  visits += 1
+```
+
+Save as `lesson.naide`, then run `naide lesson.naide`. To inspect a project's local setup, use `naide doctor`; use `naide verify` to check its manifests without executing code. Each lesson should introduce one concept at a time—read the generated behavior and test your own small variation before adding features.
+
 ## CLI
 
 ```bash
@@ -68,8 +96,13 @@ naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
 naide vscode                  # Install VS Code extension
 naide deploy [dir]            # Generate Dockerfile for deployment
+naide doctor [dir]            # Diagnose local tools and project setup
+naide verify [dir]            # Validate manifests and type-check NAIDE sources
+naide test [dir]              # Run detected native test suites
 naide pkg init                # Create naide.pkg.json manifest
 naide pkg install <name>      # Install a NAIDE package
+naide pkg add <manager> <spec> # Install with a native package manager
+naide pkg managers            # List supported package ecosystems
 naide pkg publish             # Publish package to npm
 naide -w <file>               # Watch mode (auto-restart on changes)
 naide -d <file>               # Debug mode (Node.js inspector)
@@ -155,7 +188,7 @@ project.files.forEach(f => console.log(f.path));
 
 ```
 $ naide
-NAIDE REPL v1.21.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v2.0.0 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -1269,7 +1302,7 @@ db.sql "postgres" "postgresql://localhost/mydb"
 
 ## Language Server (LSP)
 
-Built-in LSP for editor integration — diagnostics, completions, and hover docs:
+Built-in LSP for editor integration — live syntax/type diagnostics, prefix-filtered completions, hover docs, document symbols, and definition/reference navigation across open `.naide` files:
 
 ```bash
 naide lsp
@@ -1281,7 +1314,7 @@ naide lsp
 naide vscode
 ```
 
-One command installs the extension — syntax highlighting, LSP diagnostics, autocomplete, and hover docs for `.naide` files. Restart VS Code after install.
+One command installs the extension — syntax highlighting, LSP diagnostics, autocomplete, hover docs, symbols, and definition/reference navigation for `.naide` files. Restart VS Code after install.
 
 ## Deploy
 
@@ -1408,7 +1441,7 @@ every "30m":
   log "cleanup"
 ```
 
-This generates a complete production API — SQLite database, AI/LLM integration, auth, password hashing, CORS, sessions, rate limiting, CRUD with pagination/search, WebSocket, SSE, file caching, request validation, background jobs, auto-generated API docs, route middleware, file downloads, redirects with status codes, type checking, error handling with ensure/finally, and event-driven hooks — from ~75 lines.
+This generates a broad API starter demonstrating SQLite, AI/LLM integration, auth, CORS, CRUD, WebSocket, SSE, file caching, request validation, background jobs, and more from ~75 lines. Treat it as a starting point: install the generated dependencies, inspect the emitted code, and perform your own security, load, and deployment reviews before production use.
 
 ## One syntax, end to end
 
@@ -1479,7 +1512,7 @@ Catches type mismatches at compile time:
   app.naide:7 WARN: Type warning: reassigning int variable 'count' with str
 ```
 
-The type checker understands NAIDE's type annotations (`str`, `int`, `num`, `bool`, `list`, `map`), infers types from expressions and function return values, and checks assignments for compatibility. `num` accepts `int` values. `any` and `json` accept all types.
+The type checker checks supported annotations (`str`, `int`, `num`, `bool`, `list`, `map`), known function argument counts and types, return expressions against explicit annotations, and straightforward assignments. `num` accepts `int` values. `any` and `json` accept all types. Expressions whose types cannot be determined (including many dynamic member accesses) are treated as `any`, so passing `naide check` is useful feedback, **not a proof of program correctness or runtime safety**.
 
 Also available as a flag: `naide --check app.naide` or programmatically via `compile(source, { typeCheck: true })`.
 
@@ -1508,18 +1541,61 @@ naide -d app.naide              # starts with --inspect-brk
 
 Then open `chrome://inspect` in Chrome to connect. The program pauses at the first line so you can set breakpoints before execution.
 
-## Package Ecosystem
-
-Manage NAIDE packages via npm:
+## Project Diagnostics
 
 ```bash
-naide pkg init                  # create naide.pkg.json manifest
-naide pkg install my-plugin     # install from npm + add to manifest
-naide pkg publish               # publish to npm with naide-plugin keyword
-naide pkg list                  # list installed NAIDE packages
+naide doctor                    # inspect Node.js and installed language tools
+naide doctor . --json           # machine-readable report
+naide verify                    # validate package manifests and find setup gaps
 ```
 
-The `naide.pkg.json` manifest tracks NAIDE-specific metadata (main entry, exports, dependencies) while using npm as the underlying registry.
+`doctor` checks the local Node.js requirement, available ecosystem tools, package manifests, and NAIDE source files. `verify` parses `package.json`, checks its dependency and script sections, and compiles and type-checks `.naide` files recursively, excluding `.git`, `dist`, `node_modules`, and the root `SPEC.naide` language reference. It is read-only and does not execute package scripts or source code; it is a setup/type-check aid, not a security audit or a guarantee that dependencies resolve or the application behaves correctly. Other ecosystem manifests are detected but are not fully validated. `test` is a separate, explicit command: it detects common native test setups (npm, Cargo, Go, .NET, Maven/Gradle, SwiftPM, Dart, Composer, Bundler, and pytest) and runs their configured test commands. Since project tests are executable code, run this only in a project you trust.
+
+## Native Package Ecosystems
+
+NAIDE can ask the native package manager to install dependencies from several registries:
+
+```bash
+naide pkg managers
+naide pkg add npm zod@3.24.0
+python -m venv .venv
+# Activate .venv before installing Python packages
+naide pkg add pip requests==2.32.0
+naide pkg add cargo serde@1.0.0
+naide pkg add go github.com/google/uuid@v1.6.0
+naide pkg add dotnet Newtonsoft.Json@13.0.1
+naide pkg add composer symfony/console:^7.0
+naide pkg add gem rails@7.1.0
+naide pkg add dart 'http:^1.2.0'
+naide pkg add maven org.slf4j:slf4j-api:2.0.16
+naide pkg add conan fmt/11.0.2
+```
+
+Supported adapters are npm, PyPI/pip, Cargo, Go modules, NuGet/.NET, Packagist/Composer, RubyGems via Bundler, pub.dev, Maven Central, and Conan. Arguments are passed separately; on Windows, script-based manager shims use a quoted `cmd.exe` wrapper, and arguments containing quotes, percent signs, or line breaks are rejected. npm, pip, Cargo, Go, .NET, Composer, Bundler, and Dart delegate dependency declaration and lockfile updates to their native tools (where that ecosystem supports lockfiles). pip installs into an active/project `.venv`, records its requirement in `requirements.txt`, and records the ecosystem dependency in `naide.pkg.json`; activate a virtual environment before installing. Metadata files are staged before replacement, and failed multi-file updates are rolled back where possible. Every successful `naide pkg add` creates or updates `naide.pkg.json` as NAIDE's cross-ecosystem index, while native project manifests remain authoritative.
+
+This is package-manager interoperability, **not** automatic cross-language linking. A Python, Rust, Java, or other native library cannot be called directly from NAIDE just because it is installed. To use one from a Node.js NAIDE program, expose a deliberate boundary such as a subprocess protocol, HTTP service, or a maintained FFI/WASM adapter. The Ruby adapter uses `bundle add`, so a Gemfile must already exist. Maven downloads to the local cache, and Conan resolves/generates dependency metadata; both still require their respective build-file/toolchain integration before the dependency is usable by an application. SwiftPM, Gradle, and other ecosystems without a tested adapter can still be used through their normal native tools.
+
+`naide.pkg.json` stores NAIDE package metadata and records non-npm additions under `languageDependencies`; the native manager's manifest and lockfile remain authoritative. `naide pkg install` remains the npm convenience command for NAIDE plugins.
+
+## MCP Server
+
+`naide-mcp` communicates over stdio and provides tools for compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. The `verify_changes` prompt (also available in Japanese) guides agents to check changed source and the project without running code. It also exposes read-only resources (`naide://spec`, `naide://package-ecosystems`, `naide://project`).
+
+For VS Code, after installing `naider` in a location on `PATH`, add this to `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "naide": {
+      "type": "stdio",
+      "command": "naide-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+The MCP server's `naide_run` and `naide_test` tools execute code with the server process's operating-system permissions. Connect it only to clients and workspaces whose code you trust.
 
 ## NAIDE vs Python — Side by Side
 
