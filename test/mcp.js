@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const serverPath = fileURLToPath(new URL('../mcp/server.js', import.meta.url));
+const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 function frame(message) {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
@@ -85,6 +87,8 @@ describe('NAIDE MCP server', () => {
 
     assert.ok(initialized.result.capabilities.prompts);
     assert.ok(initialized.result.capabilities.resources);
+    assert.equal(initialized.result.serverInfo.name, 'naide-mcp');
+    assert.equal(initialized.result.serverInfo.version, packageVersion);
     assert.ok(tools.some(tool => tool.name === 'naide_doctor'));
     assert.ok(tools.some(tool => tool.name === 'naide_verify'));
     assert.ok(tools.some(tool => tool.name === 'naide_test'));

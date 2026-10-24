@@ -8,6 +8,7 @@ import { checkNaideSource, getDoctorReport, inspectProject, listPackageAdapters,
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const requireFromServer = createRequire(import.meta.url);
+const packageVersion = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf8')).version;
 
 function resolveRunImport(specifier) {
   if (specifier.startsWith('.') || isAbsolute(specifier)) {
@@ -325,7 +326,7 @@ async function handleMessage(msg) {
       respond(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {}, prompts: {}, resources: {} },
-        serverInfo: { name: 'naide-mcp', version: '2.0.2' }
+        serverInfo: { name: 'naide-mcp', version: packageVersion }
       });
       break;
 
