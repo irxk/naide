@@ -790,7 +790,7 @@ NAIDE's host runner removes the need to upload a JavaScript bootstrap. Upload `d
     "entry": "discord-bot.naide"
   },
   "dependencies": {
-    "naider": "^2.0.6",
+    "naider": "^2.0.7",
     "discord.js": "^14.27.0"
   }
 }

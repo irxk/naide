@@ -48,7 +48,7 @@ describe('Native-Meld for Node.js projects', () => {
       writeFileSync(join(directory, 'nidpackage.json'), JSON.stringify({
         main: 'node_modules/naider/bin/naide-host.js',
         naide: { entry: 'discord-bot.naide' },
-        dependencies: { naider: '^2.0.6', 'fixture-upper': '^1.0.0' },
+        dependencies: { naider: '^2.0.7', 'fixture-upper': '^1.0.0' },
       }));
       writeFileSync(join(directory, 'discord-bot.naide'), [
         'use upper from "fixture-upper"',
@@ -196,7 +196,7 @@ describe('hosted Discord bot starter', () => {
 
     assert.equal(manifest.main, 'node_modules/naider/bin/naide-host.js');
     assert.equal(manifest.naide.entry, 'discord-bot.naide');
-    assert.equal(manifest.dependencies.naider, '^2.0.6');
+    assert.equal(manifest.dependencies.naider, '^2.0.7');
     assert.ok(manifest.dependencies['discord.js']);
 
     const check = spawnSync(process.execPath, [cliPath, 'check', join(example, 'discord-bot.naide')], {
