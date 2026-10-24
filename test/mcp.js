@@ -7,41 +7,23 @@ import { fileURLToPath } from 'node:url';
 const serverPath = fileURLToPath(new URL('../mcp/server.js', import.meta.url));
 const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
-function frame(message) {
-  const body = Buffer.from(JSON.stringify(message), 'utf8');
-  return Buffer.concat([
-    Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'),
-    body,
-  ]);
+function messageLine(message) {
+  return Buffer.from(`${JSON.stringify(message)}\n`, 'utf8');
 }
 
-function parseFrames(buffer) {
-  const messages = [];
-  let offset = 0;
-  while (offset < buffer.length) {
-    const headerEnd = buffer.indexOf('\r\n\r\n', offset, 'ascii');
-    assert.notEqual(headerEnd, -1, 'response should contain a complete MCP header');
-    const header = buffer.toString('ascii', offset, headerEnd);
-    const length = Number(header.match(/Content-Length: (\d+)/i)?.[1]);
-    assert.ok(Number.isSafeInteger(length), 'response should include a valid Content-Length');
-    const start = headerEnd + 4;
-    const end = start + length;
-    assert.ok(end <= buffer.length, 'response should contain a complete MCP body');
-    messages.push(JSON.parse(buffer.toString('utf8', start, end)));
-    offset = end;
-  }
-  return messages;
+function parseMessages(buffer) {
+  return buffer.toString('utf8').trim().split('\n').map(line => JSON.parse(line));
 }
 
 describe('NAIDE MCP server', () => {
-  it('offers project tools, prompts, and resources and frames Unicode by UTF-8 bytes', () => {
+  it('uses newline-delimited JSON and offers project tools, prompts, and resources', () => {
     const input = Buffer.concat([
-      frame({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
-      frame({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
-      frame({ jsonrpc: '2.0', id: 3, method: 'prompts/list' }),
-      frame({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'naide://spec' } }),
-      frame({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'naide_package_managers', arguments: {} } }),
-      frame({
+      messageLine({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+      messageLine({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+      messageLine({ jsonrpc: '2.0', id: 3, method: 'prompts/list' }),
+      messageLine({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'naide://spec' } }),
+      messageLine({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'naide_package_managers', arguments: {} } }),
+      messageLine({
         jsonrpc: '2.0',
         id: 6,
         method: 'tools/call',
@@ -50,19 +32,19 @@ describe('NAIDE MCP server', () => {
           arguments: { code: 'log "CHECK_MUST_NOT_EXECUTE"\nint count = 1\n', sourceFile: 'app.naide' },
         },
       }),
-      frame({
+      messageLine({
         jsonrpc: '2.0',
         id: 7,
         method: 'tools/call',
         params: { name: 'naide_check', arguments: { code: 'int count = "wrong"\n' } },
       }),
-      frame({
+      messageLine({
         jsonrpc: '2.0',
         id: 8,
         method: 'tools/call',
         params: { name: 'naide_run', arguments: { code: 'log uuid()\n' } },
       }),
-      frame({
+      messageLine({
         jsonrpc: '2.0',
         id: 9,
         method: 'tools/call',
@@ -72,7 +54,7 @@ describe('NAIDE MCP server', () => {
     const result = spawnSync(process.execPath, [serverPath], { input, encoding: 'buffer' });
 
     assert.equal(result.status, 0, result.stderr.toString('utf8'));
-    const messages = parseFrames(result.stdout);
+    const messages = parseMessages(result.stdout);
     const initialized = messages.find(message => message.id === 1);
     const tools = messages.find(message => message.id === 2).result.tools;
     const prompts = messages.find(message => message.id === 3).result.prompts;
@@ -107,22 +89,22 @@ describe('NAIDE MCP server', () => {
     assert.ok(generated.content[0].text.length > 0);
   });
 
-  it('rejects oversized message bodies', () => {
+  it('rejects oversized messages', () => {
     const result = spawnSync(
       process.execPath,
       [serverPath],
-      { input: 'Content-Length: 33554433\r\n\r\n', encoding: 'utf8' },
+      { input: `${'x'.repeat(32 * 1024 * 1024 + 1)}\n`, encoding: 'utf8' },
     );
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /rejected oversized or invalid message body/);
+    assert.match(result.stderr, /rejected oversized message/);
   });
 
   it('returns a JSON-RPC error for non-object messages', () => {
     const result = spawnSync(process.execPath, [serverPath], {
-      input: frame(null),
+      input: messageLine(null),
       encoding: 'buffer',
     });
     assert.equal(result.status, 0);
-    assert.deepEqual(parseFrames(result.stdout)[0].error.code, -32600);
+    assert.deepEqual(parseMessages(result.stdout)[0].error.code, -32600);
   });
 });

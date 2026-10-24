@@ -38,10 +38,7 @@ async function getCompiler() {
 }
 
 function send(msg) {
-  const json = JSON.stringify(msg);
-  const buf = Buffer.from(json, 'utf-8');
-  process.stdout.write(`Content-Length: ${buf.length}\r\n\r\n`);
-  process.stdout.write(buf);
+  process.stdout.write(`${JSON.stringify(msg)}\n`);
 }
 
 function respond(id, result) {
@@ -429,33 +426,21 @@ let buffer = Buffer.alloc(0);
 process.stdin.on('data', (chunk) => {
   buffer = Buffer.concat([buffer, chunk]);
   while (true) {
-    const headerEnd = buffer.indexOf('\r\n\r\n');
-    if (headerEnd === -1) {
-      if (buffer.length > 8192) {
-        process.stderr.write('MCP error: rejected oversized message header\n');
+    const lineEnd = buffer.indexOf('\n');
+    if (lineEnd === -1) {
+      if (buffer.length > 32 * 1024 * 1024) {
+        process.stderr.write('MCP error: rejected oversized message\n');
         process.exit(1);
       }
       break;
     }
-    if (headerEnd > 8192) {
-      process.stderr.write('MCP error: rejected oversized message header\n');
+    if (lineEnd > 32 * 1024 * 1024) {
+      process.stderr.write('MCP error: rejected oversized message\n');
       process.exit(1);
     }
-    const header = buffer.toString('ascii', 0, headerEnd);
-    const match = header.match(/(?:^|\r\n)Content-Length:\s*(\d+)(?:\r\n|$)/i);
-    if (!match) {
-      process.stderr.write('MCP error: missing Content-Length header\n');
-      process.exit(1);
-    }
-    const len = Number(match[1]);
-    if (!Number.isSafeInteger(len) || len > 32 * 1024 * 1024) {
-      process.stderr.write('MCP error: rejected oversized or invalid message body\n');
-      process.exit(1);
-    }
-    const bodyStart = headerEnd + 4;
-    if (buffer.length < bodyStart + len) break;
-    const body = buffer.toString('utf8', bodyStart, bodyStart + len);
-    buffer = buffer.slice(bodyStart + len);
+    const body = buffer.toString('utf8', 0, lineEnd).replace(/\r$/, '');
+    buffer = buffer.slice(lineEnd + 1);
+    if (!body) continue;
     try {
       const message = JSON.parse(body);
       if (!message || typeof message !== 'object' || Array.isArray(message)) {
