@@ -6,7 +6,7 @@
     "entry": "discord-bot.naide"
   },
   "dependencies": {
-    "naider": "^2.0.5",
+    "naider": "^2.0.6",
     "discord.js": "^14.27.0"
   }
 }
