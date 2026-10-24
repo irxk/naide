@@ -91,6 +91,7 @@ naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
 naide build [dir] [outdir]    # Transpile all files to JavaScript
+naide mws discord [dir]       # Create an MWS-ready Discord bot project
 naide check <files...>        # Type-check without running
 naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
@@ -188,7 +189,7 @@ project.files.forEach(f => console.log(f.path));
 
 ```
 $ naide
-NAIDE REPL v2.0.0 — type NAIDE code, see JavaScript output
+NAIDE REPL v2.0.2 — type NAIDE code, see JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -743,7 +744,7 @@ Built-in `bot` syntax with multi-platform support — events, message handling, 
 
 ```python
 # Discord (default)
-bot myBot token DISCORD_TOKEN:
+bot myBot token process.env.BOT_TOKEN:
   on "ready":
     log "Bot is online!"
   on "message" (msg):
@@ -776,6 +777,18 @@ Compiles to the right SDK per platform and per target:
 | Slack    | @slack/bolt   | slack_bolt |
 | Telegram | node-telegram-bot-api | python-telegram-bot |
 | LINE     | @line/bot-sdk | linebot |
+
+### Run a NAIDE Discord bot on MWS
+
+Generate a ready-to-upload Node.js project:
+
+```bash
+naide mws discord ./my-discord-bot
+```
+
+The folder contains `bot.naide` (the bot source and actual entry module), a tiny `index.js` bootstrap that registers Native-Meld and imports that source, a `package.json` with NAIDE's runtime loader and `discord.js`, and `MWS.md` with deployment steps. The `npm start` script runs Node on the bootstrap; it does not compile or generate JavaScript for the bot. Upload the project files to [MWS](https://cloud.puratya.com/), choose its Node.js Discord bot runtime, set `BOT_TOKEN` as a secret environment variable in the MWS dashboard, and start the bot with `npm start`. The starter registers a `/ping` slash command; invite it with the `bot` and `applications.commands` scopes. Optionally set `DISCORD_GUILD_ID` to your test server ID so Discord updates the command quickly; otherwise global commands can take time to propagate. No privileged Discord intent is needed for the starter.
+
+Edit `bot.naide` and upload/redeploy it; the Native-Meld Node loader compiles it when Node starts. If you add an `on "message"` handler, the bot requests the privileged Message Content intent; enable it in the Discord Developer Portal. Never place a bot token in source code or commit it. MWS does not need a NAIDE-specific runtime installed globally: the project's `naider` npm dependency provides the loader.
 
 ## Page Generation (HTML)
 
@@ -1351,6 +1364,48 @@ server app port 3000:
 ```
 
 Build all files with `naide build`, which compiles every `.naide` file to `.mjs`.
+
+### Native-Meld: use NAIDE inside a Node.js project
+
+Native-Meld lets an ES module import a `.naide` file directly during development, and lets a NAIDE module import Node.js built-ins, installed npm packages, and existing JavaScript modules:
+
+```js
+// app.js (in a package with "type": "module", or rename this to app.mjs)
+import { display } from './display.naide';
+
+console.log(display('./README.md'));
+```
+
+```naide
+# display.naide
+use { basename } from "node:path"
+
+pub fn display(str path) -> str:
+  ret "File: " + basename(path)
+```
+
+Install NAIDE in the host project, then start Node with the development loader:
+
+```bash
+npm install naider
+node --enable-source-maps --loader naider/loader app.js
+```
+
+The loader compiles `.naide` modules as Node.js ES modules and preserves their imports. Relative `.naide` imports must include the `.naide` extension. `pub fn` and `pub` variables become standard named ESM exports. Node.js CommonJS `require()` integration is not part of this first release; use an ESM host (or `import()` from CommonJS).
+
+For production, compile the `.naide` files and let Node run the resulting JavaScript without a loader:
+
+```bash
+naide build .
+```
+
+Then point the host's import at the generated module:
+
+```js
+import { display } from './display.mjs';
+```
+
+Generated modules that only use Node.js built-ins and npm/JavaScript modules have no NAIDE runtime dependency. When generated code uses NAIDE runtime helpers, keep `naider` installed in the host project so its `naider/runtime` import can resolve. The loader includes source maps; `--enable-source-maps` maps runtime stack traces back to `.naide` lines.
 
 ## Full Example
 

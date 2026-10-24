@@ -2,7 +2,7 @@
   "name": "naide-lang",
   "displayName": "NAIDE Language",
   "description": "Syntax highlighting, diagnostics, and autocomplete for NAIDE (.naide)",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "publisher": "irxk",
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages"],

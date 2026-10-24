@@ -102,7 +102,13 @@ function resolveSchemaInheritance(ast) {
   return ast;
 }
 
-export function compile(source, { runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
+export function compile(source, {
+  runtimePath,
+  sourceFile,
+  typeCheck = false,
+  target = 'node',
+  preserveNaideImports = false,
+} = {}) {
   let processedSource = source;
   if (processedSource.includes('~~')) {
     processedSource = expandDirectives(processedSource).source;
@@ -119,7 +125,7 @@ export function compile(source, { runtimePath, sourceFile, typeCheck = false, ta
       typeErrors = checker.check(ast);
     }
 
-    const generator = new Generator({ runtimePath, sourceFile });
+    const generator = new Generator({ runtimePath, sourceFile, preserveNaideImports });
     const js = generator.generate(ast);
     return { js, ast, tokens, sourceMap: generator.sourceMap, typeErrors };
   } catch (e) {

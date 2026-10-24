@@ -19,6 +19,7 @@ export class Generator {
     this.sourceMap = [];
     this.currentSourceLine = 0;
     this.sourceFile = options.sourceFile || null;
+    this.preserveNaideImports = options.preserveNaideImports || false;
   }
 
   generate(ast) {
@@ -189,7 +190,9 @@ export class Generator {
   }
 
   rewriteNaideImport(source) {
-    return source.replace(/\.naide(['"])/g, '.mjs$1');
+    return this.preserveNaideImports
+      ? source
+      : source.replace(/\.naide(['"])/g, '.mjs$1');
   }
 
   visitFunction(node) {
@@ -519,15 +522,22 @@ export class Generator {
   visitDiscordBot(node, tokenExpr) {
     this.emit(`import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js';`);
     this.emitRaw('');
+    const events = node.handlers.filter(h => h.type === 'BotEvent');
+    const slashCmds = node.handlers.filter(h => h.type === 'BotSlashCmd');
+    const needsMessageIntent = events.some(event => {
+      const eventName = event.event.raw || event.event.parts?.map(part => part.value).join('');
+      return eventName === 'message' || eventName === 'messageCreate';
+    });
+    const intents = ['GatewayIntentBits.Guilds'];
+    if (needsMessageIntent) {
+      intents.push('GatewayIntentBits.GuildMessages', 'GatewayIntentBits.MessageContent');
+    }
     this.emit(`const ${node.name} = new Client({`);
     this.indent++;
-    this.emit(`intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]`);
+    this.emit(`intents: [${intents.join(', ')}]`);
     this.indent--;
     this.emit(`});`);
     this.emitRaw('');
-
-    const events = node.handlers.filter(h => h.type === 'BotEvent');
-    const slashCmds = node.handlers.filter(h => h.type === 'BotSlashCmd');
 
     for (const evt of events) {
       const evtName = evt.event.raw || evt.event.parts?.map(p => p.value).join('');
@@ -580,13 +590,32 @@ export class Generator {
       this.indent--;
       this.emit(`];`);
       this.emit(`const rest = new REST().setToken(${tokenExpr});`);
-      this.emit(`await rest.put(Routes.applicationCommands(${node.name}.user.id), { body: commands });`);
+      this.emit(`const commandRoute = process.env.DISCORD_GUILD_ID`);
+      this.indent++;
+      this.emit(`? Routes.applicationGuildCommands(${node.name}.user.id, process.env.DISCORD_GUILD_ID)`);
+      this.emit(`: Routes.applicationCommands(${node.name}.user.id);`);
+      this.indent--;
+      this.emit(`try {`);
+      this.indent++;
+      this.emit(`await rest.put(commandRoute, { body: commands });`);
+      this.emit(`console.log('Discord slash commands registered.');`);
+      this.indent--;
+      this.emit(`} catch (__error) {`);
+      this.indent++;
+      this.emit(`console.error('Discord slash command registration failed:', __error);`);
+      this.indent--;
+      this.emit(`}`);
       this.indent--;
       this.emit(`});`);
       this.emitRaw('');
     }
 
-    this.emit(`${node.name}.login(${tokenExpr});`);
+    this.emit(`${node.name}.login(${tokenExpr}).catch(__error => {`);
+    this.indent++;
+    this.emit(`console.error('Discord login failed:', __error);`);
+    this.emit(`process.exitCode = 1;`);
+    this.indent--;
+    this.emit(`});`);
     this.emitRaw('');
   }
 

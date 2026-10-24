@@ -922,9 +922,9 @@ export class Parser {
   }
 
   parseThrow() {
-    this.advance(); // throw
+    const tok = this.advance(); // throw
     const value = this.parseExpression();
-    return new ASTNode('Throw', { value });
+    return new ASTNode('Throw', { value }, tok.line);
   }
 
   parseDbStatement() {

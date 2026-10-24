@@ -325,7 +325,7 @@ async function handleMessage(msg) {
       respond(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {}, prompts: {}, resources: {} },
-        serverInfo: { name: 'naide-mcp', version: '2.0.0' }
+        serverInfo: { name: 'naide-mcp', version: '2.0.2' }
       });
       break;
 

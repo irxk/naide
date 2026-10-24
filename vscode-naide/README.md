@@ -24,7 +24,7 @@ Syntax highlighting and language support for **NAIDE** (`.naide`) files.
 cd vscode-naide
 npm install -g @vscode/vsce
 vsce package
-code --install-extension naide-lang-2.0.0.vsix
+code --install-extension naide-lang-2.0.2.vsix
 ```
 
 ### Manual

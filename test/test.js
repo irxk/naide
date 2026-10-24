@@ -1435,6 +1435,16 @@ describe('Runtime unit tests', () => {
     assert.ok(js.includes('setDescription("Says hello")'));
   });
 
+  it('requests only non-privileged intents for slash-only Discord bots', () => {
+    const slashOnly = transpile('bot myBot token process.env.BOT_TOKEN:\n  slash "ping" "Check the bot":\n    interaction.reply("Pong!")\n');
+    assert.ok(slashOnly.includes('intents: [GatewayIntentBits.Guilds]'));
+    assert.ok(!slashOnly.includes('GatewayIntentBits.MessageContent'));
+
+    const messageBot = transpile('bot myBot token process.env.BOT_TOKEN:\n  on "message" (msg):\n    msg.reply("Pong!")\n');
+    assert.ok(messageBot.includes('GatewayIntentBits.GuildMessages'));
+    assert.ok(messageBot.includes('GatewayIntentBits.MessageContent'));
+  });
+
   it('compileAsync Bun bot with events', async () => {
     const { compileAsync } = await import('../src/index.js');
     const src = 'bot myBot token "TEST_TOKEN":\n  on "ready":\n    log "Bot is online!"\n';

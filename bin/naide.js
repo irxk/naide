@@ -508,7 +508,7 @@ if (flags.expand && files.length > 0) {
 if (files[0] === 'vscode') {
   const os = await import('os');
   const extSrc = new URL('../vscode-naide', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
-  const extName = 'irxk.naide-lang-2.0.0';
+  const extName = 'irxk.naide-lang-2.0.2';
   const extDir = join(os.homedir(), '.vscode', 'extensions', extName);
 
   if (existsSync(extDir)) {
@@ -541,7 +541,7 @@ if (files[0] === 'vscode') {
 `);
   } catch (e) {
     console.error(`  Error: ${e.message}`);
-    console.log('\n  Manual install: copy vscode-naide/ to ~/.vscode/extensions/irxk.naide-lang-2.0.0/');
+    console.log('\n  Manual install: copy vscode-naide/ to ~/.vscode/extensions/irxk.naide-lang-2.0.2/');
     process.exit(1);
   }
   process.exit(0);
@@ -685,6 +685,77 @@ if (files[0] === 'fmt') {
       console.error(`  Error: ${file} — ${e.message}`);
     }
   }
+  process.exit(0);
+}
+
+if (files[0] === 'mws' && files[1] === 'discord') {
+  const dir = resolve(files[2] || './naide-mws-discord');
+  if (existsSync(dir)) {
+    const entries = readdirSync(dir);
+    if (entries.length > 0) {
+      console.error(`  Error: refusing to overwrite files in ${dir}. Choose an empty or new directory.`);
+      process.exit(1);
+    }
+  } else {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  const source = `bot myBot token process.env.BOT_TOKEN:
+  on "ready":
+    log "NAIDE bot is online!"
+  slash "ping" "Check whether the bot is online":
+    interaction.reply("Pong!")
+`;
+  compile(source, { sourceFile: resolve(dir, 'bot.naide') });
+  const projectPackage = {
+    name: basename(dir).toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'naide-discord-bot',
+    version: '1.0.0',
+    private: true,
+    type: 'module',
+    main: 'index.js',
+    engines: { node: '>=18.19.0' },
+    scripts: { start: 'node --enable-source-maps index.js' },
+    dependencies: { naider: `^${NAIDE_VERSION}`, 'discord.js': '^14.27.0' },
+  };
+  writeFileSync(resolve(dir, 'bot.naide'), source, { flag: 'wx' });
+  writeFileSync(resolve(dir, 'index.js'), `import { register } from 'node:module';
+
+register('naider/loader', import.meta.url);
+await import('./bot.naide');
+`, { flag: 'wx' });
+  writeFileSync(resolve(dir, 'package.json'), `${JSON.stringify(projectPackage, null, 2)}\n`, { flag: 'wx' });
+  writeFileSync(resolve(dir, '.gitignore'), 'node_modules/\n.env\n', { flag: 'wx' });
+  writeFileSync(resolve(dir, 'MWS.md'), `# NAIDE Discord bot for MWS
+
+This folder runs the NAIDE source file itself inside the Node.js host. The tiny \`index.js\` entry point registers NAIDE's \`naider/loader\` and imports \`bot.naide\`; it is a runtime bootstrap, not generated bot JavaScript.
+
+## Run locally
+
+\`\`\`powershell
+npm install
+$env:BOT_TOKEN = "your Discord bot token"
+npm start
+\`\`\`
+
+## Deploy on MWS
+
+1. In Discord Developer Portal, create an application and bot. Copy the bot token; never put it in either source file.
+2. Invite the bot to your server with the \`bot\` and \`applications.commands\` scopes and permission to send messages.
+3. Create a Node.js Discord bot on [MWS](https://cloud.puratya.com/) and upload \`bot.naide\`, \`index.js\`, and \`package.json\` (plus \`.gitignore\` if desired).
+4. Let MWS install dependencies from \`package.json\`. Set the secret environment variable \`BOT_TOKEN\` to the bot token in the MWS bot settings.
+5. Set the start command to \`npm start\` if MWS asks for one. The script starts Node, whose entry module registers the NAIDE loader and starts \`bot.naide\`.
+6. In Discord, run \`/ping\`; the bot should answer \`Pong!\`.
+
+Optionally set \`DISCORD_GUILD_ID\` to your test server's ID for near-immediate slash-command updates. If it is unset, commands are registered globally and Discord may take time to propagate them.
+
+The starter uses a slash command and does not request the privileged Message Content intent. If you add a NAIDE \`on "message"\` handler, Discord requires enabling Message Content Intent in the Developer Portal.
+
+Edit \`bot.naide\` and upload/redeploy it. MWS supplies the Node.js runtime; the installed Native-Meld loader compiles and runs the \`.naide\` file directly inside that runtime. No precompiled bot JS is generated.
+`, { flag: 'wx' });
+  console.log(`\n  Created a Native-Meld Discord bot project in ${dir}`);
+  console.log('  index.js registers Native-Meld and starts bot.naide directly; it is not compiled bot output.');
+  console.log('  Upload the project files, set BOT_TOKEN, then start with: npm start');
+  console.log('  See MWS.md for deployment and Discord Developer Portal instructions.');
   process.exit(0);
 }
 
@@ -1421,6 +1492,7 @@ if (flags.help) {
     naide ~~ "instruction"       Generate NAIDE code from instruction (no AI)
     naide gen "instruction"      Same as ~~ (alias)
     naide init [dir]             Create a new NAIDE project
+    naide mws discord [dir]      Create a Discord bot project for MWS hosting
     naide build [dir] [outdir]   Transpile all files to JavaScript
     naide check <files...>       Type-check without running
     naide repl                   Start interactive REPL
