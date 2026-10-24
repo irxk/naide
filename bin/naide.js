@@ -712,22 +712,25 @@ if (files[0] === 'mws' && files[1] === 'discord') {
     version: '1.0.0',
     private: true,
     type: 'module',
-    main: 'index.js',
+    main: 'node_modules/naider/bin/naide-host.js',
     engines: { node: '>=18.19.0' },
-    scripts: { start: 'node --enable-source-maps index.js' },
+    scripts: { start: 'node --enable-source-maps node_modules/naider/bin/naide-host.js' },
     dependencies: { naider: `^${NAIDE_VERSION}`, 'discord.js': '^14.27.0' },
   };
+  const hostedManifest = {
+    name: projectPackage.name,
+    version: projectPackage.version,
+    main: 'node_modules/naider/bin/naide-host.js',
+    naide: { entry: 'bot.naide' },
+    dependencies: projectPackage.dependencies,
+  };
   writeFileSync(resolve(dir, 'bot.naide'), source, { flag: 'wx' });
-  writeFileSync(resolve(dir, 'index.js'), `import { register } from 'node:module';
-
-register('naider/loader', import.meta.url);
-await import('./bot.naide');
-`, { flag: 'wx' });
   writeFileSync(resolve(dir, 'package.json'), `${JSON.stringify(projectPackage, null, 2)}\n`, { flag: 'wx' });
+  writeFileSync(resolve(dir, 'nidpackage.json'), `${JSON.stringify(hostedManifest, null, 2)}\n`, { flag: 'wx' });
   writeFileSync(resolve(dir, '.gitignore'), 'node_modules/\n.env\n', { flag: 'wx' });
   writeFileSync(resolve(dir, 'MWS.md'), `# NAIDE Discord bot for MWS
 
-This folder runs the NAIDE source file itself inside the Node.js host. The tiny \`index.js\` entry point registers NAIDE's \`naider/loader\` and imports \`bot.naide\`; it is a runtime bootstrap, not generated bot JavaScript.
+The NAIDE source is \`bot.naide\`. \`nidpackage.json\` declares its entry, the NAIDE host runner, and npm dependencies. The runner registers NAIDE's loader and imports the source; no JavaScript bootstrap is needed.
 
 ## Run locally
 
@@ -741,20 +744,21 @@ npm start
 
 1. In Discord Developer Portal, create an application and bot. Copy the bot token; never put it in either source file.
 2. Invite the bot to your server with the \`bot\` and \`applications.commands\` scopes and permission to send messages.
-3. Create a Node.js Discord bot on [MWS](https://cloud.puratya.com/) and upload \`bot.naide\`, \`index.js\`, and \`package.json\` (plus \`.gitignore\` if desired).
-4. Let MWS install dependencies from \`package.json\`. Set the secret environment variable \`BOT_TOKEN\` to the bot token in the MWS bot settings.
-5. Set the start command to \`npm start\` if MWS asks for one. The script starts Node, whose entry module registers the NAIDE loader and starts \`bot.naide\`.
+3. Create a Node.js Discord bot on [MWS](https://cloud.puratya.com/) and upload \`bot.naide\` and \`nidpackage.json\`.
+4. Let MWS install dependencies from \`nidpackage.json\`. Set the secret environment variable \`BOT_TOKEN\` to the bot token in the MWS bot settings.
+5. The two-file layout requires MWS to launch the manifest's \`main\`; if MWS does not honor that convention, select \`node_modules/naider/bin/naide-host.js\` as the startup file. Check the host's behavior before relying on automatic detection.
 6. In Discord, run \`/ping\`; the bot should answer \`Pong!\`.
 
 Optionally set \`DISCORD_GUILD_ID\` to your test server's ID for near-immediate slash-command updates. If it is unset, commands are registered globally and Discord may take time to propagate them.
 
 The starter uses a slash command and does not request the privileged Message Content intent. If you add a NAIDE \`on "message"\` handler, Discord requires enabling Message Content Intent in the Developer Portal.
 
-Edit \`bot.naide\` and upload/redeploy it. MWS supplies the Node.js runtime; the installed Native-Meld loader compiles and runs the \`.naide\` file directly inside that runtime. No precompiled bot JS is generated.
+Edit \`bot.naide\` and upload/redeploy it with \`nidpackage.json\`. The installed Native-Meld loader compiles and runs the \`.naide\` file directly inside the Node.js runtime. No precompiled bot JS is generated.
 `, { flag: 'wx' });
   console.log(`\n  Created a Native-Meld Discord bot project in ${dir}`);
-  console.log('  index.js registers Native-Meld and starts bot.naide directly; it is not compiled bot output.');
-  console.log('  Upload the project files, set BOT_TOKEN, then start with: npm start');
+  console.log('  The host runner registers Native-Meld and starts bot.naide directly; it is not compiled bot output.');
+  console.log('  Upload bot.naide and nidpackage.json to a host that honors the manifest, then set BOT_TOKEN.');
+  console.log('  For local use: npm install, set BOT_TOKEN, then run npm start.');
   console.log('  See MWS.md for deployment and Discord Developer Portal instructions.');
   process.exit(0);
 }

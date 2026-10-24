@@ -9,6 +9,90 @@ import { checkNaideSource, getDoctorReport, inspectProject, listPackageAdapters,
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const requireFromServer = createRequire(import.meta.url);
 const packageVersion = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf8')).version;
+const SPEC_PATH = resolve(__dirname, '..', 'SPEC.naide');
+const HOSTED_EXAMPLE_DIRECTORY = resolve(__dirname, '..', 'examples', 'mws-discord');
+
+const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/;
+const NPM_VERSION_RANGE = /^[0-9A-Za-z.*^~<>=|+ -]{1,100}$/;
+
+function validateNpmLibraries(libraries) {
+  if (!libraries || typeof libraries !== 'object' || Array.isArray(libraries)) {
+    return 'libraries must be an object mapping npm package names to version ranges.';
+  }
+  for (const [name, version] of Object.entries(libraries)) {
+    if (name === 'naider' || name === 'discord.js'
+      || !NPM_PACKAGE_NAME.test(name)
+      || typeof version !== 'string'
+      || !NPM_VERSION_RANGE.test(version)) {
+      return `Invalid or reserved npm dependency: ${name}`;
+    }
+  }
+  return null;
+}
+
+function createNidManifest(entry, dependencies = {}) {
+  return {
+    name: 'naide-hosted-app',
+    version: '1.0.0',
+    main: 'node_modules/naider/bin/naide-host.js',
+    naide: { entry },
+    dependencies: {
+      naider: `^${packageVersion}`,
+      ...dependencies,
+    },
+  };
+}
+
+function getAiGuide(topic) {
+  const spec = readFileSync(SPEC_PATH, 'utf8');
+  const headings = [...spec.matchAll(/^# ---- (.+?) ----$/gm)];
+  const specSections = headings.map((heading, index) => {
+    const start = heading.index + heading[0].length;
+    const end = headings[index + 1]?.index ?? spec.length;
+    return { title: heading[1], content: spec.slice(start, end).trim().slice(0, 8000) };
+  });
+  const selectedSections = topic
+    ? specSections.filter(section => section.title.toLowerCase().includes(topic.toLowerCase())).slice(0, 5)
+    : [];
+
+  return {
+    identity: 'NAIDE is a readable, typed, single-syntax language for people and AI, with a compiler, Node.js runtime integration, built-in application constructs, and editor/MCP tooling.',
+    strengths: [
+      'Readable indentation-based syntax with explicit types, inference via auto, and explicit mutability via mut.',
+      'One canonical .naide source can be checked, run, compiled, imported into Node.js, and used with npm dependencies.',
+      'Batteries-included constructs cover server routes, schemas, CRUD, authentication, validation, databases, AI, bots, scheduled tasks, and more; consult the spec before assuming a construct or backend is complete.',
+      'Native-Meld allows Node.js to load .naide modules while preserving Node built-ins and npm imports; hosted Node apps use nidpackage.json and naider/bin/naide-host.js as the package main.',
+      'The compiler has 15 output targets, but backend feature coverage differs. Treat CI smoke coverage as a baseline, not a guarantee of full feature parity.',
+      'Type checking and naide_check catch errors without executing project code; use them before runtime tests.',
+    ],
+    syntax: [
+      'Declare values with str/int/bool/float or auto; use mut to make reassignment explicit.',
+      'Use fn name(args) -> returnType: with indented body and ret for return.',
+      'Use if/elif/else, each item in items:, and async fn/await for familiar control flow.',
+      'Use use { readFile } from "node:fs/promises" for Node imports, and declare npm libraries in dependencies before importing them.',
+      'NAIDE uses indentation and colons for blocks; consult SPEC.naide rather than translating JavaScript syntax mechanically.',
+    ],
+    efficientWorkflow: [
+      'Call naide_context with a topic when you need feature or syntax guidance.',
+      'Read the matching SPEC.naide section or a relevant canonical example before writing unfamiliar constructs.',
+      'Write the smallest complete .naide implementation and use naide_check on it.',
+      'Use naide_compile to inspect generated code only when the host/runtime boundary needs diagnosis.',
+      'Use naide_run or naide_test only when execution is requested and the project is trusted.',
+    ],
+    hostedNode: {
+      manifest: 'nidpackage.json',
+      uploadFiles: ['the .naide entry file', 'nidpackage.json'],
+      main: 'node_modules/naider/bin/naide-host.js',
+      entryField: 'naide.entry',
+      dependenciesField: 'dependencies',
+      limitation: 'The host must install npm dependencies from nidpackage.json and launch its main entry. Hosts that hard-code node <file>.naide without using this main/runner contract must add NAIDE loader support themselves.',
+    },
+    mcpTools: TOOLS.map(tool => ({ name: tool.name, description: tool.description })),
+    specIndex: specSections.map(section => section.title),
+    ...(topic ? { requestedSpecSections: selectedSections } : {}),
+    ...(topic && selectedSections.length === 0 ? { topicNotFound: topic, hint: 'Use the naide://spec resource to search the complete language specification.' } : {}),
+  };
+}
 
 function resolveRunImport(specifier) {
   if (specifier.startsWith('.') || isAbsolute(specifier)) {
@@ -109,7 +193,7 @@ const TOOLS = [
   },
   {
     name: 'naide_mws_discord_template',
-    description: 'Return upload-ready MWS Discord bot files: NAIDE source, nidpackage.json, and the minimal Node.js loader bootstrap. Additional npm libraries can be supplied as package-name to version-range mappings.',
+    description: 'Return the two upload files for a hosted Node.js Discord bot: discord-bot.naide and nidpackage.json. The package manifest selects NAIDE’s installed host runner, so no JavaScript bootstrap file is uploaded. Add compatible npm packages through libraries.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -118,6 +202,32 @@ const TOOLS = [
           description: 'Optional additional npm dependencies, for example {"@discordjs/voice":"^0.19.0"}.',
           additionalProperties: { type: 'string' },
         },
+      },
+    },
+  },
+  {
+    name: 'naide_hosted_manifest',
+    description: 'Create a nidpackage.json for any hosted Node.js NAIDE application. It configures the NAIDE host runner as main, sets the .naide entry, and adds compatible npm dependencies.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        entry: { type: 'string', description: 'Relative .naide entry path, such as app.naide.' },
+        libraries: {
+          type: 'object',
+          description: 'Additional npm packages mapped to version ranges.',
+          additionalProperties: { type: 'string' },
+        },
+      },
+      required: ['entry'],
+    },
+  },
+  {
+    name: 'naide_context',
+    description: 'Fast, structured NAIDE language and workflow context for AI coding. Returns design strengths, feature index, safe workflow, hosted Node.js contract, and available MCP tools. Call before implementing unfamiliar NAIDE work.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'Optional topic filter matching NAIDE spec section headings, such as server, schema, async, bot, or type.' },
       },
     },
   },
@@ -272,40 +382,17 @@ async function handleToolCall(name, args) {
 
     case 'naide_mws_discord_template': {
       const libraries = args.libraries ?? {};
-      if (!libraries || typeof libraries !== 'object' || Array.isArray(libraries)) {
-        return { content: [{ type: 'text', text: 'libraries must be an object mapping npm package names to version ranges.' }], isError: true };
-      }
+      const invalidLibrary = validateNpmLibraries(libraries);
+      if (invalidLibrary) return { content: [{ type: 'text', text: invalidLibrary }], isError: true };
 
-      const dependencies = {
-        naider: '^2.0.3',
-        'discord.js': '^14.27.0',
-      };
-      for (const [name, version] of Object.entries(libraries)) {
-        if (name === 'naider' || name === 'discord.js'
-          || !/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/.test(name)
-          || typeof version !== 'string'
-          || version.length === 0
-          || version.length > 100
-          || !/^[0-9A-Za-z.*^~<>=|+ -]+$/.test(version)) {
-          return { content: [{ type: 'text', text: `Invalid npm dependency: ${name}` }], isError: true };
-        }
-        dependencies[name] = version;
-      }
-
-      const exampleDirectory = resolve(__dirname, '..', 'examples', 'mws-discord');
+      const dependencies = { 'discord.js': '^14.27.0', ...libraries };
+      const exampleDirectory = HOSTED_EXAMPLE_DIRECTORY;
       const files = [
         { path: 'discord-bot.naide', content: readFileSync(resolve(exampleDirectory, 'discord-bot.naide'), 'utf8') },
         {
           path: 'nidpackage.json',
-          content: `${JSON.stringify({
-            name: 'naide-discord-bot',
-            version: '1.0.0',
-            type: 'module',
-            main: 'index.js',
-            dependencies,
-          }, null, 2)}\n`,
+          content: `${JSON.stringify(createNidManifest('discord-bot.naide', dependencies), null, 2)}\n`,
         },
-        { path: 'index.js', content: readFileSync(resolve(exampleDirectory, 'index.js'), 'utf8') },
       ];
       return {
         content: [{
@@ -313,13 +400,41 @@ async function handleToolCall(name, args) {
           text: JSON.stringify({
             files,
             mws: {
-              startupFile: 'index.js',
-              startAction: 'Use the MWS Start button after dependency installation.',
+              startupFile: 'node_modules/naider/bin/naide-host.js (set nidpackage.json main to this so the host can auto-detect it)',
+              startAction: 'Let MWS install nidpackage.json dependencies, then press Start.',
               botToken: 'Set BOT_TOKEN as a secret environment variable in MWS.',
             },
-            limitation: 'Current MWS Node.js startup does not load NAIDE syntax from a raw .naide entry. The third, tiny index.js bootstrap is required until MWS adds a native NAIDE loader integration.',
+            limitation: 'This two-file layout depends on the host installing dependencies from nidpackage.json and launching its main field. Hosts that ignore that manifest contract must configure the NAIDE host runner as their startup file.',
           }, null, 2),
         }],
+      };
+    }
+
+    case 'naide_hosted_manifest': {
+      const entry = args.entry;
+      if (typeof entry !== 'string' || !/^(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))(?!\/)(?![A-Za-z]:)[A-Za-z0-9._/-]+\.naide$/.test(entry)) {
+        return { content: [{ type: 'text', text: 'entry must be a relative .naide file path inside the project.' }], isError: true };
+      }
+      const libraries = args.libraries ?? {};
+      const invalidLibrary = validateNpmLibraries(libraries);
+      if (invalidLibrary) return { content: [{ type: 'text', text: invalidLibrary }], isError: true };
+      const manifest = createNidManifest(entry, libraries);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            file: { path: 'nidpackage.json', content: `${JSON.stringify(manifest, null, 2)}\n` },
+            run: 'The host installs dependencies from nidpackage.json and launches its main field. This runs the selected .naide file through the NAIDE host runner.',
+            compatibility: 'The host must honor nidpackage.json dependencies and main. Otherwise, set node_modules/naider/bin/naide-host.js as its startup file explicitly.',
+          }, null, 2),
+        }],
+      };
+    }
+
+    case 'naide_context': {
+      const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
+      return {
+        content: [{ type: 'text', text: JSON.stringify(getAiGuide(topic || undefined), null, 2) }],
       };
     }
 
@@ -412,7 +527,8 @@ async function handleMessage(msg) {
           { name: 'verify_changes_ja', description: 'AIが変更したNAIDEコードを実行せずに検査する。' },
           { name: 'secure_service_ja', description: '認証と安全な初期設定を備えたサービスを設計する。' },
           { name: 'polyglot_dependency_ja', description: '他言語パッケージの導入方法と明示的な連携方法を検討する。' },
-          { name: 'mws_discord_ja', description: 'MWSでNAIDE Discord Botにnpm依存を追加して実行する。' },
+          { name: 'naide_coding_ja', description: 'NAIDEの仕様と強みを踏まえ、実装・確認を高速に進める。' },
+          { name: 'mws_discord_ja', description: 'MWSでNAIDE Discord Botを2ファイル構成で実行する。' },
         ],
       });
       break;
@@ -427,7 +543,8 @@ async function handleMessage(msg) {
         verify_changes_ja: '依頼されたNAIDEの変更を確認し、変更した各.naideコードにはnaide_check、プロジェクトにはnaide_verifyを使ってください。これらはプロジェクトコードを実行しません。診断を説明し、依頼の範囲内だけ修正してください。明示的にコードやテストの実行を求められない限り、naide_runやnaide_testは使わないでください。',
         secure_service_ja: '認証が必要なルート、入力検証、環境変数での秘密情報管理、localhostへの開発用バインドを含むNAIDEサービスを設計し、日本語で検証手順も示してください。根拠なく安全性を断言しないでください。',
         polyglot_dependency_ja: 'この依存パッケージをNAIDEプロジェクトで使う方法を日本語で提案してください。言語と標準パッケージマネージャーを特定し、対応していればnaide pkg addを案内してください。異なる言語間の直接呼び出しを約束せず、プロセス・HTTP・FFI・生成コードなど明示的な境界を選んでください。',
-        mws_discord_ja: 'MWSでNAIDE製Discord Botを作成してください。まずnaide_mws_discord_templateを呼び出し、返されたdiscord-bot.naide、nidpackage.json、index.jsの3ファイルを作成してください。追加npmライブラリはnidpackage.jsonのdependenciesに追加し、.naideからNode/npmモジュールとしてimportしてください。MWSの起動ファイルはindex.jsにし、起動ボタンで実行します。現在のMWS Node起動では.naideを直接ロードできないため、index.jsを省略できると説明してはいけません。作成後discord-bot.naideをnaide_checkで確認し、BOT_TOKENはソースではなくMWSの秘密環境変数に設定してください。',
+        naide_coding_ja: 'まずnaide_contextを呼び、必要に応じてtopicで仕様を絞り込んでください。NAIDEの簡潔な構文、型検査、Node/npm連携、組み込み機能を活用しつつ、仕様や実装状況を確認せずに機能対応を断言しないでください。小さく読みやすい.naide実装を作り、naide_checkで検査して診断を修正してください。実行やテストはユーザーが依頼した場合に行い、コンパイルターゲット間の機能差も明示してください。',
+        mws_discord_ja: 'MWSでNAIDE製Discord Botを作成してください。まずnaide_mws_discord_templateを呼び出し、返されたdiscord-bot.naideとnidpackage.jsonの2ファイルを作成してください。追加npmライブラリはnidpackage.jsonのdependenciesに追加し、.naideからNode/npmモジュールとしてimportしてください。manifestのmainはnode_modules/naider/bin/naide-host.js、naide.entryはdiscord-bot.naideです。MWSがnidpackage.jsonから依存をインストールしmainを実行するか確認してください。そうしない場合は起動ファイルにNAIDE host runnerを設定します。作成後naide_checkで確認し、BOT_TOKENはソースではなくMWSの秘密環境変数に設定してください。',
       };
       const prompt = prompts[msg.params?.name];
       if (!prompt) {
@@ -442,6 +559,7 @@ async function handleMessage(msg) {
       respond(msg.id, {
         resources: [
           { uri: 'naide://spec', name: 'NAIDE language specification', mimeType: 'text/plain', description: 'Canonical NAIDE syntax and language reference.' },
+          { uri: 'naide://ai-guide', name: 'NAIDE AI coding guide', mimeType: 'application/json', description: 'AI-oriented overview of NAIDE strengths, idioms, feature index, hosted Node.js setup, and MCP workflow.' },
           { uri: 'naide://package-ecosystems', name: 'Native package ecosystems', mimeType: 'application/json', description: 'Supported NAIDE package manager adapters and interoperability guidance.' },
           { uri: 'naide://project', name: 'Current project diagnostics', mimeType: 'application/json', description: 'A read-only summary of project setup in the server working directory.' },
         ],
@@ -454,6 +572,9 @@ async function handleMessage(msg) {
       let mimeType = 'text/plain';
       if (uri === 'naide://spec') {
         text = readFileSync(resolve(__dirname, '..', 'SPEC.naide'), 'utf-8');
+      } else if (uri === 'naide://ai-guide') {
+        mimeType = 'application/json';
+        text = JSON.stringify(getAiGuide(), null, 2);
       } else if (uri === 'naide://package-ecosystems') {
         mimeType = 'application/json';
         text = JSON.stringify({

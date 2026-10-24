@@ -1,17 +1,19 @@
 {
   "name": "naider",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "NAIDE is a readable, practical programming language with a single syntax, a compiler, type checking, and batteries-included development tools.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
     "./runtime": "./src/runtime.js",
     "./loader": "./src/loader.js",
-    "./register": "./src/register.js"
+    "./register": "./src/register.js",
+    "./host": "./src/host.js"
   },
   "bin": {
     "naide": "bin/naide.js",
-    "naide-mcp": "mcp/server.js"
+    "naide-mcp": "mcp/server.js",
+    "naide-host": "bin/naide-host.js"
   },
   "type": "module",
   "files": [
