@@ -91,7 +91,6 @@ naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
 naide build [dir] [outdir]    # Transpile all files to JavaScript
-naide mws discord [dir]       # Create an MWS-ready Discord bot project
 naide check <files...>        # Type-check without running
 naide fmt <files...>          # Format NAIDE files
 naide lsp                     # Start Language Server (LSP)
@@ -780,15 +779,34 @@ Compiles to the right SDK per platform and per target:
 
 ### Run a NAIDE Discord bot on MWS
 
-Generate a ready-to-upload Node.js project:
+MWS currently starts the selected entry file as ordinary Node.js code. Until MWS adds native NAIDE loader support, upload these three files: `discord-bot.naide`, `nidpackage.json`, and the small `index.js` bootstrap. In MWS, select `index.js` as the startup file (or make it the detected entry point) and use the Start button.
 
-```bash
-naide mws discord ./my-discord-bot
+```json
+{
+  "name": "naide-discord-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "naider": "^2.0.3",
+    "discord.js": "^14.27.0"
+  }
+}
 ```
 
-The folder contains `bot.naide` (the bot source and actual entry module), a tiny `index.js` bootstrap that registers Native-Meld and imports that source, a `package.json` with NAIDE's runtime loader and `discord.js`, and `MWS.md` with deployment steps. The `npm start` script runs Node on the bootstrap; it does not compile or generate JavaScript for the bot. Upload the project files to [MWS](https://cloud.puratya.com/), choose its Node.js Discord bot runtime, set `BOT_TOKEN` as a secret environment variable in the MWS dashboard, and start the bot with `npm start`. The starter registers a `/ping` slash command; invite it with the `bot` and `applications.commands` scopes. Optionally set `DISCORD_GUILD_ID` to your test server ID so Discord updates the command quickly; otherwise global commands can take time to propagate. No privileged Discord intent is needed for the starter.
+Save this manifest as `nidpackage.json`. Its dependencies tell MWS to install the NAIDE loader and `discord.js`. The bootstrap registers the loader before importing the NAIDE entry file:
 
-Edit `bot.naide` and upload/redeploy it; the Native-Meld Node loader compiles it when Node starts. If you add an `on "message"` handler, the bot requests the privileged Message Content intent; enable it in the Discord Developer Portal. Never place a bot token in source code or commit it. MWS does not need a NAIDE-specific runtime installed globally: the project's `naider` npm dependency provides the loader.
+```js
+// index.js
+import { register } from 'node:module';
+
+register('naider/loader', import.meta.url);
+await import('./discord-bot.naide');
+```
+
+The `.naide` file remains the bot's source; `index.js` only connects it to Node's module loader. In the MWS settings, set the startup file to `index.js` if automatic detection does not choose it. Set `BOT_TOKEN` as a secret environment variable in the MWS dashboard; never put it in source code or commit it. For slash commands, invite the bot with the `bot` and `applications.commands` scopes. If you add an `on "message"` handler, enable the privileged Message Content intent in the Discord Developer Portal.
+
+The exact two-file setup (only `.naide` plus `nidpackage.json`) requires MWS itself to start `.naide` with `naider/register`; a standard Node.js launch cannot load NAIDE syntax without that hook.
 
 ## Page Generation (HTML)
 
@@ -1367,7 +1385,13 @@ Build all files with `naide build`, which compiles every `.naide` file to `.mjs`
 
 ### Native-Meld: use NAIDE inside a Node.js project
 
-Native-Meld lets an ES module import a `.naide` file directly during development, and lets a NAIDE module import Node.js built-ins, installed npm packages, and existing JavaScript modules:
+Native-Meld lets Node.js execute a `.naide` entry file directly, lets an ES module import a `.naide` file, and lets a NAIDE module import Node.js built-ins, installed npm packages, and existing JavaScript modules:
+
+```bash
+node --enable-source-maps --import naider/register discord_bot.naide
+```
+
+Install `naider` in the Node.js project first. The `--import naider/register` hook registers the loader before Node loads the entry file; Node.js 18.19.0 or newer is required.
 
 ```js
 // app.js (in a package with "type": "module", or rename this to app.mjs)
@@ -1634,7 +1658,7 @@ This is package-manager interoperability, **not** automatic cross-language linki
 
 ## MCP Server
 
-`naide-mcp` communicates over stdio and provides tools for compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. The `verify_changes` prompt (also available in Japanese) guides agents to check changed source and the project without running code. It also exposes read-only resources (`naide://spec`, `naide://package-ecosystems`, `naide://project`).
+`naide-mcp` communicates over stdio and provides tools for compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. The `naide_mws_discord_template` tool returns an MWS Discord Bot source, `nidpackage.json`, and the required loader bootstrap; pass additional compatible npm packages through its `libraries` argument. The `mws_discord_ja` prompt guides agents through creating and checking those files. Current MWS Node startup cannot load `.naide` directly, so the bootstrap is required until MWS adds NAIDE loader support. It also exposes read-only resources (`naide://spec`, `naide://package-ecosystems`, `naide://project`).
 
 For VS Code, after installing `naider` in a location on `PATH`, add this to `.vscode/mcp.json`:
 

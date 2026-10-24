@@ -21,6 +21,7 @@ describe('NAIDE MCP server', () => {
       messageLine({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
       messageLine({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
       messageLine({ jsonrpc: '2.0', id: 3, method: 'prompts/list' }),
+      messageLine({ jsonrpc: '2.0', id: 11, method: 'prompts/get', params: { name: 'mws_discord_ja' } }),
       messageLine({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'naide://spec' } }),
       messageLine({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'naide_package_managers', arguments: {} } }),
       messageLine({
@@ -50,6 +51,15 @@ describe('NAIDE MCP server', () => {
         method: 'tools/call',
         params: { name: 'naide_generate', arguments: { instruction: 'REST API for users with auth' } },
       }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/call',
+        params: {
+          name: 'naide_mws_discord_template',
+          arguments: { libraries: { '@discordjs/voice': '^0.19.0' } },
+        },
+      }),
     ]);
     const result = spawnSync(process.execPath, [serverPath], { input, encoding: 'buffer' });
 
@@ -58,6 +68,7 @@ describe('NAIDE MCP server', () => {
     const initialized = messages.find(message => message.id === 1);
     const tools = messages.find(message => message.id === 2).result.tools;
     const prompts = messages.find(message => message.id === 3).result.prompts;
+    const mwsPrompt = messages.find(message => message.id === 11).result;
     const spec = messages.find(message => message.id === 4).result.contents[0].text;
     const packageInfo = messages.find(message => message.id === 5).result.content[0].text;
     const validCheck = messages.find(message => message.id === 6).result;
@@ -74,6 +85,7 @@ describe('NAIDE MCP server', () => {
     assert.ok(tools.some(tool => tool.name === 'naide_doctor'));
     assert.ok(tools.some(tool => tool.name === 'naide_verify'));
     assert.ok(tools.some(tool => tool.name === 'naide_test'));
+    assert.ok(tools.some(tool => tool.name === 'naide_mws_discord_template'));
     assert.ok(prompts.some(prompt => prompt.name === 'polyglot_dependency'));
     assert.ok(prompts.some(prompt => prompt.name === 'verify_changes_ja'));
     assert.match(spec, /人間とAI/);
@@ -87,6 +99,17 @@ describe('NAIDE MCP server', () => {
     const generated = messages.find(message => message.id === 9).result;
     assert.equal(generated.isError, undefined);
     assert.ok(generated.content[0].text.length > 0);
+    assert.ok(prompts.some(prompt => prompt.name === 'mws_discord_ja'));
+    assert.match(mwsPrompt.messages[0].content.text, /index\.js/);
+    const mwsTemplate = JSON.parse(messages.find(message => message.id === 10).result.content[0].text);
+    assert.deepEqual(mwsTemplate.files.map(file => file.path), [
+      'discord-bot.naide',
+      'nidpackage.json',
+      'index.js',
+    ]);
+    assert.equal(JSON.parse(mwsTemplate.files[1].content).dependencies['@discordjs/voice'], '^0.19.0');
+    assert.equal(mwsTemplate.mws.startupFile, 'index.js');
+    assert.match(mwsTemplate.limitation, /raw \.naide entry/);
   });
 
   it('rejects oversized messages', () => {

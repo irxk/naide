@@ -766,8 +766,8 @@ if (files[0] === 'init') {
 
   const packagePath = resolve(dir, 'package.json');
   const defaultScripts = {
-    start: 'node -r dotenv/config ./node_modules/naider/bin/naide.js app.naide',
-    dev: 'node -r dotenv/config ./node_modules/naider/bin/naide.js -w app.naide',
+    start: 'node -r dotenv/config --enable-source-maps --import naider/register app.naide',
+    dev: 'node -r dotenv/config --watch --enable-source-maps --import naider/register app.naide',
     check: 'naide check app.naide',
     test: 'node --test',
     build: 'naide --emit app.naide -o dist/app.mjs',

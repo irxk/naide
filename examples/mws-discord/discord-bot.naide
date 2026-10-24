@@ -1,0 +1,5 @@
+bot myBot token process.env.BOT_TOKEN:
+  on "ready":
+    log "NAIDE bot is online!"
+  slash "ping" "Check whether the bot is online":
+    interaction.reply("Pong!")

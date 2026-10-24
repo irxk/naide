@@ -1,0 +1,10 @@
+{
+  "name": "naide-discord-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "naider": "^2.0.3",
+    "discord.js": "^14.27.0"
+  }
+}

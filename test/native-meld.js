@@ -33,6 +33,26 @@ function makeProject() {
 }
 
 describe('Native-Meld for Node.js projects', () => {
+  it('runs a .naide entry file directly with the package register hook', () => {
+    const directory = makeProject();
+    try {
+      symlinkSync(root, join(directory, 'node_modules', 'naider'), 'junction');
+      writeFileSync(join(directory, 'discord_bot.naide'), 'log "DIRECT_NAIDE_ENTRY"\n');
+
+      const result = spawnSync(process.execPath, [
+        '--enable-source-maps',
+        '--import',
+        'naider/register',
+        'discord_bot.naide',
+      ], { cwd: directory, encoding: 'utf8' });
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), 'DIRECT_NAIDE_ENTRY');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('lets a Node.js host import NAIDE and lets NAIDE import Node and npm modules', () => {
     const directory = makeProject();
     try {
@@ -123,6 +143,26 @@ describe('Native-Meld for Node.js projects', () => {
 });
 
 describe('MWS Discord bot starter', () => {
+  it('provides a minimal MWS upload example with an NAIDE source and manifest', () => {
+    const example = join(root, 'examples', 'mws-discord');
+    const manifest = JSON.parse(readFileSync(join(example, 'nidpackage.json'), 'utf8'));
+    const entry = readFileSync(join(example, manifest.main), 'utf8');
+    const source = readFileSync(join(example, 'discord-bot.naide'), 'utf8');
+
+    assert.equal(manifest.type, 'module');
+    assert.equal(manifest.dependencies.naider, '^2.0.3');
+    assert.ok(manifest.dependencies['discord.js']);
+    assert.match(entry, /register\('naider\/loader'/);
+    assert.match(entry, /import\('\.\/discord-bot\.naide'\)/);
+
+    const check = spawnSync(process.execPath, [cliPath, 'check', join(example, 'discord-bot.naide')], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.match(source, /process\.env\.BOT_TOKEN/);
+  });
+
   it('starts bot.naide directly in Node and handles a slash command', () => {
     const directory = mkdtempSync(join(tmpdir(), 'naide-mws-discord-'));
     try {

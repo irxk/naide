@@ -108,6 +108,20 @@ const TOOLS = [
     }
   },
   {
+    name: 'naide_mws_discord_template',
+    description: 'Return upload-ready MWS Discord bot files: NAIDE source, nidpackage.json, and the minimal Node.js loader bootstrap. Additional npm libraries can be supplied as package-name to version-range mappings.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        libraries: {
+          type: 'object',
+          description: 'Optional additional npm dependencies, for example {"@discordjs/voice":"^0.19.0"}.',
+          additionalProperties: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
     name: 'naide_spec',
     description: 'Get the NAIDE language specification. Use this to understand NAIDE syntax before writing code.',
     inputSchema: {
@@ -256,6 +270,59 @@ async function handleToolCall(name, args) {
       }
     }
 
+    case 'naide_mws_discord_template': {
+      const libraries = args.libraries ?? {};
+      if (!libraries || typeof libraries !== 'object' || Array.isArray(libraries)) {
+        return { content: [{ type: 'text', text: 'libraries must be an object mapping npm package names to version ranges.' }], isError: true };
+      }
+
+      const dependencies = {
+        naider: '^2.0.3',
+        'discord.js': '^14.27.0',
+      };
+      for (const [name, version] of Object.entries(libraries)) {
+        if (name === 'naider' || name === 'discord.js'
+          || !/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/.test(name)
+          || typeof version !== 'string'
+          || version.length === 0
+          || version.length > 100
+          || !/^[0-9A-Za-z.*^~<>=|+ -]+$/.test(version)) {
+          return { content: [{ type: 'text', text: `Invalid npm dependency: ${name}` }], isError: true };
+        }
+        dependencies[name] = version;
+      }
+
+      const exampleDirectory = resolve(__dirname, '..', 'examples', 'mws-discord');
+      const files = [
+        { path: 'discord-bot.naide', content: readFileSync(resolve(exampleDirectory, 'discord-bot.naide'), 'utf8') },
+        {
+          path: 'nidpackage.json',
+          content: `${JSON.stringify({
+            name: 'naide-discord-bot',
+            version: '1.0.0',
+            type: 'module',
+            main: 'index.js',
+            dependencies,
+          }, null, 2)}\n`,
+        },
+        { path: 'index.js', content: readFileSync(resolve(exampleDirectory, 'index.js'), 'utf8') },
+      ];
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            files,
+            mws: {
+              startupFile: 'index.js',
+              startAction: 'Use the MWS Start button after dependency installation.',
+              botToken: 'Set BOT_TOKEN as a secret environment variable in MWS.',
+            },
+            limitation: 'Current MWS Node.js startup does not load NAIDE syntax from a raw .naide entry. The third, tiny index.js bootstrap is required until MWS adds a native NAIDE loader integration.',
+          }, null, 2),
+        }],
+      };
+    }
+
     case 'naide_spec': {
       try {
         let spec = readFileSync(resolve(__dirname, '..', 'SPEC.naide'), 'utf-8');
@@ -345,6 +412,7 @@ async function handleMessage(msg) {
           { name: 'verify_changes_ja', description: 'AIが変更したNAIDEコードを実行せずに検査する。' },
           { name: 'secure_service_ja', description: '認証と安全な初期設定を備えたサービスを設計する。' },
           { name: 'polyglot_dependency_ja', description: '他言語パッケージの導入方法と明示的な連携方法を検討する。' },
+          { name: 'mws_discord_ja', description: 'MWSでNAIDE Discord Botにnpm依存を追加して実行する。' },
         ],
       });
       break;
@@ -359,6 +427,7 @@ async function handleMessage(msg) {
         verify_changes_ja: '依頼されたNAIDEの変更を確認し、変更した各.naideコードにはnaide_check、プロジェクトにはnaide_verifyを使ってください。これらはプロジェクトコードを実行しません。診断を説明し、依頼の範囲内だけ修正してください。明示的にコードやテストの実行を求められない限り、naide_runやnaide_testは使わないでください。',
         secure_service_ja: '認証が必要なルート、入力検証、環境変数での秘密情報管理、localhostへの開発用バインドを含むNAIDEサービスを設計し、日本語で検証手順も示してください。根拠なく安全性を断言しないでください。',
         polyglot_dependency_ja: 'この依存パッケージをNAIDEプロジェクトで使う方法を日本語で提案してください。言語と標準パッケージマネージャーを特定し、対応していればnaide pkg addを案内してください。異なる言語間の直接呼び出しを約束せず、プロセス・HTTP・FFI・生成コードなど明示的な境界を選んでください。',
+        mws_discord_ja: 'MWSでNAIDE製Discord Botを作成してください。まずnaide_mws_discord_templateを呼び出し、返されたdiscord-bot.naide、nidpackage.json、index.jsの3ファイルを作成してください。追加npmライブラリはnidpackage.jsonのdependenciesに追加し、.naideからNode/npmモジュールとしてimportしてください。MWSの起動ファイルはindex.jsにし、起動ボタンで実行します。現在のMWS Node起動では.naideを直接ロードできないため、index.jsを省略できると説明してはいけません。作成後discord-bot.naideをnaide_checkで確認し、BOT_TOKENはソースではなくMWSの秘密環境変数に設定してください。',
       };
       const prompt = prompts[msg.params?.name];
       if (!prompt) {

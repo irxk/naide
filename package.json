@@ -1,12 +1,13 @@
 {
   "name": "naider",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "NAIDE is a readable, practical programming language with a single syntax, a compiler, type checking, and batteries-included development tools.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
     "./runtime": "./src/runtime.js",
-    "./loader": "./src/loader.js"
+    "./loader": "./src/loader.js",
+    "./register": "./src/register.js"
   },
   "bin": {
     "naide": "bin/naide.js",
@@ -93,6 +94,6 @@
   },
   "homepage": "https://github.com/irxk/naide#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.19.0"
   }
 }
