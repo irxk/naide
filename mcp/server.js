@@ -65,6 +65,12 @@ function getAiGuide(topic) {
       'The compiler has 15 output targets, but backend feature coverage differs. Treat CI smoke coverage as a baseline, not a guarantee of full feature parity.',
       'Type checking and naide_check catch errors without executing project code; use them before runtime tests.',
     ],
+    capabilityBoundaries: [
+      'The current page construct generates static HTML files; NAIDE does not yet provide a general browser DOM/event/canvas API for implementing an interactive browser game entirely in .naide.',
+      'The desktop construct describes a desktop shell, but Electron still needs a host/runtime boundary. Do not treat generated Electron JavaScript as hand-authored NAIDE behavior.',
+      'For a request that needs unsupported interactive browser behavior, stop and explain the gap. Ask the user whether they approve a minimal JS/TS bridge or prefer a NAIDE-supported alternative such as a CLI or server-side app.',
+      'Do not promise a fully interactive browser game in pure NAIDE unless the specific APIs are verified in the language spec and implementation.',
+    ],
     syntax: [
       'Declare values with str/int/bool/float or auto; use mut to make reassignment explicit.',
       'Use fn name(args) -> returnType: with indented body and ret for return.',
@@ -84,8 +90,9 @@ function getAiGuide(topic) {
     projectConventions: [
       'NAIDE-first: the primary implementation and business logic belong in .naide files, not JavaScript.',
       'If nidpackage.json exists, preserve and update it for npm dependencies. Do not add a competing package.json or package-lock.json unless the user asks or a verified host requirement makes it necessary.',
-      'Do not create JavaScript duplicates, generated JS source, or loader bootstraps by default. Use naider/bin/naide-host.js when the host supports the nidpackage.json main convention.',
-      'HTML, CSS, images, and other non-JavaScript assets are fine when the requested product needs them. Add JS only for a concrete browser/host integration that NAIDE cannot handle, keep it minimal, and explain the boundary.',
+      'Do not create authored .js/.jsx/.mjs/.cjs/.ts/.tsx files, inline JavaScript, duplicate logic, or loader bootstraps unless the user explicitly approves JavaScript. This applies even when the AI believes JavaScript would be easier or necessary.',
+      'If NAIDE cannot currently express a requested browser/host feature, do not silently fall back to JavaScript. Explain the specific NAIDE limitation and ask permission before adding any JavaScript or TypeScript.',
+      'HTML, CSS, images, and other non-JavaScript assets are fine when the requested product needs them. Keep application behavior in .naide; generated compiler output may go under build/ but must not become authored source.',
       'When creating or changing NAIDE code, validate it with naide_check; do not switch to plain JS just because the requested result is a website or application.',
     ],
     hostedNode: {
@@ -232,7 +239,7 @@ const TOOLS = [
   },
   {
     name: 'naide_context',
-    description: 'Fast, structured NAIDE language and workflow context for AI coding. Explicitly enforces NAIDE-first source, no competing package.json when nidpackage.json is in use, and minimal justified JavaScript. Returns syntax, feature index, workflow, hosted Node.js contract, and MCP tools. Call before implementing unfamiliar NAIDE work.',
+    description: 'Fast, structured NAIDE language and workflow context for AI coding. Enforces NAIDE-only application source by default: no authored JS/TS unless the user explicitly approves it. If a requested feature is unsupported, ask before switching to JS. Also preserves nidpackage.json. Returns syntax, feature index, workflow, hosted Node.js contract, and MCP tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -520,9 +527,11 @@ async function handleMessage(msg) {
           '1. When the user asks for NAIDE, author the primary application and business logic in .naide. Do not silently substitute JavaScript/TypeScript or deliver mostly .js files.',
           '2. Keep .naide as the source of truth. Do not check in or present compiler-generated JavaScript as authored source unless the user explicitly requests generated output.',
           '3. If nidpackage.json exists or is requested, add/update npm dependencies there. Do not create a competing package.json or package-lock.json unless the user explicitly requests it or you verify the selected host requires it.',
-          '4. Do not add JavaScript bootstrap or duplicate logic by default. For hosted Node.js, use naider/bin/naide-host.js through nidpackage.json main when supported; if the host requires a JS adapter, keep it minimal and explain the exact requirement.',
-          '5. HTML, CSS, and media assets are allowed for web products. Add .js only for a specific browser/host integration NAIDE cannot express, keep it minimal, and explain why.',
-          '6. Before coding, consult naide_context or naide://ai-guide and the relevant spec section. After editing .naide, run naide_check and fix reported diagnostics.',
+          '4. Never create authored .js/.jsx/.mjs/.cjs/.ts/.tsx files, inline JavaScript, or JavaScript bootstraps unless the user explicitly approves JavaScript. Do not decide on the user behalf that JavaScript is necessary.',
+          '5. If a requested capability is not expressible in NAIDE, stop before implementing it in JavaScript. State the concrete NAIDE limitation and ask whether the user wants to approve a minimal JS/TS bridge or choose a NAIDE-supported alternative.',
+          '6. HTML, CSS, and media assets are allowed. Keep all application behavior in .naide. Generated compiler output may be written under build/ only and is not a substitute for NAIDE source.',
+          '7. Before coding, inspect the existing files and manifests, consult naide_context and the relevant spec section, then list the intended files. After editing .naide, run naide_check and fix reported diagnostics.',
+          '8. Capability boundary: the current page construct generates static HTML; NAIDE does not yet provide a general browser DOM/event/canvas API for a pure-NAIDE interactive browser game. Do not fake support by writing JS silently. Explain this limitation and ask permission or propose a supported alternative.',
         ].join('\n'),
       });
       break;
@@ -546,7 +555,7 @@ async function handleMessage(msg) {
           { name: 'verify_changes_ja', description: 'AIが変更したNAIDEコードを実行せずに検査する。' },
           { name: 'secure_service_ja', description: '認証と安全な初期設定を備えたサービスを設計する。' },
           { name: 'polyglot_dependency_ja', description: '他言語パッケージの導入方法と明示的な連携方法を検討する。' },
-          { name: 'naide_coding_ja', description: 'JavaScript偏重やpackage.jsonの重複を避け、NAIDE中心で実装・確認する。' },
+          { name: 'naide_coding_ja', description: 'ユーザーの許可なくJSを作らず、NAIDEで実現できない場合は先に確認する。' },
           { name: 'mws_discord_ja', description: 'MWSでNAIDE Discord Botを2ファイル構成で実行する。' },
         ],
       });
@@ -554,16 +563,16 @@ async function handleMessage(msg) {
 
     case 'prompts/get': {
       const prompts = {
-        getting_started: 'Help me create a small NAIDE project. Keep the primary application logic in readable .naide source; do not substitute JavaScript/TypeScript or add duplicate JS implementation. If nidpackage.json exists or is requested, use it for npm dependencies and do not add package.json/package-lock.json unless I explicitly ask or a verified host requirement demands it. Use HTML/CSS/assets as needed; add only minimal, justified JavaScript integration. Explain each step, run naide_check on NAIDE files, and finish with naide doctor and naide verify.',
+        getting_started: 'Help me create a small NAIDE project. Keep all application behavior in readable .naide source; do not substitute JavaScript/TypeScript or add duplicate JS implementation. Never create authored JS/TS files or inline JavaScript unless I explicitly approve it. If NAIDE lacks a requested capability, explain the specific gap and ask me before adding JS/TS; do not decide for me. If nidpackage.json exists or is requested, use it for npm dependencies and do not add package.json/package-lock.json unless I explicitly ask or a verified host requirement demands it. Use HTML/CSS/assets as needed. Explain each step, run naide_check on NAIDE files, and finish with naide doctor and naide verify.',
         verify_changes: 'Review the requested NAIDE changes, then use naide_check on each changed .naide source and naide_verify on the project. These checks do not execute project code. Explain every diagnostic and fix only issues in scope. Do not use naide_run or naide_test unless I explicitly ask you to execute code or tests.',
         secure_service: 'Help me design a secure NAIDE service. Use authentication for sensitive routes, validate input, keep secrets in environment variables, bind development servers to localhost, and provide concrete verification steps. Do not claim security without evidence.',
         polyglot_dependency: 'Help me use this dependency from NAIDE. First identify its native language and package manager, then explain installation with naide pkg add where supported. Do not imply direct cross-language calls: select and explain an explicit process, HTTP, FFI, or generated-language adapter.',
-        getting_started_ja: 'NAIDEの初心者向け小規模プロジェクトを作成してください。主なアプリケーション処理は読みやすい.naideに実装し、JavaScript/TypeScriptへ置き換えたり、同じ処理を.jsに重複実装したりしないでください。nidpackage.jsonが存在する、または指定された場合、npm依存はそこに記載し、ユーザーの明示依頼または確認済みのホスト要件がない限りpackage.json/package-lock.jsonを追加しないでください。Web表示にはHTML/CSS/画像などを利用し、NAIDEで扱えない具体的な連携だけ最小限の.jsにしてください。手順を日本語で説明し、naide_check、naide doctor、naide verifyで確認してください。',
+        getting_started_ja: 'NAIDEの初心者向け小規模プロジェクトを作成してください。アプリケーションの動作はすべて読みやすい.naideに実装し、JavaScript/TypeScriptへ置き換えたり.jsに重複実装したりしないでください。ユーザーが明示的に許可するまで、.js/.jsx/.mjs/.cjs/.ts/.tsxファイルやHTML内のJavaScriptを一切作成しないでください。NAIDEで要求機能を実現できない場合は、具体的な制約を説明してから、JS/TSブリッジを追加してよいかユーザーに確認してください。ユーザーの代わりに必要と判断してJSへフォールバックしてはいけません。nidpackage.jsonが存在する、または指定された場合、npm依存はそこに記載し、ユーザーの明示依頼か確認済みのホスト要件がない限りpackage.json/package-lock.jsonを追加しないでください。HTML/CSS/画像は必要に応じて使えます。手順を日本語で説明し、naide_check、naide doctor、naide verifyで確認してください。',
         verify_changes_ja: '依頼されたNAIDEの変更を確認し、変更した各.naideコードにはnaide_check、プロジェクトにはnaide_verifyを使ってください。これらはプロジェクトコードを実行しません。診断を説明し、依頼の範囲内だけ修正してください。明示的にコードやテストの実行を求められない限り、naide_runやnaide_testは使わないでください。',
         secure_service_ja: '認証が必要なルート、入力検証、環境変数での秘密情報管理、localhostへの開発用バインドを含むNAIDEサービスを設計し、日本語で検証手順も示してください。根拠なく安全性を断言しないでください。',
         polyglot_dependency_ja: 'この依存パッケージをNAIDEプロジェクトで使う方法を日本語で提案してください。言語と標準パッケージマネージャーを特定し、対応していればnaide pkg addを案内してください。異なる言語間の直接呼び出しを約束せず、プロセス・HTTP・FFI・生成コードなど明示的な境界を選んでください。',
-        naide_first: 'Implement this request as a NAIDE-first project. Before coding, call naide_context and consult the relevant spec. Put primary application and business logic in readable .naide files; do not silently switch to JavaScript/TypeScript, create duplicate JS implementations, or commit generated compiler output as source. If nidpackage.json exists or is requested, use it for npm dependencies and do not create package.json/package-lock.json unless explicitly requested or a verified host requirement needs it. HTML/CSS/media assets are fine; any .js must be a minimal, specifically justified browser/host integration that NAIDE cannot express. Run naide_check on changed .naide files and explain any necessary non-NAIDE files.',
-        naide_coding_ja: 'まずnaide_contextを呼び、必要に応じてtopicで仕様を絞り込んでください。主なアプリケーション処理・ビジネスロジックは読みやすい.naideに実装し、JavaScript/TypeScriptにすり替えたり.jsへ重複実装したりしないでください。生成されたJSをソースとして追加するのも、明示依頼がない限り禁止です。nidpackage.jsonが存在する、または指定された場合、npm依存はそこに追加し、ユーザーの明示依頼か確認済みのホスト要件がない限りpackage.json/package-lock.jsonを新規作成しないでください。HTML/CSS/画像は必要に応じて利用可。.jsはNAIDEで表現できない具体的なブラウザー/ホスト連携に限り、最小限にして理由を説明してください。変更した.naideをnaide_checkで検査し、仕様や実装状況を確認せず機能対応を断言しないでください。実行やテストはユーザーの依頼に応じて行い、コンパイルターゲット間の機能差も明示してください。',
+        naide_first: 'Implement this request as a NAIDE-first project. Before coding, inspect existing files/manifests, call naide_context, consult the relevant spec, and list the intended files. Put all application behavior in readable .naide files. Never create authored .js/.jsx/.mjs/.cjs/.ts/.tsx files, inline JavaScript, duplicate implementations, or JS bootstraps unless the user explicitly approves JavaScript. If NAIDE cannot express a requested capability, stop and explain the concrete limitation, then ask whether the user wants to approve a minimal JS/TS bridge or choose a NAIDE-supported alternative. Do not decide on the user behalf. If nidpackage.json exists or is requested, use it for npm dependencies and do not create package.json/package-lock.json unless explicitly requested or a verified host requirement needs it. HTML/CSS/media assets are fine. Generated compiler output may go in build/ only, not as authored source. Run naide_check on changed .naide files.',
+        naide_coding_ja: 'まず既存ファイルとmanifestを確認し、作成予定ファイルを列挙してから着手してください。naide_contextと関連仕様を読み、アプリケーションの動作はすべて.naideに実装してください。ユーザーの明示許可がない限り、.js/.jsx/.mjs/.cjs/.ts/.tsxファイル、HTML内JavaScript、JS重複実装、JSブートストラップを絶対に作らないでください。NAIDEで表現できない機能があれば、実装をJSに切り替えず、具体的なNAIDEの制約を説明し、最小JS/TSブリッジを許可するか、NAIDEで可能な代替案にするかユーザーに確認してください。ユーザーの代わりにJSが必要と判断してはいけません。現在のpage構文は静的HTML生成で、ブラウザーDOM/イベント/canvasを扱う一般的なAPIはまだありません。純NAIDEのブラウザーゲームを実装できると約束しないでください。nidpackage.jsonがある場合はそれを維持して依存関係を追加し、明示依頼や確認済みのホスト要件なしにpackage.json/package-lock.jsonを作成しないでください。HTML/CSS/画像は利用可能です。生成コードは必要な場合build/に出力するだけにし、ソース扱いしないでください。.naideを変更したらnaide_checkで検査してください。仕様や実装状況を確かめずに機能対応を断言しないでください。',
         mws_discord_ja: 'MWSでNAIDE製Discord Botを作成してください。まずnaide_mws_discord_templateを呼び出し、返されたdiscord-bot.naideとnidpackage.jsonの2ファイルを作成してください。追加npmライブラリはnidpackage.jsonのdependenciesに追加し、.naideからNode/npmモジュールとしてimportしてください。manifestのmainはnode_modules/naider/bin/naide-host.js、naide.entryはdiscord-bot.naideです。MWSがnidpackage.jsonから依存をインストールしmainを実行するか確認してください。そうしない場合は起動ファイルにNAIDE host runnerを設定します。作成後naide_checkで確認し、BOT_TOKENはソースではなくMWSの秘密環境変数に設定してください。',
       };
       const prompt = prompts[msg.params?.name];

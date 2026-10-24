@@ -107,8 +107,10 @@ describe('NAIDE MCP server', () => {
 
     assert.ok(initialized.result.capabilities.prompts);
     assert.ok(initialized.result.capabilities.resources);
+    assert.match(initialized.result.instructions, /Never create authored \.js.*unless the user explicitly approves JavaScript/i);
+    assert.match(initialized.result.instructions, /ask whether the user wants to approve a minimal JS\/TS bridge/i);
     assert.match(initialized.result.instructions, /do not create a competing package\.json or package-lock\.json/i);
-    assert.match(initialized.result.instructions, /primary application and business logic in \.naide/i);
+    assert.match(initialized.result.instructions, /all application behavior in \.naide/i);
     assert.equal(initialized.result.serverInfo.name, 'naide-mcp');
     assert.equal(initialized.result.serverInfo.version, packageVersion);
     assert.ok(tools.some(tool => tool.name === 'naide_doctor'));
@@ -121,14 +123,18 @@ describe('NAIDE MCP server', () => {
     assert.ok(prompts.some(prompt => prompt.name === 'verify_changes_ja'));
     assert.ok(prompts.some(prompt => prompt.name === 'naide_coding_ja'));
     assert.ok(prompts.some(prompt => prompt.name === 'naide_first'));
-    assert.match(codingPrompt, /主なアプリケーション処理・ビジネスロジックは.*\.naide/);
+    assert.match(codingPrompt, /アプリケーションの動作はすべて\.naide/);
+    assert.match(codingPrompt, /ユーザーの明示許可がない限り/);
+    assert.match(codingPrompt, /NAIDEで表現できない機能があれば.*ユーザーに確認/);
     assert.match(codingPrompt, /package\.json\/package-lock\.json/);
-    assert.match(naideFirstPrompt, /do not silently switch to JavaScript\/TypeScript/);
+    assert.match(naideFirstPrompt, /Never create authored \.js/);
     assert.ok(aiGuide.strengths.some(strength => strength.includes('Node.js')));
     assert.ok(aiGuide.specIndex.includes('Discord Bot'));
     assert.ok(aiGuide.hostedNode.main.includes('naide-host.js'));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('static HTML')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => /ask the user/i.test(boundary)));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('competing package.json')));
-    assert.ok(aiGuide.projectConventions.some(rule => rule.includes('Add JS only for a concrete')));
+    assert.ok(aiGuide.projectConventions.some(rule => rule.includes('unless the user explicitly approves JavaScript')));
     assert.match(spec, /人間とAI/);
     assert.match(packageInfo, /process, HTTP, FFI/);
     assert.equal(JSON.parse(validCheck.content[0].text).ok, true);
