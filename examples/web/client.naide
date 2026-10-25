@@ -1,0 +1,19 @@
+use { bindText, createElement, listen, select, state, value } from "naide:browser"
+
+any taskCount = state(0)
+bindText("#task-count", taskCount)
+
+fn nextCount(any current):
+  ret current + 1
+
+fn addTask(any event):
+  event.preventDefault()
+  any field = select("#task-input")
+  str description = value(field)
+  if description.trim() == "":
+    ret
+  createElement("li", {text: description}, select("#task-list"))
+  taskCount.update(nextCount)
+  value(field, "")
+
+listen("#task-form", "submit", addTask)

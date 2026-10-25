@@ -10,6 +10,9 @@
     "./register": "./src/register.js",
     "./host": "./src/host.js"
   },
+  "dependencies": {
+    "esbuild": "^0.25.0"
+  },
   "bin": {
     "naide": "bin/naide.js",
     "naide-mcp": "mcp/server.js",
@@ -24,6 +27,7 @@
     "lsp/",
     "examples/",
     "vscode-naide/",
+    "docs/release-readiness.md",
     "SPEC.naide",
     "README.md",
     "LICENSE"
@@ -34,7 +38,7 @@
     "test:runtimes": "node --test test/target-runtimes.js",
     "test:parity": "node --test test/compiler-parity.js",
     "test:onboarding": "node --test test/onboarding.js",
-    "test:features": "node --test test/project-tools.js test/mcp.js test/lsp.js test/security.js test/onboarding.js test/native-meld.js",
+    "test:features": "node --test test/project-tools.js test/mcp.js test/lsp.js test/security.js test/onboarding.js test/onboarding-integration.js test/native-meld.js",
     "example": "node bin/naide.js examples/hello.naide",
     "postinstall": "node bin/postinstall.js"
   },
@@ -97,5 +101,9 @@
   "homepage": "https://github.com/irxk/naide#readme",
   "engines": {
     "node": ">=18.19.0"
+  },
+  "devDependencies": {
+    "express": "^4.22.3",
+    "typescript": "^7.0.2"
   }
 }

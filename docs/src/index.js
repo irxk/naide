@@ -102,7 +102,55 @@ function resolveSchemaInheritance(ast) {
   return ast;
 }
 
-export function compile(source, { runtimePath, sourceFile, typeCheck = false, target = 'node' } = {}) {
+function validateJavaScriptTargetSyntax(ast, target) {
+  const nonJavaScriptTargets = new Set([
+    'python', 'py', 'c', 'cpp', 'c++', 'java', 'php', 'ruby', 'rb',
+    'go', 'kotlin', 'kt', 'swift', 'dart', 'csharp', 'cs', 'c#',
+  ]);
+  if (!nonJavaScriptTargets.has(target)) return;
+
+  const bitwiseOperators = new Set(['**', '&', '|', '^', '<<', '>>', '>>>']);
+  const bitwiseAssignments = new Set(['**=', '&=', '|=', '^=', '<<=', '>>=', '>>>=']);
+  const visited = new WeakSet();
+  function visit(value) {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+    if (!value || typeof value !== 'object' || visited.has(value)) return;
+    visited.add(value);
+
+    let unsupported = null;
+    if (value.type === 'RegExp') unsupported = 'regular expression literals';
+    else if (value.type === 'Yield' || value.isGenerator) unsupported = 'generator functions and yield';
+    else if (value.type === 'Update') unsupported = 'increment/decrement operators';
+    else if (value.type === 'ForEach' || value.type === 'DoWhile') unsupported = 'JavaScript iterator/post-test loops';
+    else if (value.type === 'Number' && String(value.value).endsWith('n')) unsupported = 'BigInt literals';
+    else if (value.varType === 'bigint' || value.returnType === 'bigint' || value.type === 'bigint') {
+      unsupported = 'BigInt declarations and annotations';
+    }
+    else if (value.type === 'String' && value.value?.template && value.value.parts?.some(part => part.type === 'expr')) {
+      unsupported = 'interpolated template literals';
+    } else if (value.type === 'Binary' && bitwiseOperators.has(value.op)) unsupported = `operator '${value.op}'`;
+    else if (value.type === 'Unary' && ['+', '~'].includes(value.op)) unsupported = `unary operator '${value.op}'`;
+    else if (value.type === 'CompoundAssign' && bitwiseAssignments.has(value.op)) unsupported = `operator '${value.op}'`;
+
+    if (unsupported) {
+      const line = value._line ? ` at line ${value._line}` : '';
+      throw new Error(`[NAIDE Target Error] ${unsupported}${line} is currently supported only for JavaScript-generating targets.`);
+    }
+    for (const child of Object.values(value)) visit(child);
+  }
+  visit(ast);
+}
+
+export function compile(source, {
+  runtimePath,
+  sourceFile,
+  typeCheck = false,
+  target = 'node',
+  preserveNaideImports = false,
+} = {}) {
   let processedSource = source;
   if (processedSource.includes('~~')) {
     processedSource = expandDirectives(processedSource).source;
@@ -119,7 +167,7 @@ export function compile(source, { runtimePath, sourceFile, typeCheck = false, ta
       typeErrors = checker.check(ast);
     }
 
-    const generator = new Generator({ runtimePath, sourceFile });
+    const generator = new Generator({ runtimePath, sourceFile, preserveNaideImports });
     const js = generator.generate(ast);
     return { js, ast, tokens, sourceMap: generator.sourceMap, typeErrors };
   } catch (e) {
@@ -150,6 +198,7 @@ export async function compileAsync(source, { runtimePath, sourceFile, typeCheck 
     const tokens = lexer.tokenize();
     const parser = new Parser(tokens);
     const ast = resolveSchemaInheritance(parser.parse());
+    validateJavaScriptTargetSyntax(ast, target);
 
     let typeErrors = null;
     if (typeCheck) {

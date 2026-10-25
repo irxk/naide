@@ -124,8 +124,38 @@ export class RustGenerator {
   }
 
   visitProgram(node) {
-    for (const stmt of node.body) {
-      this.visitStatement(stmt);
+    const hasGeneratedMain = node.body.some(statement =>
+      statement.type === 'Server' || statement.type === 'Cli');
+    if (hasGeneratedMain) {
+      for (const stmt of node.body) this.visitStatement(stmt);
+      return;
+    }
+
+    const moduleItems = node.body.filter(statement =>
+      ['Function', 'Model', 'EnumDecl', 'ClassDecl', 'SchemaDecl', 'Use', 'UseDestructured'].includes(statement.type));
+    const executableStatements = node.body.filter(statement => !moduleItems.includes(statement));
+    for (const statement of moduleItems) this.visitStatement(statement);
+
+    const moduleOutput = this.output;
+    const moduleSourceMap = this.sourceMap;
+    this.output = [];
+    this.sourceMap = [];
+    this.indent = 1;
+    for (const statement of executableStatements) this.visitStatement(statement);
+    this.indent = 0;
+
+    if (this.output.length > 0) {
+      this.output = [...moduleOutput, ...(moduleOutput.length ? [''] : []), 'fn main() {', ...this.output, '}'];
+      this.sourceMap = [
+        ...moduleSourceMap,
+        ...(moduleOutput.length ? [0] : []),
+        0,
+        ...this.sourceMap,
+        0,
+      ];
+    } else {
+      this.output = moduleOutput;
+      this.sourceMap = moduleSourceMap;
     }
   }
 
@@ -660,14 +690,14 @@ export class RustGenerator {
       this.emit('println!();');
       return;
     }
+    const fmtPlaceholders = node.args.map(arg => arg.type === 'String' ? '{}' : '{:?}').join(' ');
     if (args.length === 1) {
       if (node.level === 'error') {
-        this.emit(`eprintln!("{:?}", ${args[0]});`);
+        this.emit(`eprintln!("${fmtPlaceholders}", ${args[0]});`);
       } else {
-        this.emit(`println!("{:?}", ${args[0]});`);
+        this.emit(`println!("${fmtPlaceholders}", ${args[0]});`);
       }
     } else {
-      const fmtPlaceholders = args.map(() => '{:?}').join(' ');
       if (node.level === 'error') {
         this.emit(`eprintln!("${fmtPlaceholders}", ${args.join(', ')});`);
       } else {

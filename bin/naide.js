@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { resolve, basename, dirname, extname, join, relative } from 'path';
+import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'fs';
+import { resolve, basename, dirname, extname, isAbsolute, join, relative, sep } from 'path';
 import { randomBytes } from 'crypto';
+import { fileURLToPath } from 'node:url';
 import { compile, compileAsync } from '../src/index.js';
+import { runNativeFileAsync } from '../src/native-engine.js';
+import { buildWebProject, startWebDevServer } from '../src/web-dev.js';
 import { spawn } from 'child_process';
 import { createPackageInstallPlan, getDoctorReport, inspectProject, listPackageAdapters, recordPackageDependency, runPackageInstall, runProjectTests, spawnNativeTool } from '../src/project-tools.js';
 
@@ -764,6 +767,41 @@ Edit \`bot.naide\` and upload/redeploy it with \`nidpackage.json\`. The installe
 }
 
 if (files[0] === 'init') {
+  const templateFlagIndex = files.indexOf('--template');
+  if (templateFlagIndex !== -1) {
+    const templateName = files[templateFlagIndex + 1];
+    if (templateName !== 'web') {
+      console.error(`  Error: Unsupported project template '${templateName || ''}'. Available template: web.`);
+      process.exit(1);
+    }
+    const projectPath = files.slice(1).find((value, index, values) =>
+      !value.startsWith('--') && values[index - 1] !== '--template');
+    const dir = projectPath ? resolve(projectPath) : process.cwd();
+    mkdirSync(dir, { recursive: true });
+    const templateDirectory = fileURLToPath(new URL('../examples/web/', import.meta.url));
+    for (const file of ['app.naide', 'client.naide', 'styles.css']) {
+      const destination = join(dir, file);
+      if (!existsSync(destination)) {
+        writeFileSync(destination, readFileSync(join(templateDirectory, file), 'utf8'), { flag: 'wx' });
+      }
+    }
+    const manifestPath = join(dir, 'nidpackage.json');
+    if (!existsSync(manifestPath)) {
+      const name = basename(dir).toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+      writeFileSync(manifestPath, JSON.stringify({
+        name: name || 'naide-web-app',
+        version: '1.0.0',
+        private: true,
+        naide: { entry: 'app.naide', target: 'browser' },
+        dependencies: {},
+      }, null, 2) + '\n', { flag: 'wx' });
+    }
+    console.log(`\n  Created a NAIDE web project in ${dir}`);
+    console.log('  Start it with: naide dev .');
+    console.log('  Project source is in app.naide, client.naide, and styles.css.');
+    process.exit(0);
+  }
+
   const dir = files[1] ? resolve(files[1]) : process.cwd();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   const name = basename(dir === process.cwd() ? dir : dir);
@@ -813,7 +851,7 @@ schema User:
   id auto
   name str required min(1) max(80)
   email str required email max(254)
-  password str required min(12) max(128)
+  password str required min(12) max(256)
 
 schema Item:
   id auto
@@ -849,10 +887,10 @@ server app port PORT:
     if UserStore.where({email})[0]:
       ret.status 409 {error: "An account with that email already exists"}
     str hashed = hash(req.body.password)
-    user = UserStore.create({name: req.body.name.trim(), email, password: hashed})
+    auto user = UserStore.create({name: req.body.name.trim(), email, password: hashed})
     if user.error:
       ret.status 400 {errors: user.error}
-    token = auth.sign({id: user.id})
+    auto token = auth.sign({id: user.id})
     ret.status 201 {token, user: {id: user.id, name: user.name, email: user.email}}
 
   post "/api/auth/login" (req, res):
@@ -861,38 +899,38 @@ server app port PORT:
     if req.body.password.length > 128:
       ret.status 401 {error: "Invalid credentials"}
     str email = req.body.email.toLowerCase().trim()
-    user = UserStore.where({email})[0]
+    auto user = UserStore.where({email})[0]
     if not user:
       ret.status 401 {error: "Invalid credentials"}
     if not verify(req.body.password, user.password):
       ret.status 401 {error: "Invalid credentials"}
-    token = auth.sign({id: user.id})
+    auto token = auth.sign({id: user.id})
     ret {token}
 
   get "/api/items" (req, res):
-    items = ItemStore.where({ownerId: req.user.id})
+    auto items = ItemStore.where({ownerId: req.user.id})
     ret {data: items, total: items.length}
 
   post "/api/items" (req, res):
     if typeof req.body.name != "string" or req.body.name.length < 1 or req.body.name.length > 100:
       ret.status 400 {error: "name must be between 1 and 100 characters"}
-    item = ItemStore.create({ownerId: req.user.id, name: req.body.name.trim(), done: false})
+    auto item = ItemStore.create({ownerId: req.user.id, name: req.body.name.trim(), done: false})
     if item.error:
       ret.status 400 {errors: item.error}
     ret.status 201 item
 
   get "/api/items/:id" (req, res):
-    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    auto item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
     if not item:
       ret.status 404 {error: "Item not found"}
     ret item
 
   put "/api/items/:id" (req, res):
-    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    auto item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
     if not item:
       ret.status 404 {error: "Item not found"}
-    str name = item.name
-    bool done = item.done
+    mut str name = item.name
+    mut bool done = item.done
     if req.body.name != undefined:
       if typeof req.body.name != "string" or req.body.name.length < 1 or req.body.name.length > 100:
         ret.status 400 {error: "name must be between 1 and 100 characters"}
@@ -901,11 +939,11 @@ server app port PORT:
       if typeof req.body.done != "boolean":
         ret.status 400 {error: "done must be a boolean"}
       done = req.body.done
-    updated = ItemStore.update(item.id, {name, done})
+    auto updated = ItemStore.update(item.id, {name, done})
     ret updated
 
   del "/api/items/:id" (req, res):
-    item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
+    auto item = ItemStore.where({id: req.params.id, ownerId: req.user.id})[0]
     if not item:
       ret.status 404 {error: "Item not found"}
     bool deleted = ItemStore.delete(item.id)
@@ -1084,9 +1122,65 @@ test('starter API separates each authenticated user’s items', async () => {
   process.exit(0);
 }
 
+if (files[0] === 'dev') {
+  const projectPath = files[1] && !files[1].startsWith('--') ? files[1] : '.';
+  const projectRoot = resolve(projectPath);
+  const readOption = (name, fallback) => {
+    const index = files.indexOf(name);
+    return index === -1 ? fallback : files[index + 1];
+  };
+  const portValue = Number(readOption('--port', '5173'));
+  const host = readOption('--host', '127.0.0.1');
+  if (!Number.isInteger(portValue) || portValue < 0 || portValue > 65535) {
+    console.error('  Error: --port must be an integer between 0 and 65535.');
+    process.exit(1);
+  }
+  if (!existsSync(projectRoot) || !statSync(projectRoot).isDirectory()) {
+    console.error(`  Error: Web project directory not found: ${projectRoot}`);
+    process.exit(1);
+  }
+
+  try {
+    console.log(`\n  NAIDE Web — preparing ${projectRoot}\n`);
+    let webBuild = buildWebProject(projectRoot, { cliPath: fileURLToPath(import.meta.url) });
+    const generatedPages = new Set(webBuild.pagePaths);
+    const server = await startWebDevServer(projectRoot, {
+      host,
+      port: portValue,
+      ignoredPaths: generatedPages,
+      onChange: changed => {
+        if (changed.some(path => path.endsWith('.naide'))) {
+          console.log('\n  [NAIDE] Source change detected. Rebuilding web project...\n');
+          webBuild = buildWebProject(projectRoot, { cliPath: fileURLToPath(import.meta.url) });
+          generatedPages.clear();
+          for (const pagePath of webBuild.pagePaths) generatedPages.add(pagePath);
+        }
+      },
+    });
+    console.log(`\n  Web development server: http://${host}:${server.port}`);
+    console.log('  Edit .naide, CSS, or static assets to rebuild or refresh. Press Ctrl+C to stop.\n');
+    const close = () => server.close().catch(error => {
+      console.error(`[NAIDE] Could not stop web server: ${error.message}`);
+      process.exitCode = 1;
+    });
+    process.once('SIGINT', close);
+    process.once('SIGTERM', close);
+  } catch (error) {
+    console.error(`  FAIL Web development: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 if (files[0] === 'build') {
-  const dir = resolve(files[1] || '.');
-  const outDir = files[2] ? resolve(files[2]) : null;
+  const bundleBrowser = files.includes('--bundle-browser');
+  const buildPaths = files.slice(1).filter(argument => argument !== '--bundle-browser');
+  const dir = resolve(buildPaths[0] || '.');
+  const outDir = buildPaths[1] ? resolve(buildPaths[1]) : null;
+
+  if (bundleBrowser && !outDir) {
+    console.error('  Usage: naide build <dir> <outdir> --bundle-browser');
+    process.exit(1);
+  }
 
   function walkDir(d) {
     const found = [];
@@ -1116,6 +1210,75 @@ if (files[0] === 'build') {
   let errors = retiredFiles.length;
   const schemaMap = {};
   const routeMap = {};
+  const browserBundleEntries = new Map();
+
+  function pageString(value) {
+    if (!value?.parts || value.parts.some(part => part.type !== 'text')) return null;
+    return value.parts.map(part => part.value).join('');
+  }
+
+  function isPathInside(root, candidate) {
+    const pathFromRoot = relative(root, candidate);
+    return pathFromRoot === '' || (
+      pathFromRoot !== '..'
+      && !pathFromRoot.startsWith(`..${sep}`)
+      && !isAbsolute(pathFromRoot)
+    );
+  }
+
+  function collectBrowserBundleEntries(ast) {
+    for (const page of ast?.body || []) {
+      if (page.type !== 'Page') continue;
+
+      const pageFilename = pageString(page.filename);
+      if (!pageFilename) {
+        throw new Error('Browser bundle mode requires a literal page filename.');
+      }
+      const pageDirectory = dirname(pageFilename);
+      const importsToKeep = new Set();
+      const moduleSources = [];
+      const visitElements = elements => {
+        for (const element of elements || []) {
+          if (element.tag === 'importmap') {
+            const specifier = pageString(element.args[0]);
+            if (specifier) importsToKeep.add(specifier.endsWith('/') ? `${specifier}*` : specifier);
+          } else if (element.tag === 'module') {
+            const moduleSource = pageString(element.args[0]);
+            if (!moduleSource) throw new Error('Browser bundle mode requires literal module URLs.');
+            moduleSources.push(moduleSource);
+          }
+          visitElements(element.children);
+        }
+      };
+      visitElements(page.elements);
+
+      for (const moduleSource of moduleSources) {
+        if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(moduleSource)) continue;
+        const urlPath = moduleSource.split(/[?#]/, 1)[0];
+        const entryPath = resolve(
+          dir,
+          moduleSource.startsWith('/') ? urlPath.slice(1) : pageDirectory,
+          ...(moduleSource.startsWith('/') ? [] : [urlPath]),
+        );
+        if (!isPathInside(dir, entryPath)) {
+          throw new Error(`Browser bundle entry '${moduleSource}' must stay inside the project directory.`);
+        }
+        const realProjectRoot = realpathSync(dir);
+        const realEntryPath = existsSync(entryPath)
+          ? realpathSync(entryPath)
+          : realpathSync(dirname(entryPath));
+        if (!isPathInside(realProjectRoot, realEntryPath)) {
+          throw new Error(`Browser bundle entry '${moduleSource}' must not traverse a symbolic link outside the project directory.`);
+        }
+        if (extname(entryPath) !== '.mjs') {
+          throw new Error(`Browser bundle entry '${moduleSource}' must reference a generated .mjs module.`);
+        }
+        const external = browserBundleEntries.get(entryPath) || new Set();
+        for (const specifier of importsToKeep) external.add(specifier);
+        browserBundleEntries.set(entryPath, external);
+      }
+    }
+  }
 
   for (const srcFile of sourceFiles) {
     const rel = relative(dir, srcFile);
@@ -1128,6 +1291,16 @@ if (files[0] === 'build') {
       if (!existsSync(outDirPath)) mkdirSync(outDirPath, { recursive: true });
       writeFileSync(outPath, js);
       console.log(`  ${rel} → ${outDir ? join(relative('.', outDir), outName) : outName}`);
+
+      if (bundleBrowser) {
+        try {
+          collectBrowserBundleEntries(ast);
+        } catch (error) {
+          console.error(`  FAIL ${rel}: ${error.message}`);
+          errors++;
+          continue;
+        }
+      }
 
       if (ast && ast.body) {
         for (const node of ast.body) {
@@ -1156,6 +1329,53 @@ if (files[0] === 'build') {
         crashReport(e, { file: rel });
       }
       errors++;
+    }
+  }
+
+  if (bundleBrowser && errors === 0) {
+    if (browserBundleEntries.size === 0) {
+      console.error('  FAIL Browser bundle mode found no local .mjs modules referenced by page module elements.');
+      errors++;
+    } else {
+      try {
+        const { build } = await import('esbuild');
+        for (const [entryPath, external] of browserBundleEntries) {
+          if (!existsSync(entryPath)) {
+            throw new Error(`Browser module not found: ${entryPath}. Ensure its page module URL matches the build output path.`);
+          }
+          const result = await build({
+            entryPoints: [entryPath],
+            outfile: entryPath,
+            bundle: true,
+            format: 'esm',
+            platform: 'browser',
+            target: 'es2022',
+            external: [...external],
+            write: false,
+          });
+          const output = result.outputFiles.find(file => resolve(file.path) === entryPath);
+          if (!output) throw new Error(`Bundler did not produce the expected entry point: ${entryPath}`);
+          const cssFiles = result.outputFiles.filter(file => extname(file.path) === '.css');
+          const cssLoader = cssFiles.map(file => {
+            const cssPath = relative(dirname(entryPath), file.path).replace(/\\/g, '/');
+            return `if (!document.querySelector('[data-naide-css=' + ${JSON.stringify(JSON.stringify(cssPath))} + ']')) { const __naideCss = document.createElement("link"); __naideCss.rel = "stylesheet"; __naideCss.href = new URL(${JSON.stringify(`./${cssPath}`)}, import.meta.url).href; __naideCss.dataset.naideCss = ${JSON.stringify(cssPath)}; document.head.append(__naideCss); }`;
+          }).join('\n');
+          for (const file of result.outputFiles) {
+            const contents = file === output && cssLoader
+              ? Buffer.concat([
+                Buffer.from(`if (typeof document !== "undefined") {\n${cssLoader}\n}\n`),
+                file.contents,
+              ])
+              : file.contents;
+            writeFileSync(file.path, contents);
+          }
+          for (const warning of result.warnings) console.warn(`  WARN ${warning.text}`);
+          console.log(`  Bundled browser module ${relative(dir, entryPath)}`);
+        }
+      } catch (error) {
+        console.error(`  FAIL Browser bundling: ${error.message}`);
+        errors++;
+      }
     }
   }
 
@@ -1221,6 +1441,49 @@ if (files[0] === 'check') {
 
   console.log(`\n  ${totalErrors} error(s), ${totalWarnings} warning(s)`);
   process.exit(totalErrors > 0 ? 1 : 0);
+}
+
+if (files[0] === 'native') {
+  const sourceFile = files[1];
+  if (!sourceFile || sourceFile.startsWith('--')) {
+    console.error('  Usage: naide native <file.naide> [--steps <maximum>] [--env <NAME>]... [-- <args...>]');
+    process.exit(1);
+  }
+  const stepIndex = files.indexOf('--steps');
+  const maxSteps = stepIndex === -1 ? 1_000_000 : Number(files[stepIndex + 1]);
+  if (!Number.isSafeInteger(maxSteps) || maxSteps < 1) {
+    console.error('  Error: --steps must be a positive safe integer.');
+    process.exit(1);
+  }
+  const environmentNames = [];
+  for (let index = 2; index < files.length; index++) {
+    if (files[index] !== '--env') continue;
+    const name = files[index + 1];
+    if (!name || name.startsWith('--') || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      console.error('  Error: --env requires a valid environment variable name.');
+      process.exit(1);
+    }
+    environmentNames.push(name);
+    index++;
+  }
+  const separatorIndex = files.indexOf('--');
+  const runtimeArgs = separatorIndex === -1 ? [] : files.slice(separatorIndex + 1);
+  const allowedEnvironment = Object.fromEntries(
+    [...new Set(environmentNames)]
+      .filter(name => Object.hasOwn(process.env, name))
+      .map(name => [name, process.env[name]]),
+  );
+  try {
+    const result = await runNativeFileAsync(resolve(sourceFile), {
+      maxSteps,
+      runtime: { args: runtimeArgs, env: allowedEnvironment },
+    });
+    console.log(`\n  Native NAIDE execution completed in ${result.steps} steps.`);
+    process.exitCode = result.globals.get('runtime').exitCode;
+  } catch (error) {
+    console.error(`\n  Native NAIDE error: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 // ── Package Ecosystem ──
@@ -1493,11 +1756,20 @@ if (flags.help) {
   Usage:
     naide                        Start interactive REPL
     naide <file.naide>           Run a NAIDE file
+    naide native <file.naide>    Execute core NAIDE directly without JS generation
+      --steps <maximum>          Bound native interpreter execution steps
+      --env <NAME>               Expose one environment variable to native runtime
+      -- <args...>               Pass arguments to the native program
+    naide dev [dir]              Build and serve a NAIDE web project
+      --port <number>            Development server port (default: 5173)
+      --host <address>           Bind address (default: 127.0.0.1)
+    naide init <dir> --template web  Create a NAIDE-first web project
     naide ~~ "instruction"       Generate NAIDE code from instruction (no AI)
     naide gen "instruction"      Same as ~~ (alias)
     naide init [dir]             Create a new NAIDE project
     naide mws discord [dir]      Create a Discord bot project for MWS hosting
     naide build [dir] [outdir]   Transpile all files to JavaScript
+      --bundle-browser           Bundle browser page modules and npm dependencies
     naide check <files...>       Type-check without running
     naide repl                   Start interactive REPL
     naide lsp                    Start language server (LSP)
@@ -1567,7 +1839,7 @@ if (flags.help) {
 
 const runtimeUrl = new URL('../src/runtime.js', import.meta.url).href;
 
-for (const file of files) {
+if (!['dev', 'native'].includes(files[0])) for (const file of files) {
   const filePath = resolve(file);
   let source;
   try {

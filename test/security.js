@@ -51,36 +51,36 @@ describe('non-compiler security protections', () => {
         env: { ...process.env, npm_execpath: npmCli },
       });
 
-      it('records native npm dependencies after installation succeeds', () => {
-        const directory = mkdtempSync(join(tmpdir(), 'naide-package-add-'));
-        const npmCli = join(directory, 'npm-cli.mjs');
-        const capturedArgs = join(directory, 'npm-args.json');
-        const packageSpec = '@naide-test/example@1.2.3';
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(capturedArgs, 'utf8')), ['install', '--', packageSpec]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
-        try {
-          writeFileSync(npmCli, [
-            'import { writeFileSync } from "node:fs";',
-            `writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
-          ].join('\n'));
+  it('records native npm dependencies after installation succeeds', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'naide-package-add-'));
+    const npmCli = join(directory, 'npm-cli.mjs');
+    const capturedArgs = join(directory, 'npm-args.json');
+    const packageSpec = '@naide-test/example@1.2.3';
 
-          const result = spawnSync(process.execPath, [cliPath, 'pkg', 'add', 'npm', packageSpec], {
-            cwd: directory,
-            encoding: 'utf8',
-            env: { ...process.env, npm_execpath: npmCli },
-          });
+    try {
+      writeFileSync(npmCli, [
+        'import { writeFileSync } from "node:fs";',
+        `writeFileSync(${JSON.stringify(capturedArgs)}, JSON.stringify(process.argv.slice(2)));`,
+      ].join('\n'));
 
-          assert.equal(result.status, 0, result.stdout + result.stderr);
-          assert.deepEqual(JSON.parse(readFileSync(capturedArgs, 'utf8')), ['install', '--', packageSpec]);
-          const metadata = JSON.parse(readFileSync(join(directory, 'naide.pkg.json'), 'utf8'));
-          assert.equal(metadata.dependencies['@naide-test/example'], packageSpec);
-          assert.match(result.stdout, /Recorded dependency in naide\.pkg\.json/);
-        } finally {
-          rmSync(directory, { recursive: true, force: true });
-        }
+      const result = spawnSync(process.execPath, [cliPath, 'pkg', 'add', 'npm', packageSpec], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: { ...process.env, npm_execpath: npmCli },
       });
 
       assert.equal(result.status, 0, result.stdout + result.stderr);
       assert.deepEqual(JSON.parse(readFileSync(capturedArgs, 'utf8')), ['install', '--', packageSpec]);
+      const metadata = JSON.parse(readFileSync(join(directory, 'naide.pkg.json'), 'utf8'));
+      assert.equal(metadata.dependencies['@naide-test/example'], packageSpec);
+      assert.match(result.stdout, /Recorded dependency in naide\.pkg\.json/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

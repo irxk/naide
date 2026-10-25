@@ -51,7 +51,7 @@
       <p>This generates a full HTML5 document with proper <code>&lt;!DOCTYPE&gt;</code>, <code>&lt;meta charset&gt;</code>, and viewport tags.</p>
 
       <h2>Nested Elements</h2>
-      <p>Use indentation to nest elements. The first argument becomes the CSS class:</p>
+      <p>Use indentation to nest elements. The first argument can be a <code>#id</code>, a <code>.class</code>, or a class name:</p>
       <pre><code>page "app.html":
   title "Dashboard"
   style "styles.css"
@@ -64,7 +64,35 @@
       div "card":
         h3 "Revenue"
         p "$5,678"
-  script "app.js"</code></pre>
+  module "build/client.mjs"</code></pre>
+      <p>Keep browser behavior in a <code>.naide</code> client module; the generated browser module is build output.</p>
+
+      <h2>Forms and Attributes</h2>
+      <p>Place standard attributes on child lines. Use <code>attr</code> for <code>aria-*</code> and <code>data-*</code> attribute names. Values are escaped as HTML, and event-handler attributes are not accepted:</p>
+      <pre><code>page "index.html":
+  title "Sign up"
+  main "#app":
+    form "#signup":
+      action "/signup"
+      method "post"
+      label "Email address":
+        attr "for" "email"
+      input:
+        id "email"
+        type "email"
+        name "email"
+        autocomplete "email"
+        required
+        attr "aria-label" "Email address"
+      button "#submit" "Create account":
+        type "submit"</code></pre>
+
+      <h2>Run a Web Project</h2>
+      <p>Create a NAIDE-first website and start the local development server with automatic rebuild and browser refresh:</p>
+      <pre><code>naide init my-site --template web
+cd my-site
+naide dev .</code></pre>
+      <p>The starter keeps behavior in <code>.naide</code>, styles in CSS, and project metadata in <code>nidpackage.json</code>. Generated modules are build output, not authored source.</p>
 
       <h2>Head vs Body Elements</h2>
       <p>Elements are automatically placed in the correct section:</p>
@@ -90,9 +118,9 @@
           <td style="padding:8px;"><code>&lt;meta name="name" content="content"&gt;</code></td>
         </tr>
         <tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:8px;"><code>script "file.js"</code></td>
+          <td style="padding:8px;"><code>module "build/client.mjs"</code></td>
           <td style="padding:8px;">&lt;body&gt;</td>
-          <td style="padding:8px;"><code>&lt;script src="file.js"&gt;&lt;/script&gt;</code></td>
+          <td style="padding:8px;"><code>&lt;script type="module" src="build/client.mjs"&gt;&lt;/script&gt;</code></td>
         </tr>
         <tr style="border-bottom:1px solid var(--border);">
           <td style="padding:8px;"><code>img "src" "alt"</code></td>
@@ -107,7 +135,7 @@
         <tr>
           <td style="padding:8px;"><code>input "type" "name"</code></td>
           <td style="padding:8px;">&lt;body&gt;</td>
-          <td style="padding:8px;"><code>&lt;input type="type" name="name"&gt;</code></td>
+          <td style="padding:8px;"><code>&lt;input type="type" name="name" placeholder="name"&gt;</code></td>
         </tr>
       </table>
       <p>Any other tag (h1, h2, p, div, span, form, etc.) goes to <code>&lt;body&gt;</code>.</p>

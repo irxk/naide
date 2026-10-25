@@ -1,7 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import { runInNewContext } from 'node:vm';
 import { compile, transpile, compileAsync } from '../src/index.js';
 import * as lexerMod from '../src/lexer.js';
+
+function generatedPageHtml(js, filename) {
+  const prefix = `writeFileSync(${JSON.stringify(filename)}, `;
+  const line = js.split('\n').find(candidate => candidate.startsWith(prefix));
+  assert.ok(line, `No generated HTML write for ${filename}`);
+  return JSON.parse(line.slice(prefix.length, -2));
+}
 
 describe('NAIDE v2', () => {
   it('compiles variables', () => {
@@ -62,6 +70,35 @@ describe('NAIDE v2', () => {
   it('compiles model inheritance', () => {
     const js = transpile('model Animal:\n  str name\nmodel Dog extends Animal:\n  str breed');
     assert.ok(js.includes('class Dog extends Animal'));
+  });
+
+  it('compiles model init blocks into constructors', () => {
+    const js = transpile([
+      'model Animal:',
+      '  str name',
+      '  init(str value):',
+      '    self.name = value',
+      'model Dog extends Animal:',
+      '  init(str value):',
+      '    self.name = value',
+    ].join('\n'));
+    assert.match(js, /constructor\(value\)/);
+    assert.match(js, /super\(\.\.\.arguments\);/);
+    assert.match(js, /this\.name = value;/);
+  });
+
+  it('compiles static and async static model methods', () => {
+    const js = transpile([
+      'model Factory:',
+      '  static str prefix = "factory"',
+      '  static fn create(str name):',
+      '    ret new Factory(name)',
+      '  static fn.async label(str name):',
+      '    ret name',
+    ].join('\n'));
+    assert.match(js, /static prefix = "factory";/);
+    assert.match(js, /static create\(name\)/);
+    assert.match(js, /static async label\(name\)/);
   });
 
   it('compiles match', () => {
@@ -150,7 +187,7 @@ describe('NAIDE high-level features', () => {
     const js = transpile(src);
     assert.ok(js.includes('jwtAuth'));
     assert.ok(js.includes('SECRET'));
-    assert.ok(js.includes('"/api/(.*)"'));
+    assert.ok(js.includes('"/api/*"'));
     assert.ok(js.includes('public:'));
     assert.ok(js.includes('__authSecret'));
   });
@@ -361,7 +398,7 @@ describe('NAIDE high-level features', () => {
     const src = 'server app port 3000:\n  cache "/api/*" "5m"\n  get "/api/data":\n    ret {data: 1}';
     const js = transpile(src);
     assert.ok(js.includes('cacheMiddleware'));
-    assert.ok(js.includes('"/api/(.*)"'));
+    assert.ok(js.includes('"/api/*"'));
     assert.ok(js.includes('"5m"'));
   });
 
@@ -1167,14 +1204,14 @@ describe('Runtime unit tests', () => {
   });
 
   // ===== Path normalization tests =====
-  it('normalizes wildcard paths in auth routes', () => {
+  it('preserves Express wildcard paths in auth middleware', () => {
     const result = compile('server app port 3000:\n  auth SECRET:\n    protect "/api/*"\n');
-    assert.ok(result.js.includes('"/api/(.*)"'));
+    assert.ok(result.js.includes('"/api/*"'));
   });
 
-  it('normalizes wildcard paths in cache', () => {
+  it('preserves Express wildcard paths in middleware', () => {
     const result = compile('server app port 3000:\n  cache "/api/*" "5m"\n');
-    assert.ok(result.js.includes('"/api/(.*)"'));
+    assert.ok(result.js.includes('"/api/*"'));
   });
 
   // ===== Reduced parens in transpiled JS =====
@@ -1505,8 +1542,221 @@ describe('Runtime unit tests', () => {
   it('compiles page with nested elements', () => {
     const src = 'page "app.html":\n  title "App"\n  div "container":\n    h1 "Title"\n    p "Text"\n';
     const js = transpile(src);
-    assert.ok(js.includes('<div class="container">'));
-    assert.ok(js.includes('</div>'));
+    const html = generatedPageHtml(js, 'app.html');
+    assert.ok(html.includes('<div class="container">'));
+    assert.ok(html.includes('</div>'));
+  });
+
+  it('generates localized browser pages with module entry, buttons, and canvas', () => {
+    const src = [
+      'page "index.html":',
+      '  lang "ja"',
+      '  title "NAIDE Game"',
+      '  importmap "chart.js" "https://esm.sh/chart.js/auto"',
+      '  main "#app":',
+      '    h1 "Game"',
+      '    button "#start" "Start"',
+      '    canvas "#game" "800" "600"',
+      '  module "build/game.mjs"',
+      '',
+    ].join('\n');
+    const js = transpile(src);
+    const html = generatedPageHtml(js, 'index.html');
+
+    assert.match(html, /<html lang="ja">/);
+    assert.match(html, /<script type="importmap">\{"imports":\{"chart\.js":"https:\/\/esm\.sh\/chart\.js\/auto"\}\}<\/script>/);
+    assert.match(html, /<button id="start">Start<\/button>/);
+    assert.match(html, /<canvas id="game" width="800" height="600"><\/canvas>/);
+    assert.match(html, /<script type="module" src="build\/game\.mjs"><\/script>/);
+    assert.match(html, /<main id="app">/);
+  });
+
+  it('builds accessible forms and escapes HTML text and attributes', () => {
+    const source = [
+      'page "index.html":',
+      '  title "A & < B"',
+      '  main "#app":',
+      '    h1 "Hello <world> & friends"',
+      '    form "#signup":',
+      '      action "/signup"',
+      '      method "post"',
+      '      label "Email address":',
+      '        attr "for" "email"',
+      '      input:',
+      '        id "email"',
+      '        type "email"',
+      '        name "email"',
+      '        autocomplete "email"',
+      '        required',
+      '        attr "aria-label" "Email \\"address\\""',
+      '      button "#submit" "Join":',
+      '        type "submit"',
+      '',
+    ].join('\n');
+    const html = generatedPageHtml(transpile(source), 'index.html');
+
+    assert.match(html, /<title>A &amp; &lt; B<\/title>/);
+    assert.match(html, /<h1>Hello &lt;world&gt; &amp; friends<\/h1>/);
+    assert.match(html, /<form id="signup" action="\/signup" method="post">/);
+    assert.match(html, /<label for="email">Email address<\/label>/);
+    assert.match(html, /<input id="email" type="email" name="email" autocomplete="email" required aria-label="Email &quot;address&quot;">/);
+    assert.match(html, /<button id="submit" type="submit">Join<\/button>/);
+  });
+
+  it('rejects unsafe HTML attributes and javascript URLs in pages', () => {
+    assert.throws(
+      () => compile('page "index.html":\n  button:\n    attr "onclick" "alert(1)"\n'),
+      /Unsupported HTML attribute 'onclick'/,
+    );
+    assert.throws(
+      () => compile('page "index.html":\n  a:\n    href "javascript:alert(1)"\n'),
+      /Unsafe javascript: URL/,
+    );
+  });
+
+  it('rejects conflicting browser import map entries', () => {
+    const src = [
+      'page "index.html":',
+      '  importmap "chart.js" "https://one.example/chart.js"',
+      '  importmap "chart.js" "https://two.example/chart.js"',
+      '',
+    ].join('\n');
+    assert.throws(() => compile(src), /Conflicting browser import map entry for 'chart\.js'/);
+  });
+
+  it('provides browser interop helpers and native globals without runtime imports', () => {
+    const js = compile([
+      'use browser from "naider/browser"',
+      'use { globalThis as webGlobal, document, window, WebSocket, indexedDB, select, selectAll, on as listen, createElement, canvas2d, animate, text, value, state, bindText, bindValue, bindClass, fetch } from "naide:browser"',
+      'globalThis.__browserApi = { namespace: browser, globalThis: webGlobal, document, window, WebSocket, indexedDB, select, selectAll, listen, createElement, canvas2d, animate, text, value, state, bindText, bindValue, bindClass, fetch }',
+      '',
+    ].join('\n'), { typeCheck: true });
+    assert.deepEqual(js.typeErrors.errors, []);
+    const generated = js.js;
+    assert.doesNotMatch(generated, /from ["']naide:browser["']/);
+    assert.match(generated, /const document = __naideBrowser\.document/);
+    assert.match(generated, /const listen = __naideBrowser\.on/);
+    assert.match(generated, /const animate = __naideBrowser\.animate/);
+
+    const listeners = new Map();
+    const drawCalls = [];
+    const canvasContext = { marker: '2d-context' };
+    const element = {
+      value: 'initial',
+      textContent: '',
+      listeners,
+      classes: new Set(),
+      classList: {
+        toggle(name, force) {
+          if (force) element.classes.add(name);
+          else element.classes.delete(name);
+          return Boolean(force);
+        },
+      },
+      addEventListener(type, handler) { listeners.set(type, handler); },
+      removeEventListener(type, handler) {
+        if (listeners.get(type) === handler) listeners.delete(type);
+      },
+      getContext(type) { return type === '2d' ? canvasContext : null; },
+    };
+    const callbacks = [];
+    const cancelled = [];
+    let nextFrameId = 0;
+    const document = {
+      body: { append() {} },
+      querySelector(selector) { return selector === '#missing' ? null : element; },
+      querySelectorAll() { return [element]; },
+      createElement(tag) { return { tag, setAttribute() {}, addEventListener() {} }; },
+    };
+    const browserGlobal = {
+      document,
+      window: {},
+      WebSocket: class {},
+      indexedDB: {},
+      navigator: {},
+      location: {},
+      localStorage: {},
+      sessionStorage: {},
+      history: {},
+      fetch: async () => ({}),
+      URL,
+      URLSearchParams,
+      requestAnimationFrame(callback) { callbacks.push(callback); return ++nextFrameId; },
+      cancelAnimationFrame(id) { cancelled.push(id); },
+      performance: {},
+      CustomEvent: class {},
+      Event: class {},
+    };
+    browserGlobal.globalThis = browserGlobal;
+    runInNewContext(`${generated}\n;globalThis.__browserApi`, browserGlobal);
+    const api = browserGlobal.__browserApi;
+
+    assert.equal(api.namespace.select, api.select);
+    assert.equal(typeof api.namespace.state, 'function');
+    assert.equal(api.select('#game'), element);
+    assert.deepEqual(api.selectAll('canvas'), [element]);
+    const handler = () => {};
+    const unsubscribe = api.listen(element, 'click', handler);
+    assert.equal(listeners.get('click'), handler);
+    unsubscribe();
+    assert.equal(listeners.has('click'), false);
+    assert.equal(api.canvas2d(element), canvasContext);
+    assert.equal(api.text(element, 'updated').textContent, 'updated');
+    assert.equal(api.value(element), 'initial');
+    assert.equal(api.value(element, 'changed'), 'changed');
+    assert.equal(api.createElement('section', { id: 'content', text: 'Hello' }).tag, 'section');
+
+    const counter = api.state(0);
+    const stateChanges = [];
+    const unsubscribeState = counter.subscribe(value => stateChanges.push(value));
+    const unbindText = api.bindText(element, counter);
+    counter.set(0);
+    counter.update(value => value + 1);
+    counter.set(2);
+    assert.deepEqual(stateChanges, [1, 2]);
+    assert.equal(element.textContent, '2');
+    unsubscribeState();
+    unbindText();
+
+    const inputState = api.state('start');
+    const unbindValue = api.bindValue(element, inputState);
+    assert.equal(element.value, 'start');
+    element.value = 'typed';
+    listeners.get('input')();
+    assert.equal(inputState.get(), 'typed');
+    inputState.set('from state');
+    assert.equal(element.value, 'from state');
+    unbindValue();
+    assert.equal(listeners.has('input'), false);
+
+    const activeState = api.state(false);
+    const unbindClass = api.bindClass(element, 'active', activeState);
+    assert.equal(element.classes.has('active'), false);
+    activeState.set(true);
+    assert.equal(element.classes.has('active'), true);
+    unbindClass();
+
+    const stop = api.animate((delta, elapsed) => drawCalls.push([delta, elapsed]));
+    callbacks.shift()(100);
+    callbacks.shift()(125);
+    stop();
+    assert.deepEqual(drawCalls, [[0, 100], [25, 125]]);
+    assert.deepEqual(cancelled, [3]);
+  });
+
+  it('rejects unknown imports from the NAIDE browser API module', () => {
+    assert.throws(
+      () => compile('use { notAWebApi } from "naide:browser"'),
+      /Unknown NAIDE browser API 'notAWebApi'/,
+    );
+    assert.throws(
+      () => compile('use { globalThis } from "naide:browser"'),
+      /Import 'globalThis' under an alias/,
+    );
+    assert.throws(
+      () => compile('use { notAWebApi } from "naide:browser"'),
+      /Unknown NAIDE browser API/,
+    );
   });
 
   // ===== CLI App =====
@@ -2223,6 +2473,233 @@ describe('New features (auto, destructure, class, map/filter/reduce)', () => {
   it('compiles optional chaining', () => {
     const js = transpile('auto val = user?.name');
     assert.ok(js.includes('user?.name'));
+  });
+
+  it('supports optional calls and computed property access with null-safe semantics', () => {
+    const source = [
+      'any missing = null',
+      'any maybeCall = null',
+      'any memberResult = missing?.value',
+      'any indexResult = missing?.["value"]',
+      'any callResult = maybeCall?.("value")',
+      'any values = ["first"]',
+      'any presentIndex = values?.[0]',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    const values = runInNewContext(`${result.js}\n;({ memberResult, indexResult, callResult, presentIndex })`, {});
+    assert.equal(values.memberResult, undefined);
+    assert.equal(values.indexResult, undefined);
+    assert.equal(values.callResult, undefined);
+    assert.equal(values.presentIndex, 'first');
+  });
+
+  it('supports dynamic imports and arithmetic or nullish compound assignments', () => {
+    const source = [
+      'mut int value = 8',
+      'value *= 2',
+      'value /= 4',
+      'value %= 3',
+      'value += 4',
+      'value -= 1',
+      'mut any fallback = null',
+      'fallback ??= "ready"',
+      'mut bool enabled = true',
+      'enabled &&= false',
+      'mut str label = ""',
+      'label ||= "fallback"',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    assert.match(result.js, /value \*= 2/);
+    assert.match(result.js, /value \/= 4/);
+    assert.match(result.js, /value %= 3/);
+    assert.match(result.js, /fallback \?\?= "ready"/);
+    assert.match(result.js, /enabled &&= false/);
+    assert.match(result.js, /label \|\|= "fallback"/);
+    const values = runInNewContext(`${result.js}\n;({ value, fallback, enabled, label })`, {});
+    assert.deepEqual(values, { value: 4, fallback: 'ready', enabled: false, label: 'fallback' });
+    assert.match(transpile('any modulePromise = import("node:path")'), /import\("node:path"\)/);
+    assert.match(transpile('any plugin = import("./plugin.naide")'), /import\("\.\/plugin\.mjs"\)/);
+    assert.match(
+      compile('any plugin = import("./plugin.naide")', { preserveNaideImports: true }).js,
+      /import\("\.\/plugin\.naide"\)/,
+    );
+  });
+
+  it('loads native ESM modules through dynamic import at runtime', async () => {
+    const result = compile('any modulePromise = import("node:path")');
+    const encoded = Buffer.from(`${result.js}\nexport default modulePromise;`, 'utf8').toString('base64');
+    const module = await import(`data:text/javascript;base64,${encoded}`);
+    const pathModule = await module.default;
+    assert.equal(typeof pathModule.basename, 'function');
+  });
+
+  it('accepts JavaScript logical operator spellings alongside NAIDE word operators', () => {
+    const result = compile([
+      'bool wordAnd = true and false',
+      'bool symbolAnd = true && false',
+      'bool wordOr = false or true',
+      'bool symbolOr = false || true',
+      '',
+    ].join('\n'), { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    const values = runInNewContext(`${result.js}\n;({ wordAnd, symbolAnd, wordOr, symbolOr })`, {});
+    assert.deepEqual(values, {
+      wordAnd: false,
+      symbolAnd: false,
+      wordOr: true,
+      symbolOr: true,
+    });
+  });
+
+  it('accepts strict JavaScript equality operators', () => {
+    const source = [
+      'bool strictEqual = 1 === "1"',
+      'bool strictNotEqual = 1 !== "1"',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    assert.match(result.js, /1 === "1"/);
+    assert.match(result.js, /1 !== "1"/);
+    const values = runInNewContext(`${result.js}\n;({ strictEqual, strictNotEqual })`, {});
+    assert.deepEqual(values, { strictEqual: false, strictNotEqual: true });
+  });
+
+  it('supports JavaScript numeric literals, BigInt values, regexes, and template expressions', () => {
+    const source = [
+      'int hex = 0xFF',
+      'int binary = 0b1010',
+      'int octal = 0o17',
+      'num exponent = 1.25e2',
+      'num fraction = .5e2',
+      'num quotient = 8 / 2',
+      'bigint exact = 9_007_199_254_740_993n',
+      'bigint squared = 3n ** 2n',
+      'str greeting = `value=${hex + binary}`',
+      'str escaped = `literal \\${hex}`',
+      'bool matched = /foo\\d+/i.test("FOO42")',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    const values = runInNewContext(`${result.js}\n;({ hex, binary, octal, exponent, fraction, quotient, exact, squared, greeting, escaped, matched })`, {});
+    assert.equal(values.hex, 255);
+    assert.equal(values.binary, 10);
+    assert.equal(values.octal, 15);
+    assert.equal(values.exponent, 125);
+    assert.equal(values.fraction, 50);
+    assert.equal(values.quotient, 4);
+    assert.equal(values.exact, 9_007_199_254_740_993n);
+    assert.equal(values.squared, 9n);
+    assert.equal(values.greeting, 'value=265');
+    assert.equal(values.escaped, 'literal ${hex}');
+    assert.equal(values.matched, true);
+    assert.throws(() => transpile('int invalid = 1__0'), /Invalid numeric separator/);
+    assert.throws(() => transpile('any invalid = yield 1'), /yield is only valid inside a generator/);
+    assert.throws(() => transpile('1++'), /Increment\/decrement requires an assignable expression/);
+    const mixedBigInt = compile('bigint invalid = 1n + 1', { typeCheck: true });
+    assert.match(mixedBigInt.typeErrors.errors[0].message, /cannot mix bigint and number/);
+    const mixedBigIntAssignment = compile('bigint invalid = 1n\ninvalid += 1', { typeCheck: true });
+    assert.match(mixedBigIntAssignment.typeErrors.errors[0].message, /cannot mix bigint and number/);
+    const unsignedBigIntShift = compile('bigint invalid = 1n\ninvalid >>>= 1n', { typeCheck: true });
+    assert.match(unsignedBigIntShift.typeErrors.errors[0].message, /not defined for bigint/);
+  });
+
+  it('supports JavaScript arithmetic, bitwise, update, and conditional expressions', () => {
+    const source = [
+      'int power = 2 ** 3 ** 2',
+      'int negativePower = -2 ** 2',
+      'int groupedPower = (-2) ** 2',
+      'int positive = +2',
+      'int shifted = 1 << 4 + 1',
+      'mut int flags = (6 & 3) | 8',
+      'int inverted = ~1',
+      'int chosen = power > 0 ? shifted : 0',
+      'mut int counter = 1',
+      'counter++',
+      '++counter',
+      'counter **= 2',
+      'flags |= 4',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    const values = runInNewContext(`${result.js}\n;({ power, negativePower, groupedPower, positive, shifted, flags, inverted, chosen, counter })`, {});
+    assert.deepEqual(values, {
+      power: 512,
+      negativePower: -4,
+      groupedPower: 4,
+      positive: 2,
+      shifted: 32,
+      flags: 14,
+      inverted: -2,
+      chosen: 32,
+      counter: 9,
+    });
+  });
+
+  it('supports iterator, object-key, and post-test loops', () => {
+    const source = [
+      'mut int total = 0',
+      'for item of [1, 2, 3]:',
+      '  total += item',
+      'mut int keyCount = 0',
+      'for key in {a: 1, b: 2}:',
+      '  keyCount++',
+      'mut int runs = 0',
+      'do:',
+      '  runs++',
+      'while runs < 2',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    const values = runInNewContext(`${result.js}\n;({ total, keyCount, runs })`, {});
+    assert.deepEqual(values, { total: 6, keyCount: 2, runs: 2 });
+  });
+
+  it('compiles for-await loops for asynchronous iterable consumption', () => {
+    const source = [
+      'fn.async collect(stream):',
+      '  mut list values = []',
+      '  for await value of stream:',
+      '    values.push(value)',
+      '  ret values',
+      '',
+    ].join('\n');
+    const result = compile(source);
+    assert.match(result.js, /for await \(const value of stream\)/);
+    assert.doesNotThrow(() => new Function(`return (async () => { ${result.js} })`));
+  });
+
+  it('supports generator and async generator declarations', async () => {
+    const source = [
+      'fn.gen values():',
+      '  yield 1',
+      '  yield* [2, 3]',
+      'fn.gen resumedValue():',
+      '  ret 2 + (yield 3)',
+      'fn.async.gen asyncValues():',
+      '  yield 4',
+      '',
+    ].join('\n');
+    const result = compile(source, { typeCheck: true });
+    assert.deepEqual(result.typeErrors.errors, []);
+    assert.match(result.js, /function\* values\(\)/);
+    assert.match(result.js, /async function\* asyncValues\(\)/);
+    const encoded = Buffer.from(`${result.js}\nexport { values, resumedValue, asyncValues };`, 'utf8').toString('base64');
+    const module = await import(`data:text/javascript;base64,${encoded}`);
+    assert.deepEqual([...module.values()], [1, 2, 3]);
+    const resumed = module.resumedValue();
+    assert.deepEqual(resumed.next(), { value: 3, done: false });
+    assert.deepEqual(resumed.next(4), { value: 6, done: true });
+    const asyncValues = [];
+    for await (const value of module.asyncValues()) asyncValues.push(value);
+    assert.deepEqual(asyncValues, [4]);
   });
 
   it('compiles null coalescing', () => {

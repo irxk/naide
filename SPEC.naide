@@ -12,7 +12,46 @@
 #   5. 型検査・診断・テストで、実行前に誤りを見つけやすくする
 #   6. コンパイラの出力と実行時の挙動を追跡できるようにする
 #   7. 新機能は構文の一貫性、保守性、ターゲット間の意味保存を満たしてから追加
+#   8. 直接実行エンジンは段階的に導入し、未対応機能を明示する
 # ============================================
+
+# ---- 直接実行エンジン (experimental) ----
+# `naide native file.naide` interprets the parsed NAIDE AST without generating JavaScript.
+# The initial engine supports core expressions, functions, conditions, loops, match,
+# basic error handling, fn.async, await, and await.all for cooperative I/O concurrency.
+# Relative .naide imports and installed NAIDE packages with naide.pkg.json
+# manifests and in-package .naide main entries are supported and cached.
+# Package subpaths must be explicitly mapped to in-package .naide files by
+# exact exports keys. JavaScript-only npm packages, Node.js built-ins,
+# generators, classes, and framework declarations are not implemented here.
+# The async native runtime exposes io.readText, io.writeText, io.appendText,
+# io.exists, and io.listDir. File paths are relative to the entry file's
+# directory and are rejected if they escape that project root.
+# It also exposes http.request/get/post using the host Fetch implementation,
+# restricted to absolute HTTP(S) URLs. Embedders may inject an HTTP capability.
+# task.spawn/all/race/map/sleep provide cooperative asynchronous task coordination;
+# task.map takes (items, concurrencyLimit, asyncCallback) and keeps result order.
+# task.controller creates a cancellation signal; task.withTimeout appends one to
+# a callback and aborts it when the deadline expires. Cancellation is cooperative.
+# task.channel(capacity) creates a FIFO message channel; capacity 0 is rendezvous.
+# receive returns {value, done}; close drains buffered messages then ends receivers.
+# send(value, signal) and receive(signal) can cancel a queued operation and remove it.
+# Enum declarations produce frozen objects whose members have zero-based values;
+# pub enum values may be imported from native NAIDE modules.
+# Models support new, defaulted fields, init(params) constructors, methods using
+# self, async methods, and single inheritance. Overrides can call parent methods
+# with super.method(). Initialized static fields, static fn, and static fn.async
+# are supported and inherited. Static self follows the called model; static
+# overrides can call parent methods using super.method(), including async ones.
+# pub model declarations may be imported.
+# they do not schedule CPU work across parallel threads.
+# This is not yet a CPU-parallel or performance VM; bytecode/JIT optimization is future work.
+# Runtime failures report NAIDE line locations and function/file stack frames when known.
+# runtime.args/cwd/platform/arch expose limited host context. runtime.env contains
+# only explicitly injected variables; the CLI opts in with --env NAME.
+# runtime.exitCode sets the CLI exit status. Arbitrary process and shell access
+# are intentionally not part of the native runtime.
+# The default CLI runner and REPL still use the existing JavaScript runtime.
 
 
 # ---- 変数宣言 ----
@@ -156,13 +195,61 @@ if err instanceof TypeError:
 
 # ---- map/filter/reduce ビルトイン ----
 # コレクション操作の組み込み関数
+fn.gen count(int start, int end):
+  for value in start..end:
+    yield value
+
+list counted = Array.from(count(1, 4))
+
+fn.async.gen loadRecords(ids):
+  for await id of ids:
+    yield await loadRecord(id)
+
+list records = await mapAsync(loadRecords(ids), 4, (record) => record)
+
+fn.async sumStream(any stream):
+  mut int total = 0
+  for await value of stream:
+    total += value
+  ret total
+
 list doubled = map(items, (x) => x * 2)
 list big = filter(items, (x) => x > 5)
 int total2 = reduce(items, (a, b) => a + b, 0)
 any found = find(items, (x) => x > 3)
 bool allBig = every(items, (x) => x > 0)
 bool hasBig = some(items, (x) => x > 10)
-foreach(items, (x) => log x)
+list flattened = flatMap(items, (x) => x.children)
+list distinct = unique(items)
+list indexed = enumerate(items)
+list pairs = zip(items, labels)
+list batches = chunk(items, 25)
+list [validItems, invalidItems] = partition(items, isValid)
+any groupedItems = groupBy(items, (item) => item.category)
+int matchingCount = count(items, isValid)
+any total3 = sum(items)
+any firstItem = first(items, null)
+list sample = take(items, 10)
+list positivePrefix = takeWhile(items, (x) => x > 0)
+list afterHeader = drop(items, 1)
+
+# Async callbacks; helpers consume async generators and bounded concurrency applies to callbacks.
+list loaded = await task.map(ids, 4, loadItem)
+list valid = await filterAsync(items, 4, isValidAsync)
+any total4 = await reduceAsync(items, addAsync, 0)
+await forEachAsync(items, 4, saveAsync)
+any firstLoaded = await firstAsync(loadRecords(ids))
+any matchingRecord = await findAsync(loadRecords(ids), (x) => x.id == wanted)
+bool hasMissing = await someAsync(loadRecords(ids), (x) => x == null)
+bool allValid = await everyAsync(loadRecords(ids), isValidAsync)
+list firstPage = await takeAsync(loadRecords(ids), 20)
+list matchingPrefix = await takeWhileAsync(loadRecords(ids), isValidAsync)
+list asyncPairs = await zipAsync(loadRecords(ids), labels)
+list asyncBatches = await chunkAsync(loadRecords(ids), 20)
+list [accepted, rejected] = await partitionAsync(loadRecords(ids), isValidAsync)
+any asyncGrouped = await groupByAsync(loadRecords(ids), (record) => record.category)
+int asyncCount = await countAsync(loadRecords(ids), isValidAsync)
+list asyncDistinct = await uniqueAsync(loadRecords(ids))
 
 
 # ---- パイプ演算子 ----
@@ -498,12 +585,66 @@ pub str VERSION = "1.0.0"
 any val = data?.nested?.value ?? "default"
 str userName = user?.name
 any first = items?.[0]
-any result2 = obj?.method?.()
+any maybeResult = obj?.method?.()
+any optionalCall = callback?.("argument")
+any optionalIndex = dictionary?.["key"]
 
 # Null合体演算子 (??)
 str displayName = user?.name ?? "Anonymous"
 int port = config?.port ?? 3000
 
+# ---- 動的インポートと複合代入 ----
+any plugin = await import("./plugins/report.naide")
+mut num total = 10
+total *= 2
+total /= 4
+total %= 3
+total ??= 1
+mut bool enabled = true
+enabled &&= hasPermission
+mut str label = ""
+label ||= "default"
+bool sameType = value === other
+bool differentType = value !== other
+
+# ---- JavaScript互換の式・リテラル（Node.js/Bun/ブラウザー） ----
+# バッククォート文字列の ${...} 内は JavaScript 式としてそのまま出力され、NAIDE 式としては解析されない。
+# これらの機能は JavaScript 生成ターゲット専用。ほかのターゲットではコンパイル時にエラーになる。
+bigint precise = 9_007_199_254_740_993n
+int hex = 0x2a
+int binary = 0b1010
+int octal = 0o17
+num exponent = 1.25e2
+str template = `value=${hex}`
+bool matches = /value=\d+/i.test(template)
+int power = 2 ** 3 ** 2
+int bits = (5 << 1) | 1
+int selected = power > 0 ? bits : 0
+mut int counter = 0
+counter++
+++counter
+
+# ---- iterator / post-test loops ----
+for item of [1, 2, 3]:
+  log item
+
+for key in {first: 1, second: 2}:
+  log key
+
+do:
+  counter--
+while counter > 0
+
+# ---- generator functions ----
+fn.gen values():
+  yield 1
+  yield* [2, 3]
+
+fn.async.gen asyncValues():
+  yield 4
+
+# JavaScript互換機能はNode.js/Bun/ブラウザー向け生成対象。任意のJavaScript
+# ファイルを直接解析する機能ではなく、その他の生成ターゲットは未対応機能を診断する。
 
 # ---- await.all (Promise.all) ----
 # list results = await.all [expr1, expr2, expr3]
@@ -518,13 +659,66 @@ map full = {...defaults, ...overrides}
 
 # ---- ページ生成 (HTML) ----
 page "index.html":
+  lang "ja"
   title "My App"
   style "styles.css"
-  div "container":
+  importmap "chart.js" "https://esm.sh/chart.js/auto"
+  main "#app":
     h1 "Hello World"
     p "Welcome to NAIDE"
-    a "https://example.com" "Click here"
-  script "app.js"
+    button "#start" "Start"
+    canvas "#game" "800" "600"
+  module "build/game.mjs"
+
+# 属性は子行として指定し、aria/data属性は attr で指定する。
+page "signup.html":
+  main "#app":
+    form "#signup":
+      action "/signup"
+      method "post"
+      label "Email":
+        attr "for" "email"
+      input:
+        id "email"
+        type "email"
+        name "email"
+        required
+
+# ---- ブラウザーAPI・DOMイベント・Canvas ----
+# Browser client source remains .naide and compiles to a native ESM .mjs file.
+# "naide:browser" is a compiler-provided module, not an npm dependency.
+use { document, window, fetch, localStorage, select, selectAll, listen, createElement, canvas2d, animate, text, value, state, bindText, bindValue, bindClass } from "naide:browser"
+# Browser-compatible ESM packages may be resolved through the page import map.
+# use Chart from "chart.js"
+# Installed npm packages can be bundled into page modules:
+#   naide build . build --bundle-browser
+
+# `listen` binds normal DOM events and returns an unsubscribe function.
+fn startGame(any event):
+  log "Game started"
+
+listen("#start", "click", startGame)
+
+# `state` creates an observable value; bind helpers sync it to common DOM targets.
+any counter = state(0)
+bindText("#counter", counter)
+fn increment(any current):
+  ret current + 1
+counter.update(increment)
+
+# Access the Canvas 2D API and browser Web APIs through their native JavaScript
+# objects while keeping authored application logic in NAIDE.
+any canvas = select("#game")
+any context = canvas2d(canvas)
+mut num position = 0
+
+fn draw(num delta, num elapsed):
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = "#ed7d55"
+  context.fillRect(position, 40, 48, 48)
+  position += delta * 0.05
+
+animate(draw)
 
 
 # ---- CLI アプリ ----

@@ -95,7 +95,7 @@ export class Lexer {
         continue;
       }
 
-      if (this.isDigit(ch)) {
+      if (this.isDigit(ch) || (ch === '.' && this.isDigit(this.lookAhead()))) {
         this.readNumber();
         continue;
       }
@@ -226,13 +226,23 @@ export class Lexer {
     const startLine = this.line;
     const startCol = this.col;
     this.advance(); // skip `
-    let value = '';
+    const parts = [];
+    let current = '';
     while (this.pos < this.source.length && this.peek() !== '`') {
       if (this.peek() === '\\') {
         this.advance();
-        value += this.advance();
+        const escaped = this.advance();
+        if (escaped === '\n') continue;
+        const escapes = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0' };
+        current += Object.hasOwn(escapes, escaped) ? escapes[escaped] : escaped;
+      } else if (this.peek() === '$' && this.lookAhead() === '{') {
+        if (current) parts.push({ type: 'text', value: current });
+        current = '';
+        this.advance();
+        this.advance();
+        parts.push({ type: 'expr', value: this.readTemplateExpression(startLine, startCol) });
       } else {
-        value += this.advance();
+        current += this.advance();
       }
     }
     if (this.peek() === '`') {
@@ -240,28 +250,146 @@ export class Lexer {
     } else {
       throw new Error(`[NAIDE Lexer Error] Unterminated template string starting at line ${startLine}:${startCol}`);
     }
-    this.tokens.push(new Token(T.STRING, { parts: [{ type: 'text', value }], raw: value }, startLine, startCol));
+    if (current || parts.length === 0) parts.push({ type: 'text', value: current });
+    const raw = parts.every(part => part.type === 'text') ? parts.map(part => part.value).join('') : null;
+    this.tokens.push(new Token(T.STRING, { parts, raw, template: true }, startLine, startCol));
+  }
+
+  readTemplateExpression(startLine, startCol) {
+    let expression = '';
+    let depth = 1;
+    let quote = null;
+    let escaped = false;
+
+    while (this.pos < this.source.length) {
+      const ch = this.advance();
+      if (quote) {
+        expression += ch;
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+        expression += ch;
+      } else if (ch === '{') {
+        depth++;
+        expression += ch;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0) return expression.trim();
+        expression += ch;
+      } else {
+        expression += ch;
+      }
+    }
+
+    throw new Error(`[NAIDE Lexer Error] Unterminated template expression starting at line ${startLine}:${startCol}`);
   }
 
   readNumber() {
     const startLine = this.line;
     const startCol = this.col;
-    let num = '';
-    let isFloat = false;
+    let raw = '';
+    const consume = () => { raw += this.advance(); };
+    const readDigits = valid => {
+      let digits = '';
+      while (this.peek() && (valid(this.peek()) || this.peek() === '_')) digits += this.advance();
+      if (!new RegExp(`^[${valid.chars}](?:_?[${valid.chars}])*$`).test(digits)) {
+        throw new Error(`[NAIDE Lexer Error] Invalid numeric separator or missing digits at line ${startLine}:${startCol}`);
+      }
+      raw += digits;
+    };
 
-    while (this.pos < this.source.length && (this.isDigit(this.peek()) || this.peek() === '.' || this.peek() === '_')) {
-      if (this.peek() === '.') {
-        if (isFloat) break;
-        if (this.lookAhead() === '.') break; // range operator ..
-        isFloat = true;
+    if (this.peek() === '.') {
+      consume();
+      readDigits(Object.assign(ch => this.isDigit(ch), { chars: '0-9' }));
+      if (this.peek() === 'e' || this.peek() === 'E') {
+        consume();
+        if (this.peek() === '+' || this.peek() === '-') consume();
+        readDigits(Object.assign(ch => this.isDigit(ch), { chars: '0-9' }));
       }
-      if (this.peek() !== '_') {
-        num += this.peek();
+    } else if (this.peek() === '0' && /[xXbBoO]/.test(this.lookAhead() || '')) {
+      consume();
+      const prefix = this.advance();
+      raw += prefix;
+      const digitClass = prefix.toLowerCase() === 'x' ? '0-9a-fA-F' : prefix.toLowerCase() === 'b' ? '01' : '0-7';
+      const valid = Object.assign(ch => new RegExp(`[${digitClass}]`).test(ch), { chars: digitClass });
+      readDigits(valid);
+      if (this.peek() === 'n') consume();
+      if (this.isIdentChar(this.peek())) {
+        throw new Error(`[NAIDE Lexer Error] Invalid digit in numeric literal at line ${startLine}:${startCol}`);
       }
-      this.advance();
+    } else {
+      readDigits(Object.assign(ch => this.isDigit(ch), { chars: '0-9' }));
+      if (this.peek() === '.' && this.lookAhead() !== '.') {
+        consume();
+        if (this.isDigit(this.peek()) || this.peek() === '_') {
+          readDigits(Object.assign(ch => this.isDigit(ch), { chars: '0-9' }));
+        }
+      }
+      if (this.peek() === 'e' || this.peek() === 'E') {
+        consume();
+        if (this.peek() === '+' || this.peek() === '-') consume();
+        readDigits(Object.assign(ch => this.isDigit(ch), { chars: '0-9' }));
+      }
+      if (this.peek() === 'n') {
+        if (raw.includes('.') || /[eE]/.test(raw)) {
+          throw new Error(`[NAIDE Lexer Error] BigInt literals cannot have a fraction or exponent at line ${startLine}:${startCol}`);
+        }
+        consume();
+      }
+      if (this.isIdentStart(this.peek())) {
+        throw new Error(`[NAIDE Lexer Error] Invalid numeric literal at line ${startLine}:${startCol}`);
+      }
     }
 
-    this.tokens.push(new Token(T.NUMBER, num, startLine, startCol));
+    this.tokens.push(new Token(T.NUMBER, raw, startLine, startCol));
+  }
+
+  isRegexAllowed() {
+    const previous = this.tokens.at(-1);
+    if (!previous) return true;
+    return new Set([
+      T.NEWLINE, T.INDENT, T.LPAREN, T.LBRACKET, T.LBRACE, T.COLON, T.COMMA,
+      T.ASSIGN, T.PLUS, T.MINUS, T.STAR, T.SLASH, T.PERCENT, T.EXPONENT,
+      T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE, T.AND, T.OR, T.NULLISH,
+      T.BIT_AND, T.BIT_OR, T.BIT_XOR, T.SHIFT_LEFT, T.SHIFT_RIGHT, T.SHIFT_UNSIGNED,
+      T.NOT, T.RET, T.THROW, T.AWAIT, T.YIELD, T.LOG, T.IF, T.ELIF, T.ELSE, T.WHILE,
+      T.IN, T.OF, T.QUESTION, T.FAT_ARROW,
+    ]).has(previous.type);
+  }
+
+  readRegexLiteral(startLine, startCol) {
+    let raw = '/';
+    let inCharacterClass = false;
+    let escaped = false;
+    let closed = false;
+
+    while (this.pos < this.source.length) {
+      const ch = this.advance();
+      raw += ch;
+      if (ch === '\n') break;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '[') {
+        inCharacterClass = true;
+      } else if (ch === ']') {
+        inCharacterClass = false;
+      } else if (ch === '/' && !inCharacterClass) {
+        closed = true;
+        while (this.isIdentChar(this.peek())) raw += this.advance();
+        break;
+      }
+    }
+
+    if (!closed) {
+      throw new Error(`[NAIDE Lexer Error] Unterminated regular expression at line ${startLine}:${startCol}`);
+    }
+    this.tokens.push(new Token(T.REGEX, raw, startLine, startCol));
   }
 
   readIdentifier() {
@@ -283,7 +411,20 @@ export class Lexer {
         sub += this.advance();
       }
       if (sub === 'async') {
-        this.tokens.push(new Token(T.FN_ASYNC, 'fn.async', startLine, startCol));
+        if (this.peek() === '.') {
+          this.advance();
+          let modifier = '';
+          while (this.pos < this.source.length && this.isIdentChar(this.peek())) modifier += this.advance();
+          if (modifier === 'gen') {
+            this.tokens.push(new Token(T.FN_ASYNC_GENERATOR, 'fn.async.gen', startLine, startCol));
+            return;
+          }
+        } else {
+          this.tokens.push(new Token(T.FN_ASYNC, 'fn.async', startLine, startCol));
+          return;
+        }
+      } else if (sub === 'gen') {
+        this.tokens.push(new Token(T.FN_GENERATOR, 'fn.gen', startLine, startCol));
         return;
       }
       // Restore if not a compound keyword
@@ -328,48 +469,103 @@ export class Lexer {
 
     switch (ch) {
       case '=':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.EQ, '==', startLine, startCol)); }
+        if (this.peek() === '=') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.EQ, '===', startLine, startCol)); }
+          else this.tokens.push(new Token(T.EQ, '==', startLine, startCol));
+        }
         else if (this.peek() === '>') { this.advance(); this.tokens.push(new Token(T.FAT_ARROW, '=>', startLine, startCol)); }
         else this.tokens.push(new Token(T.ASSIGN, '=', startLine, startCol));
         break;
       case '+':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.PLUS_ASSIGN, '+=', startLine, startCol)); }
+        if (this.peek() === '+') { this.advance(); this.tokens.push(new Token(T.INCREMENT, '++', startLine, startCol)); }
+        else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.PLUS_ASSIGN, '+=', startLine, startCol)); }
         else this.tokens.push(new Token(T.PLUS, '+', startLine, startCol));
         break;
       case '-':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.MINUS_ASSIGN, '-=', startLine, startCol)); }
+        if (this.peek() === '-') { this.advance(); this.tokens.push(new Token(T.DECREMENT, '--', startLine, startCol)); }
+        else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.MINUS_ASSIGN, '-=', startLine, startCol)); }
         else if (this.peek() === '>') { this.advance(); this.tokens.push(new Token(T.ARROW, '->', startLine, startCol)); }
         else this.tokens.push(new Token(T.MINUS, '-', startLine, startCol));
         break;
       case '*':
-        this.tokens.push(new Token(T.STAR, '*', startLine, startCol));
+        if (this.peek() === '*') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.EXPONENT_ASSIGN, '**=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.EXPONENT, '**', startLine, startCol));
+        } else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.STAR_ASSIGN, '*=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.STAR, '*', startLine, startCol));
         break;
       case '/':
-        this.tokens.push(new Token(T.SLASH, '/', startLine, startCol));
+        if (this.isRegexAllowed()) { this.readRegexLiteral(startLine, startCol); }
+        else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.SLASH_ASSIGN, '/=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.SLASH, '/', startLine, startCol));
         break;
       case '%':
-        this.tokens.push(new Token(T.PERCENT, '%', startLine, startCol));
+        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.PERCENT_ASSIGN, '%=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.PERCENT, '%', startLine, startCol));
         break;
       case '!':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.NEQ, '!=', startLine, startCol)); }
+        if (this.peek() === '=') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.NEQ, '!==', startLine, startCol)); }
+          else this.tokens.push(new Token(T.NEQ, '!=', startLine, startCol));
+        }
         else this.tokens.push(new Token(T.NOT, '!', startLine, startCol));
         break;
       case '>':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.GTE, '>=', startLine, startCol)); }
+        if (this.peek() === '>') {
+          this.advance();
+          if (this.peek() === '>') {
+            this.advance();
+            if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.SHIFT_UNSIGNED_ASSIGN, '>>>=', startLine, startCol)); }
+            else this.tokens.push(new Token(T.SHIFT_UNSIGNED, '>>>', startLine, startCol));
+          } else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.SHIFT_RIGHT_ASSIGN, '>>=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.SHIFT_RIGHT, '>>', startLine, startCol));
+        } else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.GTE, '>=', startLine, startCol)); }
         else this.tokens.push(new Token(T.GT, '>', startLine, startCol));
         break;
       case '<':
-        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.LTE, '<=', startLine, startCol)); }
+        if (this.peek() === '<') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.SHIFT_LEFT_ASSIGN, '<<=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.SHIFT_LEFT, '<<', startLine, startCol));
+        } else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.LTE, '<=', startLine, startCol)); }
         else this.tokens.push(new Token(T.LT, '<', startLine, startCol));
         break;
       case '|':
-        if (this.peek() === '>') { this.advance(); this.tokens.push(new Token(T.PIPE, '|>', startLine, startCol)); }
-        else this.tokens.push(new Token(T.IDENT, '|', startLine, startCol));
+        if (this.peek() === '|') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.OR_ASSIGN, '||=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.OR, '||', startLine, startCol));
+        }
+        else if (this.peek() === '>') { this.advance(); this.tokens.push(new Token(T.PIPE, '|>', startLine, startCol)); }
+        else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.BIT_OR_ASSIGN, '|=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.BIT_OR, '|', startLine, startCol));
+        break;
+      case '&':
+        if (this.peek() === '&') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.AND_ASSIGN, '&&=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.AND, '&&', startLine, startCol));
+        } else if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.BIT_AND_ASSIGN, '&=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.BIT_AND, '&', startLine, startCol));
+        break;
+      case '^':
+        if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.BIT_XOR_ASSIGN, '^=', startLine, startCol)); }
+        else this.tokens.push(new Token(T.BIT_XOR, '^', startLine, startCol));
+        break;
+      case '~':
+        this.tokens.push(new Token(T.BIT_NOT, '~', startLine, startCol));
         break;
       case '?':
-        if (this.peek() === '?') { this.advance(); this.tokens.push(new Token(T.NULLISH, '??', startLine, startCol)); }
+        if (this.peek() === '?') {
+          this.advance();
+          if (this.peek() === '=') { this.advance(); this.tokens.push(new Token(T.NULLISH_ASSIGN, '??=', startLine, startCol)); }
+          else this.tokens.push(new Token(T.NULLISH, '??', startLine, startCol));
+        }
         else if (this.peek() === '.') { this.advance(); this.tokens.push(new Token(T.OPTIONAL, '?.', startLine, startCol)); }
-        else this.tokens.push(new Token(T.IDENT, '?', startLine, startCol));
+        else this.tokens.push(new Token(T.QUESTION, '?', startLine, startCol));
         break;
       case '.':
         if (this.peek() === '.') {

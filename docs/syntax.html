@@ -62,6 +62,7 @@
           <tr><td><code>str</code></td><td>String</td><td><code>string</code></td></tr>
           <tr><td><code>int</code></td><td>Integer number</td><td><code>number</code></td></tr>
           <tr><td><code>num</code></td><td>Any number (accepts <code>int</code>)</td><td><code>number</code></td></tr>
+          <tr><td><code>bigint</code></td><td>Arbitrary-precision integer</td><td><code>bigint</code></td></tr>
           <tr><td><code>bool</code></td><td>Boolean</td><td><code>boolean</code></td></tr>
           <tr><td><code>list</code></td><td>Array</td><td><code>Array</code></td></tr>
           <tr><td><code>map</code></td><td>Object / dictionary</td><td><code>Object</code></td></tr>
@@ -301,6 +302,37 @@
 <span class="type">int</span> port = config?.port ?? <span class="num">3000</span>
 <span class="type">str</span> display = label ?? title ?? <span class="str">"Untitled"</span></code></pre>
       <p>Unlike <code>||</code>, the <code>??</code> operator only falls through on <code>null</code>/<code>undefined</code>, not on <code>0</code>, <code>""</code>, or <code>false</code>.</p>
+
+      <!-- JavaScript Interoperability -->
+      <h2>JavaScript Interoperability</h2>
+      <p>Optional function calls and computed property access, native dynamic imports, strict equality, and JavaScript logical and compound assignment operators are available:</p>
+      <pre><code class="lang-naide"><span class="type">any</span> first = items?.[<span class="num">0</span>]
+<span class="type">any</span> result = callback?.(<span class="str">"value"</span>)
+<span class="type">any</span> plugin = <span class="kw">await</span> import(<span class="str">"./plugins/report.naide"</span>)
+mut <span class="type">bool</span> enabled = true
+enabled &amp;&amp;= hasPermission
+enabled = enabled &amp;&amp; featureAvailable
+<span class="type">bool</span> same = value === other</code></pre>
+      <p>Dynamic import remains a native ESM operation. Relative <code>.naide</code> import paths are rewritten to the generated <code>.mjs</code> path when building.</p>
+
+      <h3>Additional JavaScript-compatible expressions and control flow</h3>
+      <pre><code class="lang-naide"><span class="type">bigint</span> exact = <span class="num">9_007_199_254_740_993n</span>
+<span class="type">int</span> mask = (<span class="num">5</span> &lt;&lt; <span class="num">1</span>) | <span class="num">1</span>
+<span class="type">str</span> message = <span class="str">`value=${mask}`</span>
+<span class="type">bool</span> matched = <span class="str">/value=\d+/i</span>.test(message)
+<span class="type">int</span> selected = mask &gt; <span class="num">0</span> ? mask : <span class="num">0</span>
+
+<span class="kw">for</span> item <span class="kw">of</span> [<span class="num">1</span>, <span class="num">2</span>, <span class="num">3</span>]:
+  log item
+
+<span class="kw">do</span>:
+  mask++
+<span class="kw">while</span> mask &lt; <span class="num">20</span>
+
+<span class="kw">fn.gen</span> values():
+  <span class="kw">yield</span> <span class="num">1</span>
+  <span class="kw">yield</span>* [<span class="num">2</span>, <span class="num">3</span>]</code></pre>
+      <p>Also supported are radix/exponent/numeric-separator literals, regular-expression literals, exponentiation and bitwise/shift operators, prefix/postfix updates, and <code>fn.async.gen</code>. Expressions inside backtick <code>${...}</code> interpolations use JavaScript expression syntax and are passed through unchanged. <code>match</code> is the NAIDE switch-like form and inserts case breaks automatically. These features compile for Node.js, Bun, TypeScript, and browser JavaScript output; they do not make NAIDE a parser for arbitrary JavaScript files. Direct JavaScript class/import/export syntax, decorators, and labeled loop control are not currently supported. Non-JavaScript output targets report an error for these JS-specific constructs.</p>
 
       <!-- Imports / Exports -->
       <h2>Imports &amp; Exports</h2>

@@ -1,0 +1,109 @@
+:root {
+  color-scheme: light;
+  font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  color: #17223b;
+  background: #f2f5fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  padding: 48px 20px;
+}
+
+#app {
+  width: min(100%, 720px);
+  margin: 0 auto;
+}
+
+.hero {
+  margin-bottom: 28px;
+}
+
+.hero p:first-child {
+  color: #147e83;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+h1 {
+  margin: 10px 0;
+  font-size: clamp(2rem, 6vw, 3.2rem);
+  line-height: 1.15;
+}
+
+.hero p:last-child {
+  color: #596780;
+  line-height: 1.7;
+}
+
+.task-card {
+  padding: clamp(20px, 5vw, 36px);
+  border: 1px solid #dce3ef;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 18px 50px #1d315514;
+}
+
+form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+label {
+  grid-column: 1 / -1;
+  font-weight: 700;
+}
+
+input {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid #b9c5d8;
+  border-radius: 10px;
+  font: inherit;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 3px solid #65d9d1;
+  outline-offset: 2px;
+}
+
+button {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 10px;
+  background: #176c78;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #105661;
+}
+
+ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 24px;
+}
+
+li {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: 28px 16px;
+  }
+}

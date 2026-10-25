@@ -14,7 +14,7 @@ NAIDE is designed around one canonical syntax shared by people, AI tools, the co
 | `typescript` / `ts` | `--target ts` | TypeScript | Express | Code generation smoke test |
 | `go` | `--target go` | Go | net/http | Code generation + basic runtime smoke |
 | `java` | `--target java` | Java | HttpServer | Code generation smoke test |
-| `rust` / `rs` | `--target rust` | Rust | actix-web | Code generation smoke test |
+| `rust` / `rs` | `--target rust` | Rust | actix-web | Code generation + basic runtime smoke |
 | `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib | Code generation + basic runtime smoke |
 | `c` | `--target c` | C | libmicrohttpd | Code generation + basic runtime smoke |
 | `csharp` / `cs` | `--target csharp` | C# | ASP.NET | Code generation smoke test |
@@ -28,9 +28,11 @@ NAIDE source files use the `.naide` extension. There is one language syntax; no 
 
 #### What "supported target" means
 
-The table describes exactly what CI currently verifies: all 15 targets have automated code-generation smoke tests; Node.js, Python, Bun, Go, C, and C++ also run a minimal output program (C/C++ are compiled first). This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
+The table describes exactly what CI currently verifies: all 15 targets have automated code-generation smoke tests; Node.js, Python, Bun, Go, Rust, C, and C++ also compile or run a small program with a function call and conditional output. This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
 
 The server-framework column identifies the backend's intended framework; it is not a promise that every NAIDE server feature is implemented for that target. Some backends emit TODO comments instead of working behavior—for example, the C backend's CRUD, authentication, and WebSocket paths, and the Rust backend's CRUD and WebSocket paths. Treat those generated sections as unsupported until the backend emits executable implementations and the corresponding integration tests pass.
+
+NAIDE's measurable release-readiness criteria and current evidence are tracked in [docs/release-readiness.md](./docs/release-readiness.md). A configured CI check is not counted as passing until it has run successfully.
 
 ## Install
 
@@ -87,6 +89,7 @@ Save as `lesson.naide`, then run `naide lesson.naide`. To inspect a project's lo
 
 ```bash
 naide <file.naide>             # Check and run a NAIDE file
+naide native <file.naide>      # Run the supported core directly on the NAIDE AST
 naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
@@ -114,6 +117,149 @@ naide -o <out.js> <file>      # Write JavaScript to file
 naide --ast <file>            # Print AST
 naide --tokens <file>         # Print token stream
 ```
+
+The native runtime provides limited host context without exposing Node.js `process` or launching shell commands:
+
+```naide
+each argument in runtime.args:
+  log argument
+
+str mode = runtime.env.get("APP_MODE")
+str directory = runtime.cwd
+log "{runtime.platform}/{runtime.arch}"
+runtime.exitCode = 2
+```
+
+`runtime.args` contains arguments after `--` in `naide native app.naide -- input.txt`. Environment variables are **not** exposed by default; opt in by name with `--env APP_MODE`, which makes only that variable visible through `runtime.env.get/has/keys`. Embedded runtimes can pass `runtime: {args, env, cwd, platform, arch}` to `NativeEngine` or `runNativeAsync`. The native runtime intentionally does not expose arbitrary process access or shell execution.
+
+`naide native` uses NAIDE's experimental direct AST interpreter; it does not generate or execute JavaScript. It supports core values, functions and synchronous/asynchronous generators, model declarations and inheritance, enums, expressions, conditionals, loops, matching, basic error handling, `fn.async`, `await`, `await.all`, task primitives and channels, relative imports of `.naide` modules, and installed NAIDE source packages. Export values, functions, models, and enums with `pub`, then import them with `use`:
+
+```naide
+# math.naide
+pub fn add(int left, int right) -> int:
+  ret left + right
+
+pub enum Color:
+  RED
+  GREEN
+
+model User:
+  str name
+  int age = 0
+  fn greet() -> str:
+    ret "Hello, {self.name}"
+```
+
+```naide
+# app.naide
+use { add } from "./math.naide"
+log add(20, 22)
+```
+
+Enum members have zero-based integer values and enum objects are frozen:
+
+```naide
+use { Color } from "./math.naide"
+int favorite = Color.GREEN
+```
+
+Models support `new`, ordered constructor arguments, field defaults, custom `init(params):` initializers, instance methods using `self`, and single inheritance with inherited fields and methods. Custom initializers run after parent initialization and field defaults, and can assign fields through `self`. Models can declare initialized `static <type> field = value` fields, plus `static fn` and `static fn.async` methods; static fields and methods are inherited by derived models. In static methods, `self` refers to the class used for the call, including when an inherited method is called on a derived model. Overridden instance or static methods can call their parent implementation with `super.method()`, including with `await` in async methods. Arbitrary JavaScript classes and model features requiring compiler/runtime integrations remain outside the direct interpreter.
+
+```naide
+model User:
+  str name
+  int age = 18
+  init(str name, int age = 18):
+    self.name = name
+    self.age = age
+```
+
+NAIDE packages installed in `node_modules` can also be imported by their package name. The package must include a `naide.pkg.json` whose `main` points to a `.naide` entry file inside that package; packages created by `naide pkg init` use `index.naide` by default. Package lookup walks the importing file's parent directories, allowing nested package dependencies. A package can expose additional files by exact subpath mappings in `exports`:
+
+```naide
+use { add } from "@example/math"
+use { divide } from "@example/math/arithmetic"
+log add(20, 22)
+```
+
+```json
+{
+  "main": "index.naide",
+  "exports": {
+    "./arithmetic": "./src/arithmetic.naide"
+  }
+}
+```
+
+Only declared subpaths can be imported, and each mapped `.naide` file must resolve inside the package (including through symbolic links). JavaScript-only npm packages and Node.js built-ins are not loaded by the native engine. Imported modules are evaluated once and cached. Cyclic imports fail with an explicit diagnostic. Synchronous and asynchronous generator functions, lambdas, and model methods support standalone `yield` statements and `yield*` delegation; async generators may await while producing values. `yield` nested inside another expression remains unsupported. `for await value of iterable:` consumes asynchronous or synchronous iterables in async functions and async generators; synchronous execution rejects it. Iterable consumption and collection callbacks count against the native execution step budget and close iterators on early exit or failure. Arbitrary JavaScript classes and framework declarations are also not supported by this engine yet. `await.all` starts all listed async operations before waiting for their results, enabling I/O concurrency. Synchronous iterable collections support `map`, `filter`, `reduce`, `find`, `some`, `every`, `flatMap`, `unique`, `enumerate`, streaming `zip`, `chunk`, `partition`, `groupBy`, `count`, and `sum`; `zip` stops at the shortest input and closes the other iterators, `groupBy` returns a `Map`, and `chunk` keeps the final partial group. Async iterables also support `zipAsync`, `chunkAsync`, `partitionAsync`, `groupByAsync`, `countAsync`, and `uniqueAsync`; callback-based partition/group/count operations preserve input order. `mapAsync`, `filterAsync`, and `forEachAsync` run callbacks with a positive-safe-integer concurrency limit and consume synchronous or asynchronous iterables; async map/filter preserve input order. `reduceAsync` runs its callback sequentially. `task.map` remains the task-oriented bounded-concurrency mapping API. The native runtime also exposes asynchronous file I/O through `io`; relative paths are confined to the entry file's directory, and paths escaping it (including symbolic-link escapes) are rejected:
+
+```naide
+await io.writeText("notes.txt", "hello")
+await io.appendText("notes.txt", " from NAIDE")
+str contents = await io.readText("notes.txt")
+bool present = await io.exists("notes.txt")
+list files = await io.listDir(".")
+```
+
+`io` provides `readText`, `writeText`, `appendText`, `exists`, and `listDir`. Writes only target existing directories. When embedding the engine, pass an explicit `io` capability to `NativeEngine` / `runNativeAsync` to provide a host-specific implementation; otherwise source-only runs use the current working directory as the project root. These operations are asynchronous; use the asynchronous evaluator or `naide native`. Runtime errors include NAIDE source-line locations and a `NAIDE stack` with function and file frames when available. Step and call-depth limit errors use the same diagnostics. The path checks are a useful project boundary, not an OS-level sandbox for hostile code. It is a correctness-oriented prototype, not a high-performance VM: CPU-parallel execution, bytecode/JIT optimization, and Go-class throughput are future work and have not been measured. JavaScript generation and the existing default run command remain available and unchanged. A configurable step budget protects against runaway programs:
+
+Collection queries `find`, `some`, and `every` stop as soon as their result is known instead of consuming the entire iterable. `first`, `take`, and `takeWhile` also stop early and close the iterator; `drop` skips a specified non-negative item count. Their async counterparts are `firstAsync`, `findAsync`, `someAsync`, `everyAsync`, `takeAsync`, and `takeWhileAsync`. Count arguments must be non-negative safe integers, and iterable reads are covered by the execution step limit.
+
+The native runtime also exposes `http.request`, `http.get`, and `http.post`. They return the host's Fetch `Response`, so JSON and text bodies can be read with `await response.json()` and `await response.text()`:
+
+```naide
+fn.async loadUser(str id):
+  map response = await http.get("https://api.example.com/users/{id}")
+  ret await response.json()
+
+map user = await loadUser("42")
+```
+
+Only absolute `http:` and `https:` URLs are accepted. The default uses the host's Fetch implementation; embeddings can provide an `http` capability with `request`, `get`, and `post` methods. Network access is not restricted to an allowlist and is not an OS-level sandbox; only run trusted code with network access.
+
+For concurrent work, `task.spawn` starts a function, `task.all` waits for all results in input order, `task.race` returns the first settled result, `task.map` processes a list with a concurrency limit while preserving result order, and `task.sleep` asynchronously waits for a duration in milliseconds. `task.controller()` creates an `AbortSignal`; `task.withTimeout(callback, milliseconds, ...args)` passes a signal as the callback's final argument and aborts it on timeout:
+
+```naide
+fn.async load(str url):
+  map response = await http.get(url)
+  ret await response.json()
+
+list results = await task.all([
+  task.spawn(load, "https://api.example.com/a"),
+  task.spawn(load, "https://api.example.com/b")
+])
+list users = await task.map(["a", "b", "c", "d"], 2, load)
+```
+
+Task concurrency is cooperative and intended for I/O-bound work; it does not run CPU-bound NAIDE functions in parallel threads. `task.all` rejects when any task rejects. `task.race` does not cancel tasks that finish later. `task.map` stops dispatching new items after a callback fails, but already-running callbacks are allowed to finish.
+
+Pass the signal to cancellable operations such as HTTP requests or `task.sleep`. Cancellation is cooperative: arbitrary host functions that ignore the signal continue running, even after `task.withTimeout` has returned a timeout error.
+
+Use `task.channel(capacity)` to pass messages between asynchronous tasks. Capacity defaults to `0` (a rendezvous channel where each send waits for a receiver); positive capacity buffers messages. `receive()` returns `{value, done}` and returns `done: true` after a closed channel has been drained. Closing is idempotent, wakes blocked receivers, and rejects blocked or future sends. `send(value, signal)` and `receive(signal)` accept an optional `AbortSignal`; cancelling a blocked operation removes it from the channel queue without consuming or publishing a message:
+
+```naide
+map messages = task.channel(2)
+await messages.send("ready")
+map item = await messages.receive()
+messages.close()
+```
+
+```bash
+naide native app.naide --steps 2000000
+```
+
+Example native async source:
+
+```naide
+fn.async load(int id):
+  ret await fetchValue(id)
+
+list pending = [load(1), load(2)]
+list values = await.all pending
+log values
+```
+
+`await.all` preserves the input order of results and rejects if any task rejects. This provides cooperative asynchronous I/O concurrency; it does not run CPU-bound NAIDE code in parallel threads.
 
 ### Code Generation (`~~`)
 
@@ -203,6 +349,8 @@ function add(a, b) {
 ```
 
 Type `.eval` to switch to evaluation mode (runs the code instead of showing JS).
+
+The REPL's evaluation mode and the default file runner still use the existing JavaScript runtime. Use `naide native <file.naide>` to try the new direct interpreter; its CLI uses the asynchronous evaluator so top-level `await` and `await.all` work.
 
 ### Playground
 
@@ -421,11 +569,42 @@ Chain operations left to right for readable data transformations.
 ```python
 str name = user?.name                    # safe property access
 any val = data?.nested?.value            # deep safe access
+any first = maybeList?.[0]                # optional computed access
+any result = maybeCallback?.("value")     # optional function call
 str display = user?.name ?? "Anonymous"  # fallback on null/undefined
 int port = config?.port ?? 3000
 ```
 
-`?.` safely accesses properties (returns `undefined` if the left side is `null`/`undefined`). `??` provides a fallback value when the left side is `null` or `undefined`.
+`?.` safely accesses properties, computed indexes, or callable values (returns `undefined` if the left side is `null`/`undefined`). `??` provides a fallback value when the left side is `null` or `undefined`.
+
+### Dynamic Imports and Compound Assignment
+
+```python
+any plugin = await import("./plugins/report.naide")
+mut num total = 10
+total *= 2
+total ??= 1
+mut bool enabled = true
+enabled &&= hasPermission
+```
+
+`import(specifier)` is emitted as a native dynamic ESM import, so the specifier can be computed and the result can be awaited. Literal relative `.naide` specifiers are rewritten to generated `.mjs` files for build output and remain `.naide` when loaded through Native-Meld. Browser builds can bundle dynamic npm imports with `naide build . build --bundle-browser`. Arithmetic (`+=`, `-=`, `*=`, `/=`, `%=`) and logical (`??=`, `&&=`, `||=`) compound assignments follow JavaScript semantics.
+
+NAIDE also accepts JavaScript's `&&` and `||` logical operators as aliases for `and` and `or`, along with `===` and `!==` for strict equality, while retaining the readable word forms and `is`/`isnt`.
+
+### JavaScript syntax coverage
+
+NAIDE remains its own indentation-based language; this is not a parser for arbitrary `.js` files. JavaScript-generating targets (Node.js, Bun, TypeScript, and browser modules) additionally support:
+
+- Decimal, hexadecimal, binary, octal, exponent, numeric-separator, and BigInt literals (`bigint` is available as a declaration type).
+- Regular-expression literals and backtick template literals with `${...}` interpolation.
+- Exponentiation, bitwise and shift operators, unary `+`/`~`, prefix/postfix `++`/`--`, JavaScript ternary expressions, and their compound assignments.
+- Iterator loops (`for item of values`, `for key in object`), post-test loops (`do: ... while condition`), and generator declarations (`fn.gen`, `fn.async.gen`) with `yield`/`yield*`.
+- Existing NAIDE `match` provides switch-like case selection with automatic breaks; `each`, `model`, and `use`/`pub` provide NAIDE-native alternatives to JavaScript loop/class/module declarations.
+
+This is a practical compatibility subset, not complete ECMAScript grammar. Decorators, labeled `break`/`continue`, and direct JavaScript `class`/`import`/`export` source syntax remain outside this interface. The other language backends do not promise these JavaScript-only features; `compileAsync` reports an explicit target error rather than emitting unsupported syntax.
+
+Expressions inside backtick `${...}` interpolations use JavaScript expression syntax and are passed through to the generated JavaScript; they are not parsed as NAIDE expressions.
 
 ### Spread Operator
 
@@ -802,17 +981,131 @@ Set `BOT_TOKEN` as a secret environment variable in the host dashboard; never pu
 
 This two-file convention works on hosted Node.js services that install dependencies from `nidpackage.json` and honor `main` (or let you select the NAIDE runner as the startup file). It is not a Node.js standard manifest: hosts that ignore `nidpackage.json` need an adapter or equivalent startup configuration. Verify the target host's manifest behavior before relying on auto-detection.
 
-## Page Generation (HTML)
+## Browser UI and JavaScript Interoperability
 
-```python
+NAIDE can author browser behavior in `.naide` while using the browser's native Web APIs. Import the compiler-provided `naide:browser` module to access `document`, `window`, `fetch`, storage, DOM helpers, Canvas 2D, and the animation-frame loop. This is a built-in NAIDE module, not an npm dependency.
+
+`app.naide` creates the HTML shell; `game.naide` contains the interactive behavior:
+
+```naide
+# app.naide
+page "index.html":
+  lang "ja"
+  title "My App"
+  style "styles.css"
+  importmap "chart.js" "https://esm.sh/chart.js/auto"
+  main "#app":
+    h1 "Hello World"
+    button "#start" "Start"
+    canvas "#game" "800" "600"
+  module "build/game.mjs"
+```
+
+```naide
+# game.naide — browser application code, authored in NAIDE
+use { select, canvas2d, listen, animate } from "naide:browser"
+
+any canvas = select("#game")
+any context = canvas2d(canvas)
+mut num position = 0
+
+fn draw(num delta, num elapsed):
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = "#ed7d55"
+  context.fillRect(position, 40, 48, 48)
+  position += delta * 0.05
+
+fn startGame(any event):
+  log "Game started"
+
+listen("#start", "click", startGame)
+animate(draw)
+```
+
+Build the client module and generate the page:
+
+```bash
+naide build . build --bundle-browser
+node build/app.mjs
+```
+
+`naide build` emits JavaScript modules as build artifacts from the `.naide` sources. Add `--bundle-browser` to bundle browser-compatible npm dependencies installed in the project into the local `.mjs` modules referenced by page `module` elements. It uses esbuild, preserves explicit import-map entries for remote ESM modules, emits imported CSS alongside the browser module and loads it automatically, and reports unsupported browser imports (such as Node-only APIs) rather than silently shipping them. Serve the project directory as a static site so `index.html`, `styles.css`, and `build/game.mjs` can be loaded by the browser. The `module` page element emits `<script type="module">`; `button "#id" "Label"` and `canvas "#id" "width" "height"` generate matching elements. `lang` sets the document language.
+
+`naide:browser` provides `select`, `selectAll`, `listen` (`on` is an alias), `createElement`, `canvas2d`, `animate`, `text`, `value`, `setAttribute`, `toggleClass`, and reactive UI helpers: `state`, `bindText`, `bindValue`, and `bindClass`. A state store exposes `get()`, `set(value)`, `update(fn)`, and `subscribe(fn)`; each DOM binding initializes immediately and returns a cleanup function. `bindValue` synchronizes an input on its `input` event by default. The module also exposes browser globals such as `document`, `window`, `fetch`, `localStorage`, `requestAnimationFrame`, `WebSocket`, `Worker`, `crypto`, `indexedDB`, `URL`, and `performance`. `listen` accepts a selector or element and returns an unsubscribe function. `animate` calls the frame callback with `(deltaMilliseconds, elapsedTimestamp)` and returns a stop function. For direct JavaScript API interoperability, import the needed Web API object or `globalThis` and call its native methods; the authored module remains `.naide`.
+
+To import browser-compatible ESM packages, map their bare specifiers in the page and import normally from the NAIDE client module:
+
+```naide
+# app.naide
+page "index.html":
+  importmap "chart.js" "https://esm.sh/chart.js/auto"
+  module "build/chart-demo.mjs"
+
+# chart-demo.naide
+use Chart from "chart.js"
+```
+
+The import map is emitted as JSON in the HTML head; it does not add handwritten JavaScript. Use an import map for remote browser ESM, or `--bundle-browser` for installed npm packages. A dependency must be installed in the project before bundling; declaring it in `nidpackage.json` alone does not install it or make Node-only APIs available in a browser.
+
+For example, after installing `chart.js` in the project:
+
+```naide
+# chart-demo.naide
+use Chart from "chart.js/auto"
+```
+
+Build it with `naide build . build --bundle-browser`; the package implementation is included in the generated `build/chart-demo.mjs`.
+
+The browser module targets native browser ES modules. `--bundle-browser` bundles compatible packages but does not polyfill Node APIs or make a Node-only package browser-compatible. NAIDE provides static page generation and common DOM/Canvas operations, not a complete typed DOM model or every browser API. Unsupported APIs can be accessed through the JavaScript interop surface if they exist in the browser, but generated code must be run in a browser. The same `.naide` source may not work under Node.js if it uses browser globals.
+
+Page elements support nested content and safe attributes. Specify attributes as child lines, and use `attr` for `aria-*` or `data-*` names:
+
+```naide
+page "index.html":
+  title "Sign up"
+  style "styles.css"
+  main "#app":
+    h1 "Create an account"
+    form "#signup":
+      action "/signup"
+      method "post"
+      label "Email address":
+        attr "for" "email"
+      input:
+        id "email"
+        type "email"
+        name "email"
+        autocomplete "email"
+        required
+        attr "aria-label" "Email address"
+      button "#submit" "Create account":
+        type "submit"
+```
+
+Generated text and attributes are HTML-escaped. Event-handler attributes such as `onclick` and `javascript:` URLs are rejected; keep behavior in `.naide` browser modules and bind it with `listen` instead of embedding inline JavaScript.
+
+Run a web project locally with automatic rebuilding and browser refresh:
+
+```bash
+naide init my-site --template web
+cd my-site
+naide dev .
+# Open http://127.0.0.1:5173
+```
+
+`naide dev` compiles `.naide` sources, bundles local browser modules when a page references them, generates `page` HTML, and serves the project with no-store responses. It watches source and static files; failed rebuilds are shown in the terminal and in the served page without replacing the current page with a successful-looking result. The development server binds to loopback by default and does not serve `.naide`, package manifests, hidden files, or `node_modules`. Use `--port` and `--host` to configure the listener deliberately.
+
+The web starter includes a responsive task-list example, accessible form markup, and browser behavior written in NAIDE. It creates `nidpackage.json` and does not create `package.json`; CSS stays in a regular `.css` file.
+
+### Static HTML page generation
+
+```naide
 page "index.html":
   title "My App"
   style "styles.css"
   div "container":
     h1 "Hello World"
     p "Welcome"
-    a "https://example.com" "Click here"
-  script "app.js"
 ```
 
 Generates a complete HTML file with proper head/body structure.
@@ -1652,7 +1945,7 @@ This is package-manager interoperability, **not** automatic cross-language linki
 
 ## MCP Server
 
-`naide-mcp` communicates over stdio and provides compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. Its MCP initialization instructions enforce a NAIDE-only application-source workflow: application behavior belongs in `.naide`; the agent must not author JavaScript/TypeScript or inline JavaScript unless the user explicitly approves it. When NAIDE cannot express a requested capability, the agent must explain the specific limitation and ask before switching to JS/TS rather than making that decision for the user. The current `page` construct generates static HTML; NAIDE does not yet provide a general browser DOM/event/canvas API for a pure-NAIDE interactive browser game. Generated JavaScript is build output, not authored source. When a project uses `nidpackage.json`, agents must not create a competing `package.json` or `package-lock.json` unless explicitly requested or a verified host requirement demands it. Call `naide_context` or read `naide://ai-guide` for NAIDE idioms, feature areas, target limitations, and project conventions; use the `naide_first` / `naide_coding_ja` prompts for task-specific guidance. The `naide_hosted_manifest` tool creates a `nidpackage.json` for hosted Node.js apps; `naide_mws_discord_template` returns exactly `discord-bot.naide` and `nidpackage.json`, with additional npm libraries accepted through `libraries`. These use `node_modules/naider/bin/naide-host.js` as the host runner and require the host to install dependencies from `nidpackage.json` and launch `main` (or select the runner as startup file). Other read-only resources include `naide://spec`, `naide://package-ecosystems`, and `naide://project`.
+`naide-mcp` communicates over stdio and provides compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. Its MCP initialization instructions enforce a NAIDE-only application-source workflow: application behavior belongs in `.naide`; the agent must not author JavaScript/TypeScript or inline JavaScript unless the user explicitly approves it. When NAIDE cannot express a requested capability, the agent must explain the specific limitation and ask before switching to JS/TS rather than making that decision for the user. Browser support includes static HTML generation, the `naide:browser` module for common DOM/events/Canvas/animation APIs, and native browser Web API access; generated JavaScript is build output, not authored source. This is a practical browser layer, not a complete typed DOM or a promise that Node-only npm packages work in browsers. When a project uses `nidpackage.json`, agents must not create a competing `package.json` or `package-lock.json` unless explicitly requested or a verified host requirement demands it. Call `naide_context` or read `naide://ai-guide` for NAIDE idioms, feature areas, target limitations, and project conventions; use the `naide_first` / `naide_coding_ja` prompts for task-specific guidance. The `naide_hosted_manifest` tool creates a `nidpackage.json` for hosted Node.js apps; `naide_mws_discord_template` returns exactly `discord-bot.naide` and `nidpackage.json`, with additional npm libraries accepted through `libraries`. These use `node_modules/naider/bin/naide-host.js` as the host runner and require the host to install dependencies from `nidpackage.json` and launch `main` (or select the runner as startup file). Other read-only resources include `naide://spec`, `naide://package-ecosystems`, and `naide://project`.
 
 For VS Code, after installing `naider` in a location on `PATH`, add this to `.vscode/mcp.json`:
 

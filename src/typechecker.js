@@ -1,7 +1,9 @@
 const EXPRESSION_TYPES = new Set([
   'Number', 'String', 'InterpolatedString', 'Bool', 'Null', 'Array', 'Object',
   'Identifier', 'Binary', 'Unary', 'Call', 'MemberAccess', 'Ternary', 'Await',
-  'ArrowFunction', 'Spread', 'New', 'IndexAccess',
+  'ArrowFunction', 'Spread', 'New', 'IndexAccess', 'OptionalAccess',
+  'OptionalCall', 'OptionalIndexAccess', 'DynamicImport',
+  'RegExp', 'Yield', 'Update',
 ]);
 
 export class TypeChecker {
@@ -59,6 +61,7 @@ export class TypeChecker {
       params: node.params.map(p => ({ name: p.name, type: p.type || 'any', hasDefault: p.defaultValue !== null, spread: p.spread })),
       returnType: node.returnType || 'any',
       isAsync: node.isAsync || false,
+      isGenerator: node.isGenerator || false,
     });
   }
 
@@ -77,11 +80,28 @@ export class TypeChecker {
       case 'TypedVar': return this.visitTypedVar(node, line);
       case 'Function': return this.visitFunction(node, line);
       case 'Assignment': return this.visitAssignment(node, line);
+      case 'CompoundAssign': {
+        const operators = {
+          '+=': '+', '-=': '-', '*=': '*', '/=': '/', '%=': '%', '**=': '**',
+          '&=': '&', '|=': '|', '^=': '^', '<<=': '<<', '>>=': '>>', '>>>=': '>>>',
+        };
+        if (operators[node.op]) {
+          this.inferBinaryType({
+            op: operators[node.op],
+            left: node.target,
+            right: node.value,
+            _line: line,
+          });
+        }
+        return;
+      }
       case 'Return': return this.visitReturn(node, line);
       case 'If': return this.visitIf(node, line);
       case 'Each': return this.visitEach(node, line);
       case 'For': return this.visitFor(node, line);
+      case 'ForEach': return this.visitForEach(node, line);
       case 'While': return this.visitWhile(node, line);
+      case 'DoWhile': return this.visitDoWhile(node, line);
       case 'Try': return this.visitTry(node, line);
       case 'Server': return this.visitServer(node, line);
       default: return this.visitNestedStatements(node);
@@ -238,7 +258,18 @@ export class TypeChecker {
     this.popScope();
   }
 
+  visitForEach(node, line) {
+    this.pushScope();
+    this.setType(node.varName, node.iteration === 'in' ? 'str' : 'any');
+    for (const stmt of node.body) this.visitStatement(stmt);
+    this.popScope();
+  }
+
   visitWhile(node, line) {
+    this.visitBlock(node.body, line);
+  }
+
+  visitDoWhile(node, line) {
     this.visitBlock(node.body, line);
   }
 
@@ -274,11 +305,17 @@ export class TypeChecker {
     if (!node) return 'any';
     switch (node.type) {
       case 'Number': {
-        const n = typeof node.value === 'string' ? Number(node.value) : node.value;
-        return Number.isInteger(n) && !String(node.value).includes('.') ? 'int' : 'num';
+        if (String(node.value).endsWith('n')) return 'bigint';
+        const raw = String(node.value).replaceAll('_', '');
+        const n = typeof node.value === 'string' ? Number(raw) : node.value;
+        const radixLiteral = /^0[xob]/i.test(raw);
+        return Number.isInteger(n) && (radixLiteral || !/[.eE]/.test(raw)) ? 'int' : 'num';
       }
       case 'String': return 'str';
       case 'InterpolatedString': return 'str';
+      case 'RegExp': return 'any';
+      case 'Yield': return node.value ? this.inferType(node.value) : 'any';
+      case 'Update': return this.inferType(node.expr);
       case 'Bool': return 'bool';
       case 'Null': return 'any';
       case 'Array': return 'list';
@@ -288,9 +325,19 @@ export class TypeChecker {
       case 'Unary': {
         if (node.op === 'not') return 'bool';
         if (node.op === 'typeof') return 'str';
-        return this.inferType(node.operand);
+        const operandType = this.inferType(node.expr);
+        if (node.op === '+' && operandType === 'bigint') {
+          this.error("Unary '+' cannot be applied to a bigint", node._line);
+          return 'any';
+        }
+        return operandType;
       }
       case 'Call': return this.inferCallType(node);
+      case 'DynamicImport':
+      case 'OptionalCall':
+      case 'OptionalIndexAccess':
+      case 'OptionalAccess':
+      case 'IndexAccess': return 'any';
       case 'MemberAccess': return 'any';
       case 'Ternary': {
         const t = this.inferType(node.consequent);
@@ -305,12 +352,21 @@ export class TypeChecker {
 
   inferBinaryType(node) {
     const op = node.op;
-    if (['==', '!=', '>', '<', '>=', '<=', 'and', 'or'].includes(op)) return 'bool';
-    if (['+', '-', '*', '/', '%'].includes(op)) {
+    if (['===', '!==', '>', '<', '>=', '<=', 'instanceof'].includes(op)) return 'bool';
+    if (['&&', '||'].includes(op)) return 'any';
+    if (['+', '-', '*', '/', '%', '**', '&', '|', '^', '<<', '>>', '>>>'].includes(op)) {
       const l = this.inferType(node.left);
       const r = this.inferType(node.right);
       if (l === 'str' || r === 'str') {
         if (op === '+') return 'str';
+      }
+      if (l === 'bigint' || r === 'bigint') {
+        if (l === 'bigint' && r === 'bigint' && op !== '>>>') return 'bigint';
+        const message = op === '>>>' && l === 'bigint' && r === 'bigint'
+          ? "Operator '>>>' is not defined for bigint values"
+          : `Operator '${op}' cannot mix bigint and number values`;
+        this.error(message, node._line);
+        return 'any';
       }
       if (l === 'num' || r === 'num') return 'num';
       if (l === 'int' && r === 'int') return 'int';

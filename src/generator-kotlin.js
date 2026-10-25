@@ -52,8 +52,22 @@ export class KotlinGenerator {
   }
 
   visitProgram(node) {
+    const mainStatements = [];
     for (const stmt of node.body) {
-      this.visitStatement(stmt);
+      if (['Use', 'UseDestructured', 'Function', 'Model', 'SchemaDecl', 'TypedVar'].includes(stmt.type)) {
+        this.visitStatement(stmt);
+      } else {
+        mainStatements.push(stmt);
+      }
+    }
+    if (mainStatements.length > 0) {
+      this.emit('fun main() {');
+      this.indent++;
+      for (const stmt of mainStatements) {
+        this.visitStatement(stmt);
+      }
+      this.indent--;
+      this.emit('}');
     }
   }
 
@@ -218,7 +232,8 @@ export class KotlinGenerator {
       return s;
     }).join(', ');
 
-    this.emit(`${async}fun ${node.name}(${params}) {`);
+    const returnType = node.returnType ? `: ${this.mapType(node.returnType)}` : '';
+    this.emit(`${async}fun ${node.name}(${params})${returnType} {`);
     this.indent++;
     if (node.body.length === 0) {
       this.emit('// empty');

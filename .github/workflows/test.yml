@@ -24,6 +24,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm test
       - name: Verify examples compile
         run: |
@@ -43,3 +48,40 @@ jobs:
             echo "  $target: generated successfully"
             echo "::endgroup::"
           done
+
+  runtime-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '6.1'
+      - uses: dart-lang/setup-dart@v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install PHP, Ruby, and Kotlin
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli ruby-full kotlin
+      - run: npm ci
+      - run: npm run test:targets
+      - name: Compile and execute every available target
+        run: npm run test:runtimes
+        env:
+          NAIDE_REQUIRE_RUNTIME_TOOLS: 'true'

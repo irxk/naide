@@ -1,0 +1,26 @@
+page "index.html":
+  lang "ja"
+  title "NAIDEで作るタスクリスト"
+  style "styles.css"
+  main "#app":
+    header ".hero":
+      p "NAIDE WEB"
+      h1 "今日のタスクを整理しよう"
+      p "NAIDEだけで書いた、小さなブラウザーアプリです。"
+    section ".task-card":
+      h2 "タスク"
+      p "#task-count" "0件"
+      form "#task-form":
+        label "新しいタスク":
+          attr "for" "task-input"
+        input:
+          id "task-input"
+          type "text"
+          name "task"
+          maxlength "120"
+          autocomplete "off"
+          required
+        button "#add-task" "追加":
+          type "submit"
+      ul "#task-list"
+  module "build/client.mjs"

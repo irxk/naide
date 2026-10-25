@@ -20,6 +20,7 @@ export class Generator {
     this.currentSourceLine = 0;
     this.sourceFile = options.sourceFile || null;
     this.preserveNaideImports = options.preserveNaideImports || false;
+    this.needsBrowserRuntime = false;
   }
 
   generate(ast) {
@@ -82,13 +83,6 @@ export class Generator {
     }
   }
 
-  normalizeRoutePath(pathStr) {
-    return pathStr.replace(/(["'])(.+?)\1/g, (m, q, p) => {
-      const normalized = p.replace(/(?<!\()(?<!\.\*)\*(?!\))/g, '(.*)');
-      return q + normalized + q;
-    });
-  }
-
   visitStatement(node) {
     if (node._line) this.currentSourceLine = node._line;
     switch (node.type) {
@@ -104,7 +98,9 @@ export class Generator {
       case 'If': return this.visitIf(node);
       case 'Each': return this.visitEach(node);
       case 'For': return this.visitFor(node);
+      case 'ForEach': return this.visitForEach(node);
       case 'While': return this.visitWhile(node);
+      case 'DoWhile': return this.visitDoWhile(node);
       case 'Match': return this.visitMatch(node);
       case 'Try': return this.visitTry(node);
       case 'Server': return this.visitServer(node);
@@ -179,14 +175,108 @@ export class Generator {
   visitUse(node) {
     const source = node.source ? this.stringValue(node.source) : `'${node.name}'`;
     const alias = node.alias || node.name;
+    if (this.isBrowserImport(source)) {
+      this.ensureBrowserRuntime();
+      this.emit(`const ${alias} = __naideBrowser;`);
+      return;
+    }
     if (source.includes('express')) this.usesExpress = true;
     this.emit(`import ${alias} from ${this.rewriteNaideImport(source)};`);
   }
 
   visitUseDestructured(node) {
     const source = this.stringValue(node.source);
+    if (this.isBrowserImport(source)) {
+      this.ensureBrowserRuntime();
+      for (const binding of node.names) {
+        const localName = binding.alias || binding.name;
+        if (localName === 'globalThis') {
+          throw new Error(`Import 'globalThis' under an alias to avoid shadowing the JavaScript global. Example: use { globalThis as webGlobal } from "naide:browser"`);
+        }
+        if (!this.browserRuntimeExports.has(binding.name)) {
+          const supported = [...this.browserRuntimeExports.keys()].join(', ');
+          throw new Error(`Unknown NAIDE browser API '${binding.name}'. Available APIs: ${supported}`);
+        }
+        this.emit(`const ${localName} = __naideBrowser.${binding.name};`);
+      }
+      return;
+    }
     const names = node.names.map(n => n.alias ? `${n.name} as ${n.alias}` : n.name).join(', ');
     this.emit(`import { ${names} } from ${this.rewriteNaideImport(source)};`);
+  }
+
+  get browserRuntimeExports() {
+    return new Map([
+      ['window', 'globalThis.window'],
+      ['document', 'globalThis.document'],
+      ['globalThis', 'globalThis'],
+      ['navigator', 'globalThis.navigator'],
+      ['location', 'globalThis.location'],
+      ['localStorage', 'globalThis.localStorage'],
+      ['sessionStorage', 'globalThis.sessionStorage'],
+      ['history', 'globalThis.history'],
+      ['fetch', 'globalThis.fetch?.bind(globalThis)'],
+      ['URL', 'globalThis.URL'],
+      ['URLSearchParams', 'globalThis.URLSearchParams'],
+      ['requestAnimationFrame', 'globalThis.requestAnimationFrame?.bind(globalThis)'],
+      ['cancelAnimationFrame', 'globalThis.cancelAnimationFrame?.bind(globalThis)'],
+      ['performance', 'globalThis.performance'],
+      ['CustomEvent', 'globalThis.CustomEvent'],
+      ['Event', 'globalThis.Event'],
+      ['WebSocket', 'globalThis.WebSocket'],
+      ['Worker', 'globalThis.Worker'],
+      ['Image', 'globalThis.Image'],
+      ['Audio', 'globalThis.Audio'],
+      ['MutationObserver', 'globalThis.MutationObserver'],
+      ['IntersectionObserver', 'globalThis.IntersectionObserver'],
+      ['ResizeObserver', 'globalThis.ResizeObserver'],
+      ['AbortController', 'globalThis.AbortController'],
+      ['Blob', 'globalThis.Blob'],
+      ['File', 'globalThis.File'],
+      ['FormData', 'globalThis.FormData'],
+      ['Headers', 'globalThis.Headers'],
+      ['Request', 'globalThis.Request'],
+      ['Response', 'globalThis.Response'],
+      ['crypto', 'globalThis.crypto'],
+      ['indexedDB', 'globalThis.indexedDB'],
+      ['setTimeout', 'globalThis.setTimeout?.bind(globalThis)'],
+      ['clearTimeout', 'globalThis.clearTimeout?.bind(globalThis)'],
+      ['setInterval', 'globalThis.setInterval?.bind(globalThis)'],
+      ['clearInterval', 'globalThis.clearInterval?.bind(globalThis)'],
+      ['matchMedia', 'globalThis.matchMedia?.bind(globalThis)'],
+      ['select', '(selector, root = globalThis.document) => typeof selector === "string" ? root.querySelector(selector) : selector'],
+      ['selectAll', '(selector, root = globalThis.document) => [...root.querySelectorAll(selector)]'],
+      ['on', '(target, type, handler, options) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); element.addEventListener(type, handler, options); return () => element.removeEventListener(type, handler, options); }'],
+      ['listen', '(target, type, handler, options) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); element.addEventListener(type, handler, options); return () => element.removeEventListener(type, handler, options); }'],
+      ['createElement', '(tag, attributes = {}, parent = globalThis.document.body) => { const element = globalThis.document.createElement(tag); for (const [key, value] of Object.entries(attributes)) { if (key === "text") element.textContent = value; else if (key === "className") element.className = value; else element.setAttribute(key, value); } parent.append(element); return element; }'],
+      ['state', '(initialValue) => { let current = initialValue; const subscribers = new Set(); const set = (next) => { if (Object.is(current, next)) return current; current = next; for (const subscriber of [...subscribers]) subscriber(current); return current; }; return Object.freeze({ get: () => current, set, update: (updater) => { if (typeof updater !== "function") throw new TypeError("NAIDE state update requires a function"); return set(updater(current)); }, subscribe: (subscriber, immediate = false) => { if (typeof subscriber !== "function") throw new TypeError("NAIDE state subscriber must be a function"); subscribers.add(subscriber); if (immediate) subscriber(current); return () => subscribers.delete(subscriber); } }); }'],
+      ['bindText', '(target, store) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); if (!store || typeof store.get !== "function" || typeof store.subscribe !== "function") throw new TypeError("NAIDE bindText requires a state store"); const render = (value) => { element.textContent = value == null ? "" : String(value); }; render(store.get()); return store.subscribe(render); }'],
+      ['bindValue', '(target, store, eventName = "input") => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); if (!store || typeof store.get !== "function" || typeof store.set !== "function" || typeof store.subscribe !== "function") throw new TypeError("NAIDE bindValue requires a writable state store"); const render = (value) => { const next = value == null ? "" : String(value); if (element.value !== next) element.value = next; }; render(store.get()); const update = () => store.set(element.value); element.addEventListener(eventName, update); const unsubscribe = store.subscribe(render); return () => { element.removeEventListener(eventName, update); unsubscribe(); }; }'],
+      ['bindClass', '(target, className, store) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); if (!store || typeof store.get !== "function" || typeof store.subscribe !== "function") throw new TypeError("NAIDE bindClass requires a state store"); const render = (value) => element.classList.toggle(className, Boolean(value)); render(store.get()); return store.subscribe(render); }'],
+      ['canvas2d', '(target) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE canvas not found: ${target}`); const context = element.getContext("2d"); if (!context) throw new Error("Canvas 2D context is unavailable"); return context; }'],
+      ['animate', '(draw) => { if (typeof globalThis.requestAnimationFrame !== "function") throw new Error("requestAnimationFrame is unavailable"); let active = true; let previous = null; let frameId = 0; const tick = (time) => { if (!active) return; const delta = previous === null ? 0 : time - previous; previous = time; draw(delta, time); if (active) frameId = globalThis.requestAnimationFrame(tick); }; frameId = globalThis.requestAnimationFrame(tick); return () => { active = false; globalThis.cancelAnimationFrame?.(frameId); }; }'],
+      ['text', '(target, value) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); element.textContent = value; return element; }'],
+      ['value', '(target, ...nextValues) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); if (nextValues.length > 0) element.value = nextValues[0]; return element.value; }'],
+      ['setAttribute', '(target, name, value) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); element.setAttribute(name, value); return element; }'],
+      ['toggleClass', '(target, name, force) => { const element = typeof target === "string" ? globalThis.document.querySelector(target) : target; if (!element) throw new Error(`NAIDE browser target not found: ${target}`); return element.classList.toggle(name, force); }'],
+    ]);
+  }
+
+  isBrowserImport(source) {
+    let specifier = source;
+    try {
+      specifier = JSON.parse(source);
+    } catch {
+      return false;
+    }
+    return specifier === 'naide:browser' || specifier === 'naider/browser';
+  }
+
+  ensureBrowserRuntime() {
+    if (this.needsBrowserRuntime) return;
+    this.needsBrowserRuntime = true;
+    const properties = [...this.browserRuntimeExports].map(([name, value]) => `${name}: ${value}`).join(',\n  ');
+    this.emit(`const __naideBrowser = Object.freeze({\n  ${properties}\n});`);
   }
 
   rewriteNaideImport(source) {
@@ -198,6 +288,7 @@ export class Generator {
   visitFunction(node) {
     const exp = node.isPublic ? 'export ' : '';
     const async = node.isAsync ? 'async ' : '';
+    const generator = node.isGenerator ? '*' : '';
     const params = node.params.map(p => {
       let s = p.spread ? '...' : '';
       s += p.name;
@@ -205,7 +296,7 @@ export class Generator {
       return s;
     }).join(', ');
 
-    this.emit(`${exp}${async}function ${node.name}(${params}) {`);
+    this.emit(`${exp}${async}function${generator} ${node.name}(${params}) {`);
     this.indent++;
     for (const stmt of node.body) {
       this.visitStatement(stmt);
@@ -287,8 +378,9 @@ export class Generator {
     }
     for (const method of node.methods) {
       const async = method.isAsync ? 'async ' : '';
+      const generator = method.isGenerator ? '*' : '';
       const params = method.params.map(p => p.name).join(', ');
-      this.emit(`${async}${method.name}(${params}) {`);
+      this.emit(`${async}${generator}${method.name}(${params}) {`);
       this.indent++;
       for (const stmt of method.body) this.visitStatement(stmt);
       this.indent--;
@@ -366,12 +458,28 @@ export class Generator {
     this.emit('}');
   }
 
+  visitForEach(node) {
+    this.emit(`for ${node.isAsync ? 'await ' : ''}(const ${node.varName} ${node.iteration} ${this.expr(node.iterable)}) {`);
+    this.indent++;
+    for (const stmt of node.body) this.visitStatement(stmt);
+    this.indent--;
+    this.emit('}');
+  }
+
   visitWhile(node) {
     this.emit(`while (${this.expr(node.condition)}) {`);
     this.indent++;
     for (const stmt of node.body) this.visitStatement(stmt);
     this.indent--;
     this.emit('}');
+  }
+
+  visitDoWhile(node) {
+    this.emit('do {');
+    this.indent++;
+    for (const stmt of node.body) this.visitStatement(stmt);
+    this.indent--;
+    this.emit(`} while (${this.expr(node.condition)});`);
   }
 
   visitMatch(node) {
@@ -801,7 +909,29 @@ export class Generator {
     this.emit(`${exp}class ${node.name}${ext} {`);
     this.indent++;
 
-    if (node.fields.length > 0 || node.parent) {
+    for (const field of node.staticFields || []) {
+      this.emit(`static ${field.name} = ${this.expr(field.defaultValue)};`);
+    }
+    if (node.staticFields?.length) this.emitRaw('');
+
+    if (node.init) {
+      const params = node.init.params.map(parameter => {
+        let value = parameter.spread ? '...' : '';
+        value += parameter.name;
+        if (parameter.defaultValue) value += ` = ${this.expr(parameter.defaultValue)}`;
+        return value;
+      }).join(', ');
+      this.emit(`constructor(${params}) {`);
+      this.indent++;
+      if (node.parent) this.emit('super(...arguments);');
+      for (const field of node.fields) {
+        if (field.defaultValue) this.emit(`this.${field.name} = ${this.expr(field.defaultValue)};`);
+      }
+      for (const statement of node.init.body) this.visitStatement(statement);
+      this.indent--;
+      this.emit('}');
+      this.emitRaw('');
+    } else if (node.fields.length > 0 || node.parent) {
       const parentModel = node.parent ? this.models.get(node.parent) : null;
       const parentFields = parentModel ? parentModel.fields : [];
       const allFields = [...parentFields, ...node.fields];
@@ -826,7 +956,9 @@ export class Generator {
     }
 
     for (const method of node.methods) {
+      const staticPrefix = method.isStatic ? 'static ' : '';
       const async = method.isAsync ? 'async ' : '';
+      const generator = method.isGenerator ? '*' : '';
       const params = method.params.map(p => {
         let s = p.spread ? '...' : '';
         s += p.name;
@@ -834,7 +966,7 @@ export class Generator {
         return s;
       }).join(', ');
 
-      this.emit(`${async}${method.name}(${params}) {`);
+      this.emit(`${staticPrefix}${async}${generator}${method.name}(${params}) {`);
       this.indent++;
       for (const stmt of method.body) {
         this.visitStatement(stmt);
@@ -1020,7 +1152,7 @@ export class Generator {
     const optStr = options.length > 0 ? `, { ${options.join(', ')} }` : '';
 
     if (node.protectedPaths.length > 0) {
-      const path = this.normalizeRoutePath(this.stringValue(node.protectedPaths[0]));
+      const path = this.stringValue(node.protectedPaths[0]);
       this.emit(`${appName}.use(${path}, jwtAuth(${secret}${optStr}));`);
     } else {
       this.emit(`${appName}.use(jwtAuth(${secret}${optStr}));`);
@@ -1051,7 +1183,7 @@ export class Generator {
   visitLimit(appName, node) {
     this.runtimeImports.add('rateLimit');
 
-    const path = this.normalizeRoutePath(this.stringValue(node.path));
+    const path = this.stringValue(node.path);
     const max = this.expr(node.max);
     const window = this.expr(node.window);
     this.emit(`${appName}.use(${path}, rateLimit(${max}, ${window}));`);
@@ -1242,7 +1374,7 @@ export class Generator {
 
   visitCache(appName, node) {
     this.runtimeImports.add('cacheMiddleware');
-    const path = this.normalizeRoutePath(this.stringValue(node.path));
+    const path = this.stringValue(node.path);
     const duration = this.expr(node.duration);
     this.emit(`${appName}.use(${path}, cacheMiddleware(${duration}));`);
     this.emitRaw('');
@@ -1281,7 +1413,7 @@ export class Generator {
 
   visitValidate(appName, node) {
     this.runtimeImports.add('validateMiddleware');
-    const path = this.normalizeRoutePath(this.stringValue(node.path));
+    const path = this.stringValue(node.path);
     this.emit(`${appName}.use(${path}, validateMiddleware(${node.schemaName}Schema));`);
     this.emitRaw('');
   }
@@ -1440,49 +1572,184 @@ export class Generator {
 
     const headParts = [];
     const bodyParts = [];
+    const importMappings = new Map();
     let pageTitle = 'NAIDE Page';
 
+    let pageLanguage = 'en';
     for (const el of node.elements) {
-      this.classifyPageElement(el, headParts, bodyParts, (t) => { pageTitle = t; });
+      this.classifyPageElement(
+        el,
+        headParts,
+        bodyParts,
+        (t) => { pageTitle = t; },
+        (lang) => { pageLanguage = lang; },
+        (specifier, address) => {
+          if (importMappings.has(specifier) && importMappings.get(specifier) !== address) {
+            throw new Error(`Conflicting browser import map entry for '${specifier}'`);
+          }
+          importMappings.set(specifier, address);
+        },
+      );
+    }
+    if (importMappings.size > 0) {
+      const importMapJson = JSON.stringify({ imports: Object.fromEntries(importMappings) }).replace(/</g, '\\u003c');
+      headParts.unshift(`<script type="importmap">${importMapJson}</script>`);
     }
 
-    this.emit(`writeFileSync(${JSON.stringify(filename)}, \`<!DOCTYPE html>`);
-    this.emit(`<html lang="en">`);
-    this.emit(`<head>`);
-    this.emit(`<meta charset="UTF-8">`);
-    this.emit(`<meta name="viewport" content="width=device-width, initial-scale=1.0">`);
-    this.emit(`<title>\${${JSON.stringify(pageTitle)}}</title>`);
-    for (const h of headParts) this.emit(h);
-    this.emit(`</head>`);
-    this.emit(`<body>`);
-    for (const b of bodyParts) this.emit(b);
-    this.emit(`</body>`);
-    this.emit(`</html>\`);`);
+    const html = [
+      '<!DOCTYPE html>',
+      `<html lang="${pageLanguage}">`,
+      '<head>',
+      '<meta charset="UTF-8">',
+      '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+      `<title>${pageTitle}</title>`,
+      ...headParts,
+      '</head>',
+      '<body>',
+      ...bodyParts,
+      '</body>',
+      '</html>',
+    ].join('\n');
+    this.emit(`writeFileSync(${JSON.stringify(filename)}, ${JSON.stringify(html)});`);
     this.emitRaw('');
   }
 
-  classifyPageElement(el, head, body, setTitle) {
+  classifyPageElement(el, head, body, setTitle, setLanguage, setImportMapping) {
     const tag = el.tag;
     const arg0 = el.args[0] ? this.rawPageString(el.args[0]) : '';
     const arg1 = el.args[1] ? this.rawPageString(el.args[1]) : '';
 
-    if (tag === 'title') { setTitle(arg0); return; }
-    if (tag === 'style') { head.push(`<link rel="stylesheet" href="${arg0}">`); return; }
-    if (tag === 'meta') { head.push(`<meta name="${arg0}" content="${arg1}">`); return; }
-    if (tag === 'script') { body.push(`<script src="${arg0}"></script>`); return; }
-    if (tag === 'link') { head.push(`<link rel="stylesheet" href="${arg0}">`); return; }
-    if (tag === 'img') { body.push(`<img src="${arg0}" alt="${arg1}">`); return; }
-    if (tag === 'a') { body.push(`<a href="${arg0}">${arg1}</a>`); return; }
-    if (tag === 'input') { body.push(`<input type="${arg0}" name="${arg1}" placeholder="${arg1}">`); return; }
-
-    if (el.children && el.children.length > 0) {
-      const cls = arg0 ? ` class="${arg0}"` : '';
-      body.push(`<${tag}${cls}>`);
-      for (const child of el.children) this.classifyPageElement(child, head, body, setTitle);
-      body.push(`</${tag}>`);
-    } else {
-      body.push(`<${tag}>${arg0}</${tag}>`);
+    if (tag === 'title') { setTitle(this.escapeHtmlText(arg0)); return; }
+    if (tag === 'lang') { setLanguage(this.escapeHtmlAttribute(arg0)); return; }
+    if (tag === 'importmap') {
+      if (!arg0 || !arg1) throw new Error('Page importmap requires a module specifier and URL.');
+      setImportMapping(arg0, arg1);
+      return;
     }
+    if (tag === 'style') { head.push(`<link rel="stylesheet" href="${this.escapeHtmlAttribute(this.safePageUrl(arg0, 'href'))}">`); return; }
+    if (tag === 'meta') { head.push(`<meta name="${this.escapeHtmlAttribute(arg0)}" content="${this.escapeHtmlAttribute(arg1)}">`); return; }
+    if (tag === 'script') { body.push(`<script src="${this.escapeHtmlAttribute(this.safePageUrl(arg0, 'src'))}"></script>`); return; }
+    if (tag === 'module') { body.push(`<script type="module" src="${this.escapeHtmlAttribute(this.safePageUrl(arg0, 'src'))}"></script>`); return; }
+    if (tag === 'link') { head.push(`<link rel="stylesheet" href="${this.escapeHtmlAttribute(this.safePageUrl(arg0, 'href'))}">`); return; }
+    if (tag === 'img') {
+      const attributes = this.pageAttributes(el);
+      if (arg0) attributes.unshift(['src', this.safePageUrl(arg0, 'src')]);
+      if (arg1) attributes.push(['alt', arg1]);
+      body.push(`<img${this.formatPageAttributes(attributes)}>`);
+      return;
+    }
+    if (tag === 'a') {
+      const attributes = this.pageAttributes(el);
+      if (arg0) attributes.unshift(['href', this.safePageUrl(arg0, 'href')]);
+      const content = arg1 ? this.escapeHtmlText(arg1) : '';
+      body.push(`<a${this.formatPageAttributes(attributes)}>${content}${this.renderPageChildren(el.children, head, body, setTitle, setLanguage, setImportMapping)}</a>`);
+      return;
+    }
+    if (tag === 'input') {
+      const attributes = this.pageAttributes(el);
+      if (el.args.length > 0) {
+        if (arg0) attributes.unshift(['type', arg0]);
+        if (arg1) attributes.push(['name', arg1], ['placeholder', arg1]);
+      }
+      body.push(`<input${this.formatPageAttributes(attributes)}>`);
+      return;
+    }
+    if (tag === 'canvas') {
+      const id = arg0.startsWith('#') ? arg0.slice(1) : arg0;
+      const width = el.args[1] ? this.rawPageString(el.args[1]) : '640';
+      const height = el.args[2] ? this.rawPageString(el.args[2]) : '360';
+      const attributes = this.pageAttributes(el);
+      attributes.unshift(['id', id], ['width', width], ['height', height]);
+      body.push(`<canvas${this.formatPageAttributes(attributes)}></canvas>`);
+      return;
+    }
+
+    if (!/^[a-z][a-z0-9-]*$/i.test(tag) || ['iframe', 'object', 'embed', 'style'].includes(tag.toLowerCase())) {
+      throw new Error(`Unsupported or unsafe HTML element '${tag}'.`);
+    }
+
+    const attributes = this.pageAttributes(el);
+    if (arg0.startsWith('#')) attributes.unshift(['id', arg0.slice(1)]);
+    else if (arg0.startsWith('.')) attributes.unshift(['class', arg0.slice(1)]);
+    else if (el.children.some(child => !this.isPageAttribute(child)) && arg0) attributes.unshift(['class', arg0]);
+    const content = tag === 'button' && arg0.startsWith('#')
+      ? arg1
+      : (!el.children.length || el.children.every(child => this.isPageAttribute(child)) ? arg0 : '');
+    const inner = `${this.escapeHtmlText(content)}${this.renderPageChildren(el.children, head, body, setTitle, setLanguage, setImportMapping)}`;
+    const formattedAttributes = this.formatPageAttributes(attributes);
+    if (new Set(['area', 'base', 'br', 'col', 'hr', 'param', 'source', 'track', 'wbr']).has(tag.toLowerCase())) {
+      if (inner) throw new Error(`Void HTML element '${tag}' cannot contain content.`);
+      body.push(`<${tag}${formattedAttributes}>`);
+      return;
+    }
+    body.push(`<${tag}${formattedAttributes}>${inner}</${tag}>`);
+  }
+
+  renderPageChildren(children, head, body, setTitle, setLanguage, setImportMapping) {
+    let result = '';
+    for (const child of children || []) {
+      if (this.isPageAttribute(child)) continue;
+      const childOutput = [];
+      this.classifyPageElement(child, head, childOutput, setTitle, setLanguage, setImportMapping);
+      result += childOutput.join('');
+    }
+    return result;
+  }
+
+  isPageAttribute(element) {
+    return element.tag === 'attr' || new Set([
+      'id', 'class', 'title', 'type', 'name', 'href', 'src', 'alt', 'placeholder',
+      'value', 'for', 'role', 'action', 'method', 'target', 'rel', 'width', 'height',
+      'autocomplete', 'min', 'max', 'step', 'rows', 'cols', 'maxlength', 'minlength',
+      'pattern', 'formaction', 'aria-label', 'disabled', 'required', 'checked', 'selected',
+      'multiple', 'readonly', 'autofocus', 'novalidate',
+    ]).has(element.tag) || element.tag.startsWith('data-') || element.tag.startsWith('aria-');
+  }
+
+  pageAttributes(element) {
+    const attributes = [];
+    for (const child of element.children || []) {
+      if (!this.isPageAttribute(child)) continue;
+      const name = child.tag === 'attr' ? this.rawPageString(child.args[0]) : child.tag;
+      const value = child.tag === 'attr' ? this.rawPageString(child.args[1]) : this.rawPageString(child.args[0]);
+      if (!/^(?:id|class|title|type|name|href|src|alt|placeholder|value|for|role|action|method|formaction|target|rel|width|height|autocomplete|min|max|step|rows|cols|maxlength|minlength|pattern|aria-[a-z0-9-]+|data-[a-z0-9-]+|disabled|required|checked|selected|multiple|readonly|autofocus|novalidate)$/.test(name)) {
+        throw new Error(`Unsupported HTML attribute '${name}'. Use an allowed standard, aria-*, or data-* attribute.`);
+      }
+      if (child.tag === 'attr' && (!child.args[0] || !child.args[1])) {
+        throw new Error('HTML attr requires an attribute name and value.');
+      }
+      if (/^(?:href|src|action|formaction)$/i.test(name)) this.safePageUrl(value, name);
+      attributes.push([name, value]);
+    }
+    return attributes;
+  }
+
+  formatPageAttributes(attributes) {
+    const seen = new Set();
+    return attributes.map(([name, value]) => {
+      if (seen.has(name)) throw new Error(`Duplicate HTML attribute '${name}'.`);
+      seen.add(name);
+      if (/^(?:disabled|required|checked|selected|multiple|readonly|autofocus|novalidate)$/.test(name)) {
+        if (value === '' || value === 'true') return ` ${name}`;
+        if (value === 'false') return '';
+      }
+      return ` ${name}="${this.escapeHtmlAttribute(value)}"`;
+    }).join('');
+  }
+
+  escapeHtmlText(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  escapeHtmlAttribute(value) {
+    return this.escapeHtmlText(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  safePageUrl(value, attribute) {
+    if (/^\s*javascript:/i.test(value)) {
+      throw new Error(`Unsafe javascript: URL is not allowed for HTML attribute '${attribute}'.`);
+    }
+    return value;
   }
 
   rawPageString(strData) {
@@ -1715,26 +1982,41 @@ export class Generator {
     switch (node.type) {
       case 'Number': return node.value;
       case 'String': return this.generateString(node.value);
+      case 'RegExp': return node.value;
+      case 'Yield':
+        return `(yield${node.delegate ? '*' : ''}${node.value ? ` ${this.expr(node.value)}` : ''})`;
       case 'Bool': return node.value ? 'true' : 'false';
       case 'Null': return 'null';
       case 'Self': return 'this';
       case 'Identifier': return node.name;
 
       case 'Binary': {
-        const l = this.expr(node.left);
+        const left = this.expr(node.left);
+        const l = node.op === '**' && node.left.type === 'Unary' ? `(${left})` : left;
         const r = this.expr(node.right);
         const simple = node.left.type !== 'Binary' && node.right.type !== 'Binary';
         return simple ? `${l} ${node.op} ${r}` : `(${l} ${node.op} ${r})`;
       }
 
       case 'Unary':
-        return `${node.op}${this.expr(node.expr)}`;
+        return `${node.op}${node.expr.type === 'Binary' ? `(${this.expr(node.expr)})` : this.expr(node.expr)}`;
+
+      case 'Update':
+        return node.prefix ? `${node.op}${this.expr(node.expr)}` : `${this.expr(node.expr)}${node.op}`;
 
       case 'Await':
         return `await ${this.expr(node.expr)}`;
 
       case 'AwaitAllExpr':
         return `await Promise.all(${this.expr(node.expr)})`;
+
+      case 'DynamicImport':
+        return `import(${node.args.map((arg, index) => {
+          const expression = this.expr(arg);
+          return index === 0 && arg.type === 'String'
+            ? this.rewriteNaideImport(expression)
+            : expression;
+        }).join(', ')})`;
 
       case 'Spread':
         return `...${this.expr(node.expr)}`;
@@ -1750,6 +2032,12 @@ export class Generator {
 
       case 'OptionalAccess':
         return `${this.expr(node.object)}?.${node.property}`;
+
+      case 'OptionalCall':
+        return `${this.expr(node.callee)}?.(${node.args.map(arg => this.expr(arg)).join(', ')})`;
+
+      case 'OptionalIndexAccess':
+        return `${this.expr(node.object)}?.[${this.expr(node.index)}]`;
 
       case 'Call':
         return this.generateCall(node);
@@ -1782,6 +2070,7 @@ export class Generator {
 
       case 'Lambda': {
         const async = node.isAsync ? 'async ' : '';
+        const generator = node.isGenerator ? '*' : '';
         const params = node.params.map(p => p.name).join(', ');
         const bodyLines = [];
         const savedOutput = this.output;
@@ -1791,7 +2080,7 @@ export class Generator {
         for (const stmt of node.body) this.visitStatement(stmt);
         this.output = savedOutput;
         this.indent = savedIndent;
-        return `${async}function(${params}) { ${bodyLines.join(' ')} }`;
+        return `${async}function${generator}(${params}) { ${bodyLines.join(' ')} }`;
       }
 
       case 'Ternary':
@@ -1876,7 +2165,7 @@ export class Generator {
     let result = '`';
     for (const part of strData.parts) {
       if (part.type === 'text') {
-        result += part.value.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+        result += JSON.stringify(part.value).slice(1, -1).replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
       } else {
         const exprCode = part.value.replace(/\bself\b/g, 'this');
         result += '${' + exprCode + '}';

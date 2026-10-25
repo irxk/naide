@@ -43,7 +43,8 @@ describe('new project onboarding', () => {
       assert.doesNotMatch(appSource, /cors "\*"/);
       assert.match(appSource, /auth JWT_SECRET:[\s\S]*protect "\/api\/\*"/);
       assert.match(appSource, /limit "\/api\/auth\/\*" 10 "1m"/);
-      assert.match(appSource, /password str required min\(12\) max\(128\)/);
+      assert.match(appSource, /password str required min\(12\) max\(256\)/);
+      assert.match(appSource, /password.length > 128/);
       assert.match(appSource, /public "\/api\/health"/);
 
       const check = spawnSync(process.execPath, [cliPath, 'check', join(directory, 'app.naide')], {

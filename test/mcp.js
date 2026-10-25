@@ -126,12 +126,18 @@ describe('NAIDE MCP server', () => {
     assert.match(codingPrompt, /アプリケーションの動作はすべて\.naide/);
     assert.match(codingPrompt, /ユーザーの明示許可がない限り/);
     assert.match(codingPrompt, /NAIDEで表現できない機能があれば.*ユーザーに確認/);
+    assert.match(codingPrompt, /naide init <dir> --template web.*naide dev <dir>/);
     assert.match(codingPrompt, /package\.json\/package-lock\.json/);
     assert.match(naideFirstPrompt, /Never create authored \.js/);
     assert.ok(aiGuide.strengths.some(strength => strength.includes('Node.js')));
     assert.ok(aiGuide.specIndex.includes('Discord Bot'));
+    assert.ok(aiGuide.syntax.some(rule => rule.includes('native dynamic import')));
+    assert.ok(aiGuide.syntax.some(rule => rule.includes('fn.gen/fn.async.gen')));
     assert.ok(aiGuide.hostedNode.main.includes('naide-host.js'));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('static HTML')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('naide dev')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('--bundle-browser')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('not a parser for raw JavaScript')));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => /ask the user/i.test(boundary)));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('competing package.json')));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('unless the user explicitly approves JavaScript')));

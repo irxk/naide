@@ -12,6 +12,7 @@ export class Parser {
   constructor(tokens) {
     this.tokens = this.preprocessTokens(tokens.filter(t => t.type !== T.COMMENT));
     this.pos = 0;
+    this.inGenerator = false;
   }
 
   preprocessTokens(tokens) {
@@ -83,6 +84,10 @@ export class Parser {
     return null;
   }
 
+  isAssignableExpression(expr) {
+    return ['Identifier', 'MemberAccess', 'IndexAccess'].includes(expr.type);
+  }
+
   at(type) {
     return this.peek().type === type;
   }
@@ -118,7 +123,8 @@ export class Parser {
       type === T.CSV || type === T.LOGGING || type === T.MIGRATE ||
       type === T.GRPC || type === T.WEBRTC || type === T.BLOCKCHAIN ||
       type === T.UNLESS || type === T.UNTIL || type === T.REPEAT ||
-      type === T.ENUM_DECL || type === T.SWAP || type === T.IS || type === T.ISNT;
+      type === T.ENUM_DECL || type === T.SWAP || type === T.IS || type === T.ISNT ||
+      type === T.DO || type === T.OF || type === T.YIELD;
   }
 
   expectPropertyName() {
@@ -131,6 +137,16 @@ export class Parser {
 
   node(type, props = {}) {
     return new ASTNode(type, props, this.peek().line);
+  }
+
+  withGeneratorContext(isGenerator, parseBody) {
+    const previous = this.inGenerator;
+    this.inGenerator = isGenerator;
+    try {
+      return parseBody();
+    } finally {
+      this.inGenerator = previous;
+    }
   }
 
   error(msg, tok) {
@@ -176,6 +192,9 @@ export class Parser {
       case T.USE: return this.parseUse();
       case T.FN: return this.parseFunction(false, false);
       case T.FN_ASYNC: return this.parseFunction(true, false);
+      case T.FN_GENERATOR: return this.parseFunction(false, false, true);
+      case T.FN_ASYNC_GENERATOR: return this.parseFunction(true, false, true);
+      case T.DO: return this.parseDoWhile();
       case T.PUB: return this.parsePub();
       case T.RET: return this.parseReturn();
       case T.IF: return this.parseIf();
@@ -327,7 +346,7 @@ export class Parser {
     return tok.value;
   }
 
-  parseFunction(isAsync, isPublic) {
+  parseFunction(isAsync, isPublic, isGenerator = false) {
     this.advance(); // fn or fn.async
     const tok = this.advance();
     if (!this.isIdentLike(tok.type)) {
@@ -344,14 +363,14 @@ export class Parser {
     }
 
     if (this.match(T.ASSIGN)) {
-      const expr = this.parseExpression();
-      return new ASTNode('Function', { name, params, returnType, body: [new ASTNode('Return', { value: expr }, tok.line)], isAsync, isPublic }, tok.line);
+      const expr = this.withGeneratorContext(isGenerator, () => this.parseExpression());
+      return new ASTNode('Function', { name, params, returnType, body: [new ASTNode('Return', { value: expr }, tok.line)], isAsync, isGenerator, isPublic }, tok.line);
     }
 
     this.expect(T.COLON);
-    const body = this.parseBlock();
+    const body = this.withGeneratorContext(isGenerator, () => this.parseBlock());
 
-    return new ASTNode('Function', { name, params, returnType, body, isAsync, isPublic }, tok.line);
+    return new ASTNode('Function', { name, params, returnType, body, isAsync, isGenerator, isPublic }, tok.line);
   }
 
   parseFnParams() {
@@ -406,7 +425,14 @@ export class Parser {
     this.advance(); // pub
     if (this.at(T.FN)) return this.parseFunction(false, true);
     if (this.at(T.FN_ASYNC)) return this.parseFunction(true, true);
+    if (this.at(T.FN_GENERATOR)) return this.parseFunction(false, true, true);
+    if (this.at(T.FN_ASYNC_GENERATOR)) return this.parseFunction(true, true, true);
     if (this.at(T.MODEL)) return this.parseModel(true);
+    if (this.at(T.ENUM_DECL)) {
+      const declaration = this.parseEnum();
+      declaration.isPublic = true;
+      return declaration;
+    }
 
     if (TYPE_TOKENS.has(this.peek().type)) {
       const node = this.parseTypedVariable();
@@ -414,7 +440,7 @@ export class Parser {
       return node;
     }
 
-    throw this.error('Expected fn, model, or type after pub');
+    throw this.error('Expected fn, model, enum, or type after pub');
   }
 
   parseReturn() {
@@ -578,14 +604,36 @@ export class Parser {
 
   parseFor() {
     this.advance(); // for
+    const isAsync = Boolean(this.match(T.AWAIT));
     const varName = this.expect(T.IDENT).value;
+    if (this.match(T.OF)) {
+      const iterable = this.parseExpression();
+      this.expect(T.COLON);
+      const body = this.parseBlock();
+      return new ASTNode('ForEach', { varName, iterable, iteration: 'of', isAsync, body });
+    }
+    if (isAsync) throw this.error("'for await' requires an 'of' iterable loop");
     this.expect(T.IN);
     const start = this.parseExpression();
-    this.expect(T.RANGE);
+    if (!this.match(T.RANGE)) {
+      this.expect(T.COLON);
+      const body = this.parseBlock();
+      return new ASTNode('ForEach', { varName, iterable: start, iteration: 'in', body });
+    }
     const end = this.parseExpression();
     this.expect(T.COLON);
     const body = this.parseBlock();
     return new ASTNode('For', { varName, start, end, body });
+  }
+
+  parseDoWhile() {
+    this.advance(); // do
+    this.expect(T.COLON);
+    const body = this.parseBlock();
+    this.skipNewlines();
+    this.expect(T.WHILE);
+    const condition = this.parseExpression();
+    return new ASTNode('DoWhile', { body, condition });
   }
 
   parseWhile() {
@@ -875,13 +923,28 @@ export class Parser {
     this.expect(T.INDENT);
 
     const fields = [];
+    const staticFields = [];
     const methods = [];
+    let init = null;
     this.skipNewlines();
 
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
-      if (this.at(T.FN) || this.at(T.FN_ASYNC)) {
-        const isAsync = this.at(T.FN_ASYNC);
-        methods.push(this.parseFunction(isAsync, false));
+      let isStatic = false;
+      if (this.match(T.STATIC)) isStatic = true;
+      if (this.atAny(T.FN, T.FN_ASYNC, T.FN_GENERATOR, T.FN_ASYNC_GENERATOR)) {
+        const isAsync = this.atAny(T.FN_ASYNC, T.FN_ASYNC_GENERATOR);
+        const isGenerator = this.atAny(T.FN_GENERATOR, T.FN_ASYNC_GENERATOR);
+        const method = this.parseFunction(isAsync, false, isGenerator);
+        method.isStatic = isStatic;
+        methods.push(method);
+      } else if (this.at(T.IDENT) && this.peek().value === 'init' && this.peek(1).type === T.LPAREN) {
+        if (isStatic) throw this.error('Model initializers cannot be static');
+        const initLine = this.advance().line;
+        this.expect(T.LPAREN);
+        const params = this.parseFnParams();
+        this.expect(T.RPAREN);
+        this.expect(T.COLON);
+        init = new ASTNode('Function', { name: 'init', params, body: this.parseBlock(), isAsync: false }, initLine);
       } else if (TYPE_TOKENS.has(this.peek().type)) {
         const fieldType = this.advance().value;
         const fieldName = this.expect(T.IDENT).value;
@@ -889,7 +952,12 @@ export class Parser {
         if (this.match(T.ASSIGN)) {
           defaultValue = this.parseExpression();
         }
-        fields.push({ name: fieldName, type: fieldType, defaultValue });
+        if (isStatic) {
+          if (!defaultValue) throw this.error('Static model fields require an initializer');
+          staticFields.push({ name: fieldName, type: fieldType, defaultValue });
+        } else {
+          fields.push({ name: fieldName, type: fieldType, defaultValue });
+        }
       } else {
         this.advance();
       }
@@ -897,7 +965,7 @@ export class Parser {
     }
     this.match(T.DEDENT);
 
-    return new ASTNode('Model', { name, parent, fields, methods, isPublic });
+    return new ASTNode('Model', { name, parent, fields, staticFields, methods, init, isPublic });
   }
 
   parseOn() {
@@ -990,6 +1058,26 @@ export class Parser {
       const value = this.parseExpression();
       return new ASTNode('CompoundAssign', { target: expr, op: '-=', value });
     }
+    for (const [token, op] of [
+      [T.STAR_ASSIGN, '*='],
+      [T.SLASH_ASSIGN, '/='],
+      [T.PERCENT_ASSIGN, '%='],
+      [T.EXPONENT_ASSIGN, '**='],
+      [T.BIT_AND_ASSIGN, '&='],
+      [T.BIT_OR_ASSIGN, '|='],
+      [T.BIT_XOR_ASSIGN, '^='],
+      [T.SHIFT_LEFT_ASSIGN, '<<='],
+      [T.SHIFT_RIGHT_ASSIGN, '>>='],
+      [T.SHIFT_UNSIGNED_ASSIGN, '>>>='],
+      [T.NULLISH_ASSIGN, '??='],
+      [T.AND_ASSIGN, '&&='],
+      [T.OR_ASSIGN, '||='],
+    ]) {
+      if (this.match(token)) {
+        const value = this.parseExpression();
+        return new ASTNode('CompoundAssign', { target: expr, op, value });
+      }
+    }
 
     return new ASTNode('ExprStatement', { expression: expr });
   }
@@ -1048,6 +1136,12 @@ export class Parser {
       }
       this.pos = savedPos;
     }
+    if (this.match(T.QUESTION)) {
+      const consequent = this.parseExpression();
+      this.expect(T.COLON);
+      const alternate = this.parseExpression();
+      return new ASTNode('Ternary', { condition: expr, consequent, alternate });
+    }
     return expr;
   }
 
@@ -1070,19 +1164,46 @@ export class Parser {
   }
 
   parseAnd() {
-    let left = this.parseComparison();
+    let left = this.parseBitwiseOr();
     while (this.match(T.AND)) {
-      const right = this.parseComparison();
+      const right = this.parseBitwiseOr();
       left = new ASTNode('Binary', { op: '&&', left, right });
     }
     return left;
   }
 
+  parseBitwiseOr() {
+    let left = this.parseBitwiseXor();
+    while (this.match(T.BIT_OR)) {
+      const right = this.parseBitwiseXor();
+      left = new ASTNode('Binary', { op: '|', left, right });
+    }
+    return left;
+  }
+
+  parseBitwiseXor() {
+    let left = this.parseBitwiseAnd();
+    while (this.match(T.BIT_XOR)) {
+      const right = this.parseBitwiseAnd();
+      left = new ASTNode('Binary', { op: '^', left, right });
+    }
+    return left;
+  }
+
+  parseBitwiseAnd() {
+    let left = this.parseComparison();
+    while (this.match(T.BIT_AND)) {
+      const right = this.parseComparison();
+      left = new ASTNode('Binary', { op: '&', left, right });
+    }
+    return left;
+  }
+
   parseComparison() {
-    let left = this.parseAddition();
+    let left = this.parseShift();
     while (this.atAny(T.EQ, T.NEQ, T.GT, T.LT, T.GTE, T.LTE, T.INSTANCEOF, T.IS, T.ISNT)) {
       const tok = this.advance();
-      const right = this.parseAddition();
+      const right = this.parseShift();
       if (tok.type === T.INSTANCEOF) {
         left = new ASTNode('Binary', { op: 'instanceof', left, right });
       } else if (tok.type === T.IS) {
@@ -1092,6 +1213,16 @@ export class Parser {
       } else {
         left = new ASTNode('Binary', { op: tok.value === '==' ? '===' : tok.value === '!=' ? '!==' : tok.value, left, right });
       }
+    }
+    return left;
+  }
+
+  parseShift() {
+    let left = this.parseAddition();
+    while (this.atAny(T.SHIFT_LEFT, T.SHIFT_RIGHT, T.SHIFT_UNSIGNED)) {
+      const op = this.advance().value;
+      const right = this.parseAddition();
+      left = new ASTNode('Binary', { op, left, right });
     }
     return left;
   }
@@ -1117,6 +1248,11 @@ export class Parser {
   }
 
   parseUnary() {
+    if (this.at(T.PLUS)) {
+      this.advance();
+      const expr = this.parseUnary();
+      return new ASTNode('Unary', { op: '+', expr });
+    }
     if (this.match(T.NOT)) {
       const expr = this.parseUnary();
       return new ASTNode('Unary', { op: '!', expr });
@@ -1125,6 +1261,20 @@ export class Parser {
       this.advance();
       const expr = this.parseUnary();
       return new ASTNode('Unary', { op: '-', expr });
+    }
+    if (this.at(T.BIT_NOT)) {
+      this.advance();
+      const expr = this.parseUnary();
+      return new ASTNode('Unary', { op: '~', expr });
+    }
+    if (this.atAny(T.INCREMENT, T.DECREMENT)) {
+      const tok = this.advance();
+      const op = tok.value;
+      const expr = this.parseUnary();
+      if (!this.isAssignableExpression(expr)) {
+        throw this.error('Increment/decrement requires an assignable expression', tok);
+      }
+      return new ASTNode('Update', { op, expr, prefix: true });
     }
     if (this.match(T.AWAIT)) {
       const expr = this.parseUnary();
@@ -1147,7 +1297,16 @@ export class Parser {
       const expr = this.parseUnary();
       return new ASTNode('TypeOf', { expr });
     }
-    return this.parsePostfix();
+    return this.parseExponent();
+  }
+
+  parseExponent() {
+    let left = this.parsePostfix();
+    if (this.match(T.EXPONENT)) {
+      const right = this.parseUnary();
+      left = new ASTNode('Binary', { op: '**', left, right });
+    }
+    return left;
   }
 
   parsePostfix() {
@@ -1158,8 +1317,19 @@ export class Parser {
         const prop = this.expectPropertyName();
         expr = new ASTNode('MemberAccess', { object: expr, property: prop });
       } else if (this.match(T.OPTIONAL)) {
-        const prop = this.expectPropertyName();
-        expr = new ASTNode('OptionalAccess', { object: expr, property: prop });
+        if (this.at(T.LPAREN)) {
+          this.advance();
+          const args = this.parseArgList();
+          this.expect(T.RPAREN);
+          expr = new ASTNode('OptionalCall', { callee: expr, args });
+        } else if (this.match(T.LBRACKET)) {
+          const index = this.parseExpression();
+          this.expect(T.RBRACKET);
+          expr = new ASTNode('OptionalIndexAccess', { object: expr, index });
+        } else {
+          const prop = this.expectPropertyName();
+          expr = new ASTNode('OptionalAccess', { object: expr, property: prop });
+        }
       } else if (this.at(T.LPAREN)) {
         const callLine = this.peek().line;
         this.advance();
@@ -1171,6 +1341,13 @@ export class Parser {
         const index = this.parseExpression();
         this.expect(T.RBRACKET);
         expr = new ASTNode('IndexAccess', { object: expr, index });
+      } else if (this.atAny(T.INCREMENT, T.DECREMENT)) {
+        const tok = this.advance();
+        const op = tok.value;
+        if (!this.isAssignableExpression(expr)) {
+          throw this.error('Increment/decrement requires an assignable expression', tok);
+        }
+        expr = new ASTNode('Update', { op, expr, prefix: false });
       } else {
         break;
       }
@@ -1199,6 +1376,24 @@ export class Parser {
         this.advance();
         return new ASTNode('Number', { value: tok.value });
 
+      case T.REGEX:
+        this.advance();
+        return new ASTNode('RegExp', { value: tok.value });
+
+      case T.YIELD: {
+        if (!this.inGenerator) {
+          throw this.error('yield is only valid inside a generator function', tok);
+        }
+        this.advance();
+        const delegate = Boolean(this.match(T.STAR));
+        const hasValue = !this.atAny(T.NEWLINE, T.DEDENT, T.EOF, T.COMMA, T.RPAREN, T.RBRACKET);
+        if (delegate && !hasValue) {
+          throw this.error('yield* requires an iterable expression', tok);
+        }
+        const value = hasValue ? this.parseExpression() : null;
+        return new ASTNode('Yield', { value, delegate });
+      }
+
       case T.STRING:
         this.advance();
         return new ASTNode('String', { value: tok.value });
@@ -1217,9 +1412,17 @@ export class Parser {
 
       case T.IDENT:
         this.advance();
+        if (tok.value === 'import' && this.match(T.LPAREN)) {
+          const args = this.parseArgList();
+          this.expect(T.RPAREN);
+          if (args.length < 1 || args.length > 2) {
+            throw this.error('Dynamic import expects one or two arguments', tok);
+          }
+          return new ASTNode('DynamicImport', { args }, tok.line);
+        }
         return new ASTNode('Identifier', { name: tok.value });
 
-      case T.TYPE_STR: case T.TYPE_INT: case T.TYPE_NUM:
+      case T.TYPE_STR: case T.TYPE_INT: case T.TYPE_NUM: case T.TYPE_BIGINT:
       case T.TYPE_BOOL: case T.TYPE_LIST: case T.TYPE_MAP:
       case T.TYPE_ANY: case T.TYPE_JSON: case T.TYPE_VOID:
         this.advance();
@@ -1242,7 +1445,7 @@ export class Parser {
       case T.GRPC: case T.WEBRTC: case T.BLOCKCHAIN:
       case T.UNLESS: case T.UNTIL: case T.REPEAT:
       case T.ENUM_DECL: case T.SWAP: case T.IS: case T.ISNT:
-      case T.FROM: case T.AS: case T.IN:
+      case T.FROM: case T.AS: case T.IN: case T.OF: case T.DO: case T.YIELD:
         this.advance();
         return new ASTNode('Identifier', { name: tok.value });
 
@@ -1263,6 +1466,8 @@ export class Parser {
 
       case T.FN:
       case T.FN_ASYNC:
+      case T.FN_GENERATOR:
+      case T.FN_ASYNC_GENERATOR:
         return this.parseLambda();
 
       default:
@@ -1417,8 +1622,9 @@ export class Parser {
   }
 
   parseLambda() {
-    const isAsync = this.at(T.FN_ASYNC);
-    this.advance(); // fn or fn.async
+    const isAsync = this.atAny(T.FN_ASYNC, T.FN_ASYNC_GENERATOR);
+    const isGenerator = this.atAny(T.FN_GENERATOR, T.FN_ASYNC_GENERATOR);
+    this.advance();
     this.expect(T.LPAREN);
     const params = this.parseFnParams();
     this.expect(T.RPAREN);
@@ -1427,8 +1633,8 @@ export class Parser {
       returnType = this.parseTypeAnnotation();
     }
     this.expect(T.COLON);
-    const body = this.parseBlock();
-    return new ASTNode('Lambda', { params, returnType, body, isAsync });
+    const body = this.withGeneratorContext(isGenerator, () => this.parseBlock());
+    return new ASTNode('Lambda', { params, returnType, body, isAsync, isGenerator });
   }
 
   // ===== High-level feature parsers =====
@@ -1450,8 +1656,10 @@ export class Parser {
     this.skipNewlines();
 
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
-      if (this.at(T.FN) || this.at(T.FN_ASYNC)) {
-        methods.push(this.parseFunction(this.at(T.FN_ASYNC), false));
+      if (this.atAny(T.FN, T.FN_ASYNC, T.FN_GENERATOR, T.FN_ASYNC_GENERATOR)) {
+        const isAsync = this.atAny(T.FN_ASYNC, T.FN_ASYNC_GENERATOR);
+        const isGenerator = this.atAny(T.FN_GENERATOR, T.FN_ASYNC_GENERATOR);
+        methods.push(this.parseFunction(isAsync, false, isGenerator));
       } else if (this.at(T.IDENT) && this.peek().value === 'init' && this.peek(1).type === T.LPAREN) {
         this.advance(); // init
         this.expect(T.LPAREN);

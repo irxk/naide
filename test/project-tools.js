@@ -307,6 +307,7 @@ describe('project tools and native package adapters', () => {
     try {
       writeFileSync(join(directory, 'package.json'), JSON.stringify({
         name: 'naide-test-runner-fixture',
+        type: 'module',
         scripts: { test: 'node smoke.test.js' },
       }));
       writeFileSync(join(directory, 'smoke.test.js'), 'import assert from "node:assert/strict";\nassert.equal(2 + 2, 4);\nconsole.log("fixture tests passed");\n');

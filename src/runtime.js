@@ -264,7 +264,10 @@ export function jwtVerify(token, secret) {
 export function jwtAuth(secret, options = {}) {
   const publicPaths = (options.public || []).map(p => new RegExp('^' + p.replace(/\*/g, '.*') + '$'));
   return (req, res, next) => {
-    const isPublic = publicPaths.some(re => re.test(req.path));
+    const requestPath = req.originalUrl
+      ? new URL(req.originalUrl, 'http://naide.local').pathname
+      : `${req.baseUrl || ''}${req.path || ''}`;
+    const isPublic = publicPaths.some(re => re.test(requestPath));
     if (isPublic) return next();
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
