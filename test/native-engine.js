@@ -1342,7 +1342,11 @@ test('native engine loads declared JavaScript packages and rejects unsafe NAIDE 
       dependencies: { 'example-package': '1.0.0' },
     }));
 
-    writeFileSync(join(packageDirectory, 'package.json'), JSON.stringify({ name: 'example-package', main: 'index.js' }));
+    writeFileSync(join(packageDirectory, 'package.json'), JSON.stringify({
+      name: 'example-package',
+      type: 'module',
+      main: 'index.js',
+    }));
     writeFileSync(join(packageDirectory, 'index.js'), 'export const answer = 42;\n');
     writeFileSync(entryPath, 'use { answer } from "example-package"\n');
     assert.equal((await runNativeFileAsync(entryPath)).globals.get('answer'), 42);
