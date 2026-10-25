@@ -1,6 +1,6 @@
 # NAIDE
 
-**Node AI Development Environment** — One readable syntax for building, checking, and running applications, with compiler targets for **15 languages**.
+**Node AI Development Environment** — One readable syntax for building, checking, and running applications, with a direct interpreter and compiler targets for **15 languages**.
 
 NAIDE is designed around one canonical syntax shared by people, AI tools, the compiler, editor support, and examples. It combines familiar control flow and types with concise inference, a built-in application toolkit, diagnostics, and a compiler that can emit multiple targets. The goal is not to hide how programs work, but to make common work direct and errors easier to find.
 
@@ -89,6 +89,7 @@ Save as `lesson.naide`, then run `naide lesson.naide`. To inspect a project's lo
 
 ```bash
 naide <file.naide>             # Check and run a NAIDE file
+naide --native <file.naide>    # Run directly without generating JavaScript
 naide native <file.naide>      # Run the supported core directly on the NAIDE AST
 naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
@@ -132,7 +133,7 @@ runtime.exitCode = 2
 
 `runtime.args` contains arguments after `--` in `naide native app.naide -- input.txt`. Environment variables are **not** exposed by default; opt in by name with `--env APP_MODE`, which makes only that variable visible through `runtime.env.get/has/keys`. Embedded runtimes can pass `runtime: {args, env, cwd, platform, arch}` to `NativeEngine` or `runNativeAsync`. The native runtime intentionally does not expose arbitrary process access or shell execution.
 
-`naide native` uses NAIDE's experimental direct AST interpreter; it does not generate or execute JavaScript. It supports core values, functions and synchronous/asynchronous generators, model declarations and inheritance, enums, expressions, conditionals, loops, matching, basic error handling, `fn.async`, `await`, `await.all`, task primitives and channels, relative imports of `.naide` modules, and installed NAIDE source packages. Export values, functions, models, and enums with `pub`, then import them with `use`:
+`naide --native` and `naide native` use NAIDE's experimental direct AST interpreter; neither generates or executes JavaScript. The `naider/native` package entry also exposes this API for embedding in Node.js applications. This interpreter supports core values, functions and synchronous/asynchronous generators, model declarations and inheritance, enums, expressions, conditionals, loops, matching, basic error handling, `fn.async`, `await`, `await.all`, task primitives and channels, relative imports of `.naide` modules, and installed NAIDE source packages. Export values, functions, models, and enums with `pub`, then import them with `use`:
 
 ```naide
 # math.naide
@@ -351,6 +352,16 @@ function add(a, b) {
 Type `.eval` to switch to evaluation mode (runs the code instead of showing JS).
 
 The REPL's evaluation mode and the default file runner still use the existing JavaScript runtime. Use `naide native <file.naide>` to try the new direct interpreter; its CLI uses the asynchronous evaluator so top-level `await` and `await.all` work.
+
+JavaScript applications can embed the direct interpreter without importing the compiler API:
+
+```js
+import { runNativeAsync } from 'naider/native';
+
+await runNativeAsync('log "executed directly"');
+```
+
+This entry point evaluates NAIDE source through the interpreter and does not generate JavaScript. It still runs on Node.js; it is not a standalone native binary.
 
 ### Playground
 

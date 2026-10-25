@@ -4,11 +4,8 @@ import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, 
 import { resolve, basename, dirname, extname, isAbsolute, join, relative, sep } from 'path';
 import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'node:url';
-import { compile, compileAsync } from '../src/index.js';
 import { runNativeFileAsync } from '../src/native-engine.js';
-import { buildWebProject, startWebDevServer } from '../src/web-dev.js';
 import { spawn } from 'child_process';
-import { createPackageInstallPlan, getDoctorReport, inspectProject, listPackageAdapters, recordPackageDependency, runPackageInstall, runProjectTests, spawnNativeTool } from '../src/project-tools.js';
 
 import { createRequire } from 'module';
 const _require = createRequire(import.meta.url);
@@ -144,6 +141,7 @@ const flags = {
   project: false,
   write: null,
   replace: false,
+  native: false,
 };
 
 const files = [];
@@ -164,11 +162,13 @@ for (let i = 0; i < args.length; i++) {
     case '--project': case '-p': flags.project = true; break;
     case '--write': flags.write = args[++i]; break;
     case '--replace': flags.replace = true; break;
+    case '--native': flags.native = true; break;
     default: files.push(arg);
   }
 }
 
 if (files[0] === 'doctor') {
+  const { getDoctorReport } = await import('../src/project-tools.js');
   const directory = files[1] && !files[1].startsWith('--') ? files[1] : '.';
   const report = await getDoctorReport(resolve(directory));
   if (files.includes('--json')) {
@@ -190,6 +190,7 @@ if (files[0] === 'doctor') {
 }
 
 if (files[0] === 'verify') {
+  const { inspectProject } = await import('../src/project-tools.js');
   const directory = resolve(files[1] && !files[1].startsWith('--') ? files[1] : '.');
   const report = inspectProject(directory);
   if (files.includes('--json')) {
@@ -205,6 +206,7 @@ if (files[0] === 'verify') {
 }
 
 if (files[0] === 'test') {
+  const { runProjectTests } = await import('../src/project-tools.js');
   const directory = files[1] && !files[1].startsWith('--') ? files[1] : '.';
   let report;
   try {
@@ -692,6 +694,7 @@ if (files[0] === 'fmt') {
 }
 
 if (files[0] === 'mws' && files[1] === 'discord') {
+  const { compile } = await import('../src/index.js');
   const dir = resolve(files[2] || './naide-mws-discord');
   if (existsSync(dir)) {
     const entries = readdirSync(dir);
@@ -1123,6 +1126,7 @@ test('starter API separates each authenticated user’s items', async () => {
 }
 
 if (files[0] === 'dev') {
+  const { buildWebProject, startWebDevServer } = await import('../src/web-dev.js');
   const projectPath = files[1] && !files[1].startsWith('--') ? files[1] : '.';
   const projectRoot = resolve(projectPath);
   const readOption = (name, fallback) => {
@@ -1172,6 +1176,7 @@ if (files[0] === 'dev') {
 }
 
 if (files[0] === 'build') {
+  const { compile } = await import('../src/index.js');
   const bundleBrowser = files.includes('--bundle-browser');
   const buildPaths = files.slice(1).filter(argument => argument !== '--bundle-browser');
   const dir = resolve(buildPaths[0] || '.');
@@ -1399,6 +1404,7 @@ if (files[0] === 'build') {
 
 // ── Type Check ──
 if (files[0] === 'check') {
+  const { compile } = await import('../src/index.js');
   const targets = files.slice(1);
   if (targets.length === 0) {
     console.log('  Usage: naide check <file.naide> [files...]');
@@ -1508,6 +1514,7 @@ if (files[0] === 'pkg') {
   const pkgManifestPath = resolve('naide.pkg.json');
 
   if (subcmd === 'managers') {
+    const { listPackageAdapters } = await import('../src/project-tools.js');
     console.log('\n  Native package ecosystems:\n');
     for (const adapter of listPackageAdapters()) {
       console.log(`    ${adapter.name.padEnd(10)} ${adapter.description}`);
@@ -1517,6 +1524,12 @@ if (files[0] === 'pkg') {
   }
 
   if (subcmd === 'add') {
+    const {
+      createPackageInstallPlan,
+      recordPackageDependency,
+      runPackageInstall,
+      spawnNativeTool,
+    } = await import('../src/project-tools.js');
     const manager = files[2];
     const spec = files[3];
     if (!manager || !spec) {
@@ -1756,6 +1769,7 @@ if (flags.help) {
   Usage:
     naide                        Start interactive REPL
     naide <file.naide>           Run a NAIDE file
+      --native                   Execute directly without JavaScript generation
     naide native <file.naide>    Execute core NAIDE directly without JS generation
       --steps <maximum>          Bound native interpreter execution steps
       --env <NAME>               Expose one environment variable to native runtime
@@ -1857,6 +1871,14 @@ if (!['dev', 'native'].includes(files[0])) for (const file of files) {
   }
 
   try {
+    if (flags.native) {
+      const result = await runNativeFileAsync(filePath);
+      console.log(`\n  Native NAIDE execution completed in ${result.steps} steps.`);
+      process.exitCode = result.globals.get('runtime').exitCode;
+      continue;
+    }
+
+    const { compile, compileAsync } = await import('../src/index.js');
     const runtimePath = flags.emit || flags.output ? 'naider/runtime' : runtimeUrl;
 
     if (flags.watch) {

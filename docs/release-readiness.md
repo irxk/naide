@@ -55,3 +55,9 @@ This is an evidence-based checkpoint, not a claim of overall product completenes
 | Windows/Linux full-suite release checks | Pass locally on the prior checkpoint / hosted confirmation pending | The latest revision's Node 24 full suite passes locally; the current uncommitted revision still needs the hosted matrix and runtime job green |
 
 The weighted local evidence score is 98/100 and the reviewed HIGH finding has been fixed. Do not claim 100/100 or release certification until all 15 runtime targets and the full hosted CI matrix are green for this exact revision.
+
+## Compiler-independent execution
+
+NAIDE now has an explicit direct-interpreter path: `naide --native <file.naide>`, `naide native <file.naide>`, and the `naider/native` JavaScript package subpath. The native CLI path lazily loads only the interpreter and parser; a regression test guards that it does not load the compiler entry point. A clean packed-package installation test imports and executes `runNativeAsync` from `naider/native`.
+
+This is a supported-core milestone, not complete compiler independence. The default file runner and REPL still use JavaScript generation; framework declarations, JavaScript-only npm modules, Node.js built-ins, and some language constructs are not implemented by the interpreter. Continue expanding native feature parity and host integrations before considering a compiler-free default. The interpreter still requires Node.js and is not a standalone binary or an OS-level sandbox.

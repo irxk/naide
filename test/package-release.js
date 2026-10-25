@@ -26,6 +26,7 @@ test('npm package contains required CLI, runtime, and linked documentation files
     'bin/naide.js',
     'src/index.js',
     'src/runtime.js',
+    'src/native.js',
     'src/generator-rust.js',
     'docs/release-readiness.md',
     'README.md',
@@ -89,6 +90,20 @@ test('packed npm artifact installs cleanly and its CLI compiles a NAIDE file', (
     assert.ifError(compiled.error);
     assert.equal(compiled.status, 0, compiled.stderr);
     assert.match(compiled.stdout, /packed-install-ok/);
+
+    const nativeSmokePath = join(installDirectory, 'native-smoke.mjs');
+    writeFileSync(nativeSmokePath, [
+      "import { runNativeAsync } from 'naider/native';",
+      "const result = await runNativeAsync('int answer = 40 + 2');",
+      "if (result.globals.get('answer') !== 42) process.exit(1);",
+    ].join('\n'));
+    const native = spawnSync(process.execPath, [nativeSmokePath], {
+      cwd: installDirectory,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(native.error);
+    assert.equal(native.status, 0, `${native.stdout}\n${native.stderr}`);
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }

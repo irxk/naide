@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
@@ -1446,6 +1446,36 @@ test('native CLI runs a source file without emitting a JavaScript artifact', () 
     assert.match(result.stdout, /native output/);
     assert.match(result.stdout, /Native NAIDE execution completed/);
     assert.deepEqual(readdirSync(directory).sort(), ['main.naide']);
+
+    const directFlag = spawnSync(process.execPath, [cliPath, '--native', sourcePath], {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+    });
+    assert.equal(directFlag.status, 0, directFlag.stdout + directFlag.stderr);
+    assert.match(directFlag.stdout, /native output/);
+    assert.deepEqual(readdirSync(directory).sort(), ['main.naide']);
+
+    const compilerGuardPath = join(directory, 'compiler-guard.mjs');
+    writeFileSync(compilerGuardPath, [
+      'export async function resolve(specifier, context, nextResolve) {',
+      "  if (specifier.endsWith('/src/index.js')) throw new Error('Compiler module was loaded');",
+      '  return nextResolve(specifier, context);',
+      '}',
+      '',
+    ].join('\n'));
+    const isolatedNative = spawnSync(process.execPath, [
+      '--experimental-loader',
+      pathToFileURL(compilerGuardPath).href,
+      cliPath,
+      '--native',
+      sourcePath,
+    ], {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+    });
+    assert.equal(isolatedNative.status, 0, isolatedNative.stdout + isolatedNative.stderr);
+    assert.match(isolatedNative.stdout, /native output/);
+    assert.doesNotMatch(isolatedNative.stderr, /Compiler module was loaded/);
 
     const limited = spawnSync(process.execPath, [
       cliPath, 'native', sourcePath, '--steps', '1',
