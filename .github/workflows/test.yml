@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           for target in python bun typescript go java rust cpp c csharp kotlin swift dart php ruby; do
             echo "::group::Verify $target code generation"
-            node bin/naide.js --emit -t "$target" examples/todo-api.naide > /dev/null
+            node bin/naide.js --emit -t "$target" examples/hello.naide > /dev/null
             echo "  $target: generated successfully"
             echo "::endgroup::"
           done
