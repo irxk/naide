@@ -1,7 +1,7 @@
 {
   "name": "naider",
   "version": "2.0.9",
-  "description": "NAIDE is a readable, practical programming language with a native interpreter, multi-target compiler, type checking, and batteries-included development tools.",
+  "description": "NAIDE is a readable, practical programming language with NaideVM, a multi-target compiler, type checking, and batteries-included development tools.",
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -25,6 +25,7 @@
     "assets/",
     "mcp/",
     "lsp/",
+    "benchmark/",
     "examples/",
     "docs/",
     "vscode-naide/",
@@ -39,6 +40,7 @@
     "test:parity": "node --test test/compiler-parity.js",
     "test:onboarding": "node --test test/onboarding.js",
     "test:features": "node --test test/project-tools.js test/mcp.js test/lsp.js test/security.js test/onboarding.js test/onboarding-integration.js test/native-meld.js",
+    "benchmark:engines": "node benchmark/engines.js",
     "example": "node bin/naide.js examples/hello.naide",
     "postinstall": "node bin/postinstall.js"
   },

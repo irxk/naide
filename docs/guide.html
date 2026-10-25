@@ -66,8 +66,9 @@ npm run dev</code></pre>
   <span class="kw">get</span> <span class="str">"/greet/:name"</span> (req, res):
     <span class="kw">ret</span> {hello: req.params.name}</code></pre>
 
-      <p>Run this simple HTTP server directly with the native interpreter:</p>
+      <p>Run this simple HTTP server directly with NaideVM, NAIDE's interpreter:</p>
       <pre><code>naide app.naide</code></pre>
+      <p>See the <a href="naidevm.html">NaideVM comparison page</a> for measured runtime, process-startup, and memory results against Node/V8, Bun/JavaScriptCore, and CPython.</p>
       <p>Your server is now running at <code>http://localhost:3000</code>. Visit <code>/greet/world</code> to see <code>{"hello":"world"}</code>.</p>
 
       <h2>Check before running</h2>

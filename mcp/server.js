@@ -99,7 +99,7 @@ function getKnowledgeCatalog() {
     sources: [
       { path: 'SPEC.naide', purpose: 'Canonical syntax, language features, and language-level examples.' },
       { path: 'README.md and docs/', purpose: 'CLI, product guides, feature explanations, and published support boundaries.' },
-      { path: 'src/', purpose: 'Current compiler, runtime, type checker, adapters, project tooling, and native engine implementation.' },
+      { path: 'src/', purpose: 'Current compiler, runtime, type checker, adapters, project tooling, and NaideVM implementation.' },
       { path: 'examples/', purpose: 'Runnable canonical NAIDE examples.' },
       { path: 'mcp/, lsp/, vscode-naide/', purpose: 'Current MCP, language-server, and VS Code integration behavior.' },
     ],

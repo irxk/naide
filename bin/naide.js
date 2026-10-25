@@ -592,9 +592,9 @@ if (files[0] === 'lsp') {
 // ── REPL ──
 if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
-  const { NativeEngine } = await import('../src/native-engine.js');
+  const { NaideVM } = await import('../src/native-engine.js');
 
-  console.log(`\n  NAIDE REPL v${NAIDE_VERSION} — direct native execution`);
+  console.log(`\n  NAIDE REPL v${NAIDE_VERSION} — direct native execution via NaideVM`);
   console.log(`  Type .exit to quit, .compile to inspect JavaScript, .eval to return to direct execution\n`);
 
   const rl = createInterface({
@@ -607,7 +607,7 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   let inBlock = false;
   let compileMode = false;
   let inputQueue = Promise.resolve();
-  const engine = new NativeEngine({
+  const engine = new NaideVM({
     nodeModules: flags.nodeModules,
     serverHost: flags.serverHost,
     nativeServices: createNativeServices(process.cwd()),
@@ -2340,8 +2340,8 @@ if (!['dev', 'native'].includes(files[0])) for (const file of files) {
       console.error(`\n${err.message}`);
     } else {
       console.error(`\n  ${err.message}`);
-      if (err.message.includes('Native engine does not support')) {
-        console.error('  This declaration is not implemented by the native interpreter yet. Run with --compile to use the JavaScript runtime.');
+      if (err.message.includes('NaideVM does not support') || err.message.includes('NaideVM cannot execute')) {
+        console.error('  This declaration is not implemented by NaideVM yet. Run with --compile to use the JavaScript runtime.');
       }
     }
     if (process.env.NAIDE_DEBUG) console.error(err.stack);

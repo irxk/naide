@@ -232,4 +232,4 @@ export function transpile(source, opts) {
 }
 
 export { generate, generateProject, updateProject };
-export { NativeEngine, runNative, runNativeAsync, runNativeFileAsync } from './native-engine.js';
+export { NaideVM, NativeEngine, runNative, runNativeAsync, runNativeFileAsync } from './native-engine.js';

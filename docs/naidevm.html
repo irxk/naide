@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NaideVM — measured runtime comparison</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .chart { margin: 1.5rem 0 2rem; }
+    .chart-row { display: grid; grid-template-columns: 180px minmax(120px, 1fr) minmax(125px, auto); gap: 12px; align-items: center; margin: 10px 0; }
+    .chart-label { color: var(--text); font-weight: 600; }
+    .chart-track { display: block; height: 20px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .chart-bar { display: block; height: 100%; min-width: 2px; background: var(--accent); border-radius: 3px; }
+    .chart-bar.naidevm { background: var(--purple); }
+    .chart-value { color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; text-align: right; }
+    .chart-axis { display: flex; justify-content: space-between; margin: 6px 140px 0 192px; color: var(--text-dim); font-size: 12px; }
+    .notice { padding: 14px 16px; background: var(--accent-bg); border: 1px solid var(--border); border-radius: 6px; margin: 1rem 0; }
+    .status { color: var(--green); font-weight: 700; }
+    .meta { color: var(--text-muted); font-size: 14px; }
+    .table-wrap { overflow-x: auto; }
+    .table-wrap table { width: 100%; border-collapse: collapse; margin: 1rem 0 2rem; }
+    .table-wrap th, .table-wrap td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); }
+    .table-wrap th { color: var(--text-muted); }
+    .table-wrap td:last-child { font-family: var(--font-mono); }
+    @media (max-width: 640px) {
+      .chart-row { grid-template-columns: 1fr auto; gap: 6px; }
+      .chart-track { grid-column: 1 / -1; grid-row: 2; }
+      .chart-value { grid-column: 2; grid-row: 1; }
+      .chart-axis { margin: 6px 0 0; }
+    }
+  </style>
+</head>
+<body>
+  <button class="mobile-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">&#9776;</button>
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a href="index.html">NAIDE</a>
+      <span class="version">v2.0.9</span>
+    </div>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="guide.html">Getting Started</a>
+      <span class="nav-section">Language</span>
+      <a href="syntax.html">Syntax Reference</a>
+      <span class="nav-section">Features</span>
+      <a href="server.html">Server &amp; API</a>
+      <a href="bot.html">Bots</a>
+      <a href="ai.html">AI / LLM</a>
+      <a href="database.html">Database</a>
+      <a href="page.html">Page Generation</a>
+      <a href="mail.html">Email</a>
+      <a href="graphql.html">GraphQL</a>
+      <a href="desktop-mobile.html">Desktop &amp; Mobile</a>
+      <a href="testing.html">Testing</a>
+      <span class="nav-section">Tools</span>
+      <a href="cli.html">CLI Reference</a>
+      <a href="naidevm.html" class="active">NaideVM</a>
+      <a href="codegen.html">Code Generation (~~)</a>
+      <a href="playground/index.html">Playground</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <div class="content">
+      <h1>NaideVM</h1>
+      <p>NaideVM is NAIDE's direct AST interpreter. It executes NAIDE source on Node.js without generating JavaScript. The public class is <code>NaideVM</code>; <code>NativeEngine</code> remains as a backwards-compatible alias.</p>
+
+      <h2>Measured runtime comparison</h2>
+      <p>This page compares one identical integer-summation workload on NaideVM, Node.js/V8, Bun/JavaScriptCore, and Python/CPython. Results below are from the included benchmark run; they are measurements, not a general engine ranking.</p>
+      <div id="benchmark-status" class="notice" role="status">Loading the checked-in benchmark measurements…</div>
+      <div id="benchmark-content" hidden>
+        <p id="benchmark-host" class="meta"></p>
+        <p id="benchmark-method" class="meta"></p>
+        <h3>Cold process startup — lower is better</h3>
+        <div id="startup-chart" class="chart" role="img" aria-label="Median cold process startup time comparison"></div>
+        <h3>Integer-loop throughput — higher is better</h3>
+        <p class="meta">Bars show speed relative to NaideVM on a logarithmic scale; labels show measured iterations per second and the exact ratio.</p>
+        <div id="throughput-chart" class="chart" role="img" aria-label="Integer loop throughput comparison on a logarithmic scale"></div>
+        <h3>Peak resident memory (RSS) — lower is better</h3>
+        <div id="memory-chart" class="chart" role="img" aria-label="Peak process resident memory comparison"></div>
+        <h3>Measured workload coverage</h3>
+        <p>The same single fixture exercised integer range iteration, a mutable scalar, addition, and a function call. Every implementation had to return the exact expected sum. This checks only those constructs in this workload; it is <strong>not</strong> a language feature-coverage or compiler-parity score.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Execution engine</th><th>Runtime version</th><th>Fixture result</th><th>Expected result</th><th>Validation</th></tr></thead>
+            <tbody id="correctness-table"></tbody>
+          </table>
+        </div>
+        <h3>Raw measurements</h3>
+        <p><a href="naidevm-benchmark.json">Download the exact benchmark JSON</a>. Values are retained unrounded in that file.</p>
+        <p class="meta">Reproduce from the repository root with <code>node benchmark/engines.js --iterations 100000 --samples 7 --json docs/naidevm-benchmark.json</code>. Source: <a href="https://github.com/irxk/naide/blob/main/benchmark/engines.js">benchmark harness</a>.</p>
+        <div id="benchmark-limits" class="notice"></div>
+      </div>
+    </div>
+  </main>
+  <script src="highlight.js"></script>
+  <script>
+    const number = value => new Intl.NumberFormat('en-US').format(value);
+    const ms = value => `${value.toFixed(2)} ms`;
+    const mib = value => `${(value / 1048576).toFixed(2)} MiB`;
+    const row = (engine, width, value) => {
+      const item = document.createElement('div');
+      item.className = 'chart-row';
+      const label = document.createElement('span');
+      label.className = 'chart-label';
+      label.textContent = engine.name;
+      const track = document.createElement('span');
+      track.className = 'chart-track';
+      const bar = document.createElement('span');
+      bar.className = `chart-bar${engine.id === 'naidevm' ? ' naidevm' : ''}`;
+      bar.style.width = `${Math.max(0.5, width * 100)}%`;
+      track.append(bar);
+      const output = document.createElement('span');
+      output.className = 'chart-value';
+      output.textContent = value;
+      item.append(label, track, output);
+      return item;
+    };
+    const drawLinearChart = (element, engines, valueOf, format) => {
+      const maximum = Math.max(...engines.map(valueOf));
+      for (const engine of engines) element.append(row(engine, valueOf(engine) / maximum, format(valueOf(engine))));
+      const axis = document.createElement('div');
+      axis.className = 'chart-axis';
+      axis.innerHTML = '<span>0</span><span>50%</span><span>100% of maximum</span>';
+      element.append(axis);
+    };
+    fetch('naidevm-benchmark.json')
+      .then(response => {
+        if (!response.ok) throw new Error(`Benchmark data request failed: ${response.status}`);
+        return response.json();
+      })
+      .then(data => {
+        const engines = data.engines;
+        const baseRate = engines.find(engine => engine.id === 'naidevm').throughput.iterationsPerSecond;
+        document.querySelector('#benchmark-host').textContent =
+          `Measured ${data.generatedAt} on ${data.host.platform} (${data.host.architecture}), ${data.host.cpu}; runtimes: ${engines.map(engine => `${engine.name} ${engine.version}`).join(', ')}.`;
+        document.querySelector('#benchmark-method').textContent =
+          `${number(data.method.iterations)} loop iterations per sample; ${data.method.samples} throughput samples after one warm-up; medians shown. Startup is separately measured across ${data.method.startupSamples} fresh processes, each running a 1,000-iteration correctness fixture.`;
+        drawLinearChart(document.querySelector('#startup-chart'), engines, engine => engine.startup.medianMs, ms);
+        const throughput = document.querySelector('#throughput-chart');
+        const maximumRatio = Math.max(...engines.map(engine => engine.throughput.iterationsPerSecond / baseRate));
+        for (const engine of engines) {
+          const ratio = engine.throughput.iterationsPerSecond / baseRate;
+          const width = Math.log10(ratio) / Math.log10(maximumRatio || 1);
+          throughput.append(row(engine, ratio === 1 ? 0.005 : width, `${number(engine.throughput.iterationsPerSecond)} iter/s (${ratio.toFixed(2)}× NaideVM)`));
+        }
+        const axis = document.createElement('div');
+        axis.className = 'chart-axis';
+        axis.innerHTML = `<span>1×</span><span>${(Math.sqrt(maximumRatio)).toFixed(0)}×</span><span>${maximumRatio.toFixed(0)}× (log scale)</span>`;
+        throughput.append(axis);
+        drawLinearChart(document.querySelector('#memory-chart'), engines, engine => engine.peakRssBytes, mib);
+        const table = document.querySelector('#correctness-table');
+        for (const engine of engines) {
+          const cells = [engine.name, engine.version, number(engine.correctness.actual), number(engine.correctness.expected), engine.correctness.passed ? 'PASS' : 'FAIL'];
+          const tr = document.createElement('tr');
+          cells.forEach((value, index) => {
+            const td = document.createElement('td');
+            td.textContent = value;
+            if (index === cells.length - 1) td.className = 'status';
+            tr.append(td);
+          });
+          table.append(tr);
+        }
+        document.querySelector('#benchmark-limits').textContent = data.method.limitations;
+        document.querySelector('#benchmark-status').textContent = 'All reported runtimes passed the benchmark result check.';
+        document.querySelector('#benchmark-content').hidden = false;
+      })
+      .catch(error => {
+        document.querySelector('#benchmark-status').textContent = `Benchmark measurements could not be loaded: ${error.message}`;
+      });
+  </script>
+</body>
+</html>

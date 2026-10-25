@@ -1,1 +1,1 @@
-export { NativeEngine, runNative, runNativeAsync, runNativeFileAsync } from './native-engine.js';
+export { NaideVM, NativeEngine, runNative, runNativeAsync, runNativeFileAsync } from './native-engine.js';

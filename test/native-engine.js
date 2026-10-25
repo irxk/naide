@@ -9,11 +9,13 @@ import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import {
   compile,
+  NaideVM as ExportedNaideVM,
   NativeEngine as ExportedNativeEngine,
   runNativeAsync as exportedRunNativeAsync,
   runNativeFileAsync,
 } from '../src/index.js';
 import { NativeEngine, runNative, runNativeAsync } from '../src/native-engine.js';
+import { NaideVM } from '../src/native-engine.js';
 import { createStore } from '../src/runtime.js';
 import { createNativeCacheMiddleware, createNativeSseHub } from '../src/native-server.js';
 import { NATIVE_AST_SUPPORT, NATIVE_SERVER_SUPPORT } from '../src/native-support.js';
@@ -21,6 +23,9 @@ import { checkNativeSource } from '../src/native-check.js';
 
 const cliPath = fileURLToPath(new URL('../bin/naide.js', import.meta.url));
 assert.equal(ExportedNativeEngine, NativeEngine);
+assert.equal(ExportedNaideVM, NaideVM);
+assert.equal(NaideVM, NativeEngine);
+assert.equal(NaideVM.name, 'NaideVM');
 assert.equal(exportedRunNativeAsync, runNativeAsync);
 
 test('native capability inventory classifies every parser AST node', () => {

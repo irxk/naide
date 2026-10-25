@@ -108,7 +108,7 @@ function unsupportedNodeError(engineName, kind, node) {
   return new Error(`${engineName} cannot execute ${kind} '${node.type}': ${detail}.`);
 }
 
-export class NativeEngine {
+export class NaideVM {
   constructor({
     globals = {},
     output = console,
@@ -1136,7 +1136,7 @@ export class NativeEngine {
 
   execute(sourceOrAst) {
     const ast = typeof sourceOrAst === 'string' ? this.parse(sourceOrAst) : sourceOrAst;
-    if (ast?.type !== 'Program') throw new TypeError('NativeEngine.execute expects NAIDE source or a Program AST.');
+    if (ast?.type !== 'Program') throw new TypeError('NaideVM.execute expects NAIDE source or a Program AST.');
     try {
       this.executeStatements(ast.body, this.global);
     } catch (signal) {
@@ -1159,7 +1159,7 @@ export class NativeEngine {
 
   async executeAsync(sourceOrAst) {
     const ast = typeof sourceOrAst === 'string' ? this.parse(sourceOrAst) : sourceOrAst;
-    if (ast?.type !== 'Program') throw new TypeError('NativeEngine.executeAsync expects NAIDE source or a Program AST.');
+    if (ast?.type !== 'Program') throw new TypeError('NaideVM.executeAsync expects NAIDE source or a Program AST.');
     try {
       await this.executeAsyncStatements(ast.body, this.global);
     } catch (error) {
@@ -2807,7 +2807,7 @@ export class NativeEngine {
 
   requireNativeDatabase() {
     if (!this.database) {
-      throw new Error('Native SQL requires a host database capability. Pass database.connect and database.createStore to NativeEngine.');
+      throw new Error('NaideVM SQL requires a host database capability. Pass database.connect and database.createStore to NaideVM.');
     }
     return this.database;
   }
@@ -2863,7 +2863,7 @@ export class NativeEngine {
 
   async executeNativeStorage(node, environment) {
     if (!this.storage) {
-      throw new Error('Native object storage requires a host storage capability. Pass storage.connect(options) to NativeEngine.');
+      throw new Error('NaideVM object storage requires a host storage capability. Pass storage.connect(options) to NaideVM.');
     }
     const provider = this.nativeLiteralString(node.provider, 'A native storage provider');
     if (!['s3', 'gcs'].includes(provider)) {
@@ -2892,7 +2892,7 @@ export class NativeEngine {
 
   async executeNativeMail(node, environment) {
     if (!this.mailer) {
-      throw new Error('Native mail requires a host mailer capability. Pass mailer.createTransport(options) to NativeEngine.');
+      throw new Error('NaideVM mail requires a host mailer capability. Pass mailer.createTransport(options) to NaideVM.');
     }
     const host = this.nativeLiteralString(node.host, 'A native mail host');
     const port = await this.evaluateAsync(node.port, environment);
@@ -2921,7 +2921,7 @@ export class NativeEngine {
 
   async executeNativePush(node, environment) {
     if (!this.push) {
-      throw new Error('Native push requires a host Web Push capability. Pass push.configure(options) to NativeEngine.');
+      throw new Error('NaideVM push requires a host Web Push capability. Pass push.configure(options) to NaideVM.');
     }
     const publicKey = await this.evaluateAsync(node.publicKey, environment);
     const privateKey = await this.evaluateAsync(node.privateKey, environment);
@@ -4895,16 +4895,18 @@ export class NativeEngine {
 }
 
 export function runNative(source, options = {}) {
-  const engine = new NativeEngine(options);
+  const engine = new NaideVM(options);
   return engine.execute(source);
 }
 
 export async function runNativeAsync(source, options = {}) {
-  const engine = new NativeEngine(options);
+  const engine = new NaideVM(options);
   return engine.executeAsync(source);
 }
 
 export async function runNativeFileAsync(filePath, options = {}) {
-  const engine = new NativeEngine({ ...options, sourceFile: filePath });
+  const engine = new NaideVM({ ...options, sourceFile: filePath });
   return engine.executeFileAsync(filePath);
 }
+
+export { NaideVM as NativeEngine };
