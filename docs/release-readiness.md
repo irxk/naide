@@ -49,9 +49,9 @@ This is an evidence-based checkpoint, not a claim of overall product completenes
 | MCP, LSP, project tools, and onboarding checks | Pass | `npm run test:features` |
 | Full suite on Node 24 | Pass locally on the latest revision | 580 pass, 0 fail, 8 skips |
 | Full suite on Node 18, 20, 22, and 24 | Pass locally on Windows and Linux before the latest runtime-target changes | Windows: 580 pass, 0 fail, 2 platform-specific skips per version; Linux: 581 pass, 0 fail, 1 Windows-only skip per version, with Java, Rust, Go, Bun, Python, C, and C++ runtime checks enabled |
-| Full supported Node-version CI matrix | Pending hosted confirmation | The latest observed GitHub run predates this worktree and did not complete green; Node 20 was cancelled and Node 18 failed during toolchain setup |
+| Full supported Node-version CI matrix | Pending hosted confirmation | Each Node version must perform a clean `npm ci` before tests; optional local toolchains are isolated from the matrix and verified as required runtimes in the dedicated Ubuntu 24.04 job |
 | Clean install from the packed artifact | Pass locally | `test/package-release.js` installs the tarball into a clean consumer directory and invokes its CLI on Windows and Linux |
-| All 15 targets compile and execute representative programs | Pending hosted runtime job | Local Linux currently passes 12 executable targets; Swift, Dart, and C# are configured as mandatory checks in the new job |
+| All 15 targets compile and execute representative programs | Pending hosted runtime job | The dedicated Ubuntu 24.04 job installs Swift, Dart, and .NET alongside other compilers and sets `NAIDE_REQUIRE_RUNTIME_TOOLS=true` so missing tools cannot silently skip |
 | Windows/Linux full-suite release checks | Pass locally on the prior checkpoint / hosted confirmation pending | The latest revision's Node 24 full suite passes locally; the current uncommitted revision still needs the hosted matrix and runtime job green |
 
 The weighted local evidence score is 98/100 and the reviewed HIGH finding has been fixed. Do not claim 100/100 or release certification until all 15 runtime targets and the full hosted CI matrix are green for this exact revision.

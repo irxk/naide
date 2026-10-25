@@ -29,7 +29,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - run: npm test
+      - run: npm ci
+      - name: Run test suite
+        run: npm test
+        env:
+          NAIDE_SKIP_RUNTIME_TARGETS: 'true'
       - name: Verify examples compile
         run: |
           node bin/naide.js --emit examples/todo-api.naide > /dev/null

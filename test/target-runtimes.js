@@ -178,9 +178,10 @@ describe('runtime-verified compiler targets', () => {
   for (const runtime of runtimeCases) {
     const available = runtimeAvailable(runtime);
     const requireRuntime = process.env.NAIDE_REQUIRE_RUNTIME_TOOLS === 'true';
+    const skipRuntimeTargets = process.env.NAIDE_SKIP_RUNTIME_TARGETS === 'true';
 
     it(`runs generated ${runtime.target} code`, {
-      skip: !available && !requireRuntime,
+      skip: skipRuntimeTargets || (!available && !requireRuntime),
     }, async () => {
       assert.ok(available, `${runtime.command} must be installed in CI`);
       const { code } = await compileAsync(runtimeSmokeSource, { target: runtime.target });

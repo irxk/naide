@@ -11,24 +11,24 @@ NAIDE is designed around one canonical syntax shared by people, AI tools, the co
 | `node` | default | JavaScript (ES Modules) | Express | Code generation + basic runtime smoke |
 | `python` / `py` | `--target python` | Python | Flask | Code generation + basic runtime smoke |
 | `bun` | `--target bun` | JavaScript (Bun) | Bun.serve | Code generation + basic runtime smoke |
-| `typescript` / `ts` | `--target ts` | TypeScript | Express | Code generation smoke test |
-| `go` | `--target go` | Go | net/http | Code generation + basic runtime smoke |
-| `java` | `--target java` | Java | HttpServer | Code generation smoke test |
+| `typescript` / `ts` | `--target ts` | TypeScript | Express | Compile + runtime smoke |
+| `go` | `--target go` | Go | net/http | Compile + runtime smoke |
+| `java` | `--target java` | Java | HttpServer | Compile + runtime smoke |
 | `rust` / `rs` | `--target rust` | Rust | actix-web | Code generation + basic runtime smoke |
 | `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib | Code generation + basic runtime smoke |
 | `c` | `--target c` | C | libmicrohttpd | Code generation + basic runtime smoke |
-| `csharp` / `cs` | `--target csharp` | C# | ASP.NET | Code generation smoke test |
-| `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor | Code generation smoke test |
-| `swift` | `--target swift` | Swift | Vapor | Code generation smoke test |
-| `dart` | `--target dart` | Dart | shelf | Code generation smoke test |
-| `php` | `--target php` | PHP | Built-in / Laravel | Code generation smoke test |
-| `ruby` / `rb` | `--target ruby` | Ruby | Sinatra | Code generation smoke test |
+| `csharp` / `cs` | `--target csharp` | C# | ASP.NET | Compile + runtime smoke |
+| `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor | Compile + runtime smoke |
+| `swift` | `--target swift` | Swift | Vapor | Compile + runtime smoke |
+| `dart` | `--target dart` | Dart | shelf | Compile + runtime smoke |
+| `php` | `--target php` | PHP | Built-in / Laravel | Compile + runtime smoke |
+| `ruby` / `rb` | `--target ruby` | Ruby | Sinatra | Compile + runtime smoke |
 
 NAIDE source files use the `.naide` extension. There is one language syntax; no separate compressed or AI-only dialect.
 
 #### What "supported target" means
 
-The table describes exactly what CI currently verifies: all 15 targets have automated code-generation smoke tests; Node.js, Python, Bun, Go, Rust, C, and C++ also compile or run a small program with a function call and conditional output. This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
+The table describes exactly what CI is configured to verify: all 15 targets have automated code-generation checks and a hosted Linux job compiles and runs a small program with a function call and conditional output for each target. The dedicated runtime job treats missing compilers as failures rather than silently skipping them. This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
 
 The server-framework column identifies the backend's intended framework; it is not a promise that every NAIDE server feature is implemented for that target. Some backends emit TODO comments instead of working behavior—for example, the C backend's CRUD, authentication, and WebSocket paths, and the Rust backend's CRUD and WebSocket paths. Treat those generated sections as unsupported until the backend emits executable implementations and the corresponding integration tests pass.
 

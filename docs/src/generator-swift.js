@@ -202,6 +202,7 @@ export class SwiftGenerator {
 
   visitFunction(node) {
     const async = node.isAsync ? ' async' : '';
+    const returnType = node.returnType ? ` -> ${this.mapType(node.returnType)}` : '';
     const params = node.params.map(p => {
       let s = '';
       if (p.spread) s += '_ ';
@@ -210,7 +211,7 @@ export class SwiftGenerator {
       return s;
     }).join(', ');
 
-    this.emit(`func ${node.name}(${params})${async} {`);
+    this.emit(`func ${node.name}(${params})${async}${returnType} {`);
     this.indent++;
     if (node.body.length === 0) {
       this.emit('// empty');

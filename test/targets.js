@@ -36,4 +36,13 @@ describe('cross-target code generation smoke tests', () => {
       );
     });
   }
+
+  it('preserves declared Swift function return types', async () => {
+    const result = await compileAsync(
+      'fn answer() -> int:\n  ret 42',
+      { target: 'swift' },
+    );
+
+    assert.match(result.code, /func answer\(\) -> Int/);
+  });
 });
