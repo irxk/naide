@@ -244,7 +244,10 @@ export class CSharpGenerator {
 
   visitFunction(node) {
     const async = node.isAsync ? 'async ' : '';
-    const returnType = node.isAsync ? 'static async Task<object>' : 'static object';
+    const valueType = node.returnType ? this.mapType(node.returnType) : 'object';
+    const returnType = node.isAsync
+      ? (valueType === 'void' ? 'static async Task' : `static async Task<${valueType}>`)
+      : `static ${valueType}`;
     const params = node.params.map(p => {
       let s = 'object ';
       if (p.spread) s = 'params object[] ';
@@ -253,7 +256,7 @@ export class CSharpGenerator {
       return s;
     }).join(', ');
 
-    const name = this.capitalize(node.name);
+    const name = node.name;
 
     const savedBody = this.classBody;
     const savedIndent = this.indent;

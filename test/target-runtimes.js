@@ -200,7 +200,7 @@ describe('runtime-verified compiler targets', () => {
             timeout: 60_000,
           });
           assert.ifError(build.error);
-          assert.equal(build.status, 0, build.stderr);
+          assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
 
           if (runtime.runCommand) {
             command = runtime.runCommand;
@@ -216,7 +216,7 @@ describe('runtime-verified compiler targets', () => {
         });
 
         assert.ifError(result.error);
-        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
         assert.deepEqual(result.stdout.trim().split(/\r?\n/), ['runtime-ok', '42']);
       } finally {
         rmSync(directory, { recursive: true, force: true });

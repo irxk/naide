@@ -45,4 +45,14 @@ describe('cross-target code generation smoke tests', () => {
 
     assert.match(result.code, /func answer\(\) -> Int/);
   });
+
+  it('preserves C# function names and declared return types', async () => {
+    const result = await compileAsync(
+      'fn answer() -> int:\n  ret 42\nlog answer()',
+      { target: 'csharp' },
+    );
+
+    assert.match(result.code, /static int answer\(\)/);
+    assert.match(result.code, /answer\(\)/);
+  });
 });
