@@ -247,7 +247,7 @@ describe('hosted Discord bot starter', () => {
           assert.match(await (await fetch(`${baseUrl}/build/client.mjs`)).text(), /function start/);
           assert.match(await (await fetch(`${baseUrl}/styles.css`)).text(), /color: navy/);
 
-          for (const privatePath of ['/app.naide', '/nidpackage.json', '/.env', '/package.json', '/node_modules/']) {
+          for (const privatePath of ['/app.naide', '/nidpackage.json', '/.env', '/package.json', '/node_modules/', '/naide_modules/']) {
             assert.equal((await fetch(`${baseUrl}${privatePath}`)).status, 404, privatePath);
           }
           assert.equal((await fetch(`${baseUrl}/missing.css`)).status, 404);

@@ -55,4 +55,27 @@ describe('cross-target code generation smoke tests', () => {
     assert.match(result.code, /static int answer\(\)/);
     assert.match(result.code, /answer\(\)/);
   });
+
+  for (const target of ['c', 'rust']) {
+    for (const [feature, declaration] of [
+      ['CRUD', 'crud "/users" User'],
+      ['authentication', 'auth "a-secret-that-is-long-enough-for-tests"'],
+      ['WebSocket', 'ws "/socket":\n    on "message":\n      log "received"'],
+    ]) {
+      it(`${target} rejects unimplemented ${feature} generation instead of emitting TODOs`, async () => {
+        const source = [
+          'schema User:',
+          '  id auto',
+          '',
+          'server app port 3000:',
+          ...declaration.split('\n').map(line => `  ${line}`),
+          '',
+        ].join('\n');
+        await assert.rejects(
+          compileAsync(source, { target }),
+          new RegExp(`${target === 'c' ? 'C' : 'Rust'} target does not support`),
+        );
+      });
+    }
+  }
 });

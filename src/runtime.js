@@ -126,10 +126,29 @@ export function createFileStore(schema, filePath) {
   if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true });
 
   const items = new Map();
+  let data;
   try {
-    const data = JSON.parse(readFileSync(filePath, 'utf-8'));
-    for (const item of data) items.set(String(item[idField] || item.id), item);
-  } catch {}
+    data = JSON.parse(readFileSync(filePath, 'utf-8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      data = [];
+    } else if (error instanceof SyntaxError) {
+      throw new Error(`File store '${filePath}' contains invalid JSON: ${error.message}`);
+    } else {
+      throw error;
+    }
+  }
+  if (!Array.isArray(data)) throw new TypeError(`File store '${filePath}' must contain a JSON array.`);
+  for (const [index, item] of data.entries()) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new TypeError(`File store '${filePath}' record ${index + 1} must be an object.`);
+    }
+    const id = item[idField] ?? item.id;
+    if (typeof id !== 'string' && typeof id !== 'number') {
+      throw new TypeError(`File store '${filePath}' record ${index + 1} is missing its identifier.`);
+    }
+    items.set(String(id), item);
+  }
 
   function save() {
     writeFileSync(filePath, JSON.stringify([...items.values()], null, 2));
@@ -212,26 +231,26 @@ export function registerCrud(app, basePath, schema, store, eventBus) {
     res.json(item);
   });
 
-  app.post(basePath, (req, res) => {
+  app.post(basePath, async (req, res) => {
     const result = store.create(req.body);
     if (result.error) return res.status(400).json({ errors: result.error });
-    if (eventBus) eventBus.emit(`${schema.name}.create`, result);
+    if (eventBus) await eventBus.emit(`${schema.name}.create`, result);
     res.status(201).json(result);
   });
 
-  app.put(`${basePath}/:id`, (req, res) => {
+  app.put(`${basePath}/:id`, async (req, res) => {
     const item = store.getById(req.params.id);
     if (!item) return res.status(404).json({ error: `${schema.name} not found` });
     const updated = store.update(req.params.id, req.body);
-    if (eventBus) eventBus.emit(`${schema.name}.update`, updated);
+    if (eventBus) await eventBus.emit(`${schema.name}.update`, updated);
     res.json(updated);
   });
 
-  app.delete(`${basePath}/:id`, (req, res) => {
+  app.delete(`${basePath}/:id`, async (req, res) => {
     const item = store.getById(req.params.id);
     if (!item) return res.status(404).json({ error: `${schema.name} not found` });
     store.delete(req.params.id);
-    if (eventBus) eventBus.emit(`${schema.name}.delete`, { id: req.params.id });
+    if (eventBus) await eventBus.emit(`${schema.name}.delete`, { id: req.params.id });
     res.json({ deleted: true });
   });
 }
@@ -348,14 +367,15 @@ export function createEventBus() {
   const listeners = new Map();
   return {
     on(event, fn) {
+      if (typeof event !== 'string' || !event) throw new TypeError('Event names must be non-empty strings.');
+      if (typeof fn !== 'function') throw new TypeError('Event listeners must be functions.');
       if (!listeners.has(event)) listeners.set(event, []);
       listeners.get(event).push(fn);
     },
-    emit(event, data) {
+    async emit(event, data) {
       const fns = listeners.get(event) || [];
-      for (const fn of fns) {
-        try { fn({ event, data, timestamp: new Date().toISOString() }); } catch (e) { console.error('[NAIDE Event]', e.message); }
-      }
+      const payload = { event, data, timestamp: new Date().toISOString() };
+      await Promise.all(fns.map(fn => fn(payload)));
     }
   };
 }

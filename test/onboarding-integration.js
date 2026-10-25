@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compile } from '../src/index.js';
+import { runNativeFileAsync } from '../src/native-engine.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const cliPath = fileURLToPath(new URL('../bin/naide.js', import.meta.url));
@@ -72,6 +73,69 @@ test('generated API starter runs auth, validation, and user-scoped CRUD over HTT
       const result = spawn(process.execPath, [cliPath, 'init', directory], {
         cwd: root,
         stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      test('generated API starter runs directly through the native interpreter', async () => {
+        const directory = mkdtempSync(join(root, '.naide_tmp_native-api-'));
+        const secret = 'naide-native-integration-secret-at-least-32-bytes';
+        let app;
+        try {
+          const init = await new Promise((resolve, reject) => {
+            const child = spawn(process.execPath, [cliPath, 'init', directory], {
+              cwd: root,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            let stderr = '';
+            child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+            child.once('error', reject);
+            child.once('exit', code => resolve({ code, stderr }));
+          });
+          assert.equal(init.code, 0, init.stderr);
+
+          const result = await runNativeFileAsync(join(directory, 'app.naide'), {
+            runtime: { env: { PORT: '0', JWT_SECRET: secret } },
+            output: { log() {}, error() {}, warn() {}, info() {} },
+          });
+          app = result.globals.get('app');
+          const baseUrl = `http://127.0.0.1:${app.server.address().port}`;
+
+          const health = await fetch(`${baseUrl}/api/health`);
+          assert.equal(health.status, 200);
+          assert.deepEqual(await health.json(), { status: 'ok' });
+
+          const registration = await fetch(`${baseUrl}/api/auth/register`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              name: 'Native User',
+              email: `native-${Date.now()}@example.com`,
+              password: 'correct-horse-battery-staple',
+            }),
+          });
+          assert.equal(registration.status, 201);
+          const account = await registration.json();
+          assert.ok(account.token);
+          assert.equal(account.user.password, undefined);
+
+          const headers = {
+            authorization: `Bearer ${account.token}`,
+            'content-type': 'application/json',
+          };
+          const created = await fetch(`${baseUrl}/api/items`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ name: 'Direct item' }),
+          });
+          assert.equal(created.status, 201);
+          const item = await created.json();
+
+          const listed = await fetch(`${baseUrl}/api/items`, { headers });
+          assert.equal(listed.status, 200);
+          assert.deepEqual((await listed.json()).data.map(value => value.id), [item.id]);
+        } finally {
+          await app?.close();
+          rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+        }
       });
       let stdout = '';
       let stderr = '';

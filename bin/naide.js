@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'fs';
+import { cpSync, readFileSync, writeFileSync, unlinkSync, watch as fsWatch, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'fs';
 import { resolve, basename, dirname, extname, isAbsolute, join, relative, sep } from 'path';
 import { randomBytes } from 'crypto';
 import { fileURLToPath } from 'node:url';
 import { runNativeFileAsync } from '../src/native-engine.js';
+import { resolveNaidePackage } from '../src/naide-package.js';
+import { createNativeServices, NATIVE_ADAPTER_DEPENDENCIES } from '../src/native-adapters.js';
+import { getReleaseStatus } from '../src/release-status.js';
 import { spawn } from 'child_process';
 
 import { createRequire } from 'module';
@@ -137,6 +140,12 @@ const flags = {
   debug: false,
   check: false,
   target: 'node',
+  compile: false,
+  maxSteps: 1_000_000,
+  environmentNames: [],
+  runtimeArgs: [],
+  nodeModules: [],
+  serverHost: '127.0.0.1',
   expand: false,
   project: false,
   write: null,
@@ -149,22 +158,44 @@ const files = [];
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
   switch (arg) {
-    case '--emit': case '-e': flags.emit = true; flags.run = false; break;
-    case '--ast': flags.ast = true; flags.run = false; break;
-    case '--tokens': flags.tokens = true; flags.run = false; break;
-    case '--output': case '-o': flags.output = args[++i]; break;
+    case '--emit': case '-e': flags.emit = true; flags.run = false; flags.compile = true; break;
+    case '--ast': flags.ast = true; flags.run = false; flags.compile = true; break;
+    case '--tokens': flags.tokens = true; flags.run = false; flags.compile = true; break;
+    case '--output': case '-o': flags.output = args[++i]; flags.compile = true; break;
     case '--help': case '-h': flags.help = true; break;
     case '--watch': case '-w': flags.watch = true; break;
-    case '--debug': case '-d': flags.debug = true; break;
+    case '--debug': case '-d': flags.debug = true; flags.compile = true; break;
     case '--check': flags.check = true; flags.run = false; break;
-    case '--target': case '-t': flags.target = args[++i]; break;
+    case '--target': case '-t': flags.target = args[++i]; flags.compile = true; break;
     case '--expand': flags.expand = true; flags.run = false; break;
     case '--project': case '-p': flags.project = true; break;
     case '--write': flags.write = args[++i]; break;
     case '--replace': flags.replace = true; break;
     case '--native': flags.native = true; break;
+    case '--compile': flags.compile = true; break;
+    case '--steps': flags.maxSteps = Number(args[++i]); break;
+    case '--env': flags.environmentNames.push(args[++i]); break;
+    case '--node-module': case '--allow-node-module': flags.nodeModules.push(args[++i]); break;
+    case '--host': flags.serverHost = args[++i]; break;
+    case '--':
+      flags.runtimeArgs = args.slice(i + 1);
+      i = args.length;
+      break;
     default: files.push(arg);
   }
+}
+
+if (flags.native && flags.compile) {
+  console.error('  Error: --native and --compile cannot be used together.');
+  process.exit(1);
+}
+if (flags.compile && flags.nodeModules.length > 0) {
+  console.error('  Error: --node-module grants apply only to direct native execution, not --compile.');
+  process.exit(1);
+}
+if (flags.compile && flags.serverHost !== '127.0.0.1') {
+  console.error('  Error: --host applies only to direct native server execution, not --compile.');
+  process.exit(1);
 }
 
 if (files[0] === 'doctor') {
@@ -561,10 +592,10 @@ if (files[0] === 'lsp') {
 // ── REPL ──
 if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   const { createInterface } = await import('readline');
-  const { transpile } = await import('../src/index.js');
+  const { NativeEngine } = await import('../src/native-engine.js');
 
-  console.log(`\n  NAIDE REPL v${NAIDE_VERSION} — type NAIDE code, see JavaScript output`);
-  console.log(`  Type .exit to quit, .eval to toggle eval mode\n`);
+  console.log(`\n  NAIDE REPL v${NAIDE_VERSION} — direct native execution`);
+  console.log(`  Type .exit to quit, .compile to inspect JavaScript, .eval to return to direct execution\n`);
 
   const rl = createInterface({
     input: process.stdin,
@@ -574,29 +605,26 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
 
   let buffer = '';
   let inBlock = false;
-  let evalMode = false;
-  const evalContext = {};
+  let compileMode = false;
+  let inputQueue = Promise.resolve();
+  const engine = new NativeEngine({
+    nodeModules: flags.nodeModules,
+    serverHost: flags.serverHost,
+    nativeServices: createNativeServices(process.cwd()),
+  });
 
-  function processInput(code) {
+  async function processInput(code) {
     try {
-      const js = transpile(code)
-        .split('\n')
-        .filter(l => !l.startsWith('import '))
-        .join('\n')
-        .trim();
-
-      if (!js) return;
-
-      if (evalMode) {
-        const evalCode = js.replace(/\bconst\b/g, 'let');
-        try {
-          const result = (new Function('ctx', `with(ctx){${evalCode}; return typeof __last !== 'undefined' ? __last : undefined}`))(evalContext);
-          if (result !== undefined) console.log(result);
-        } catch (e) {
-          try { (new Function('ctx', `with(ctx){${evalCode}}`))(evalContext); } catch (e2) { console.error(`  Error: ${e2.message}`); }
-        }
+      if (compileMode) {
+        const { transpile } = await import('../src/index.js');
+        const javascript = transpile(code)
+          .split('\n')
+          .filter(line => !line.startsWith('import '))
+          .join('\n')
+          .trim();
+        if (javascript) console.log(javascript);
       } else {
-        console.log(js);
+        await engine.executeAsync(code);
       }
     } catch (e) {
       console.error(`  ${e.message.split('\n')[0]}`);
@@ -604,37 +632,54 @@ if (files[0] === 'repl' || (files.length === 0 && !flags.help)) {
   }
 
   rl.prompt();
-  rl.on('line', (line) => {
-    if (line.trim() === '.exit') { rl.close(); process.exit(0); }
-    if (line.trim() === '.eval') {
-      evalMode = !evalMode;
-      console.log(`  Eval mode: ${evalMode ? 'ON' : 'OFF'}`);
-      rl.prompt();
-      return;
-    }
-
-    if (inBlock) {
-      if (line.trim() === '' && buffer.trim()) {
-        processInput(buffer);
-        buffer = '';
-        inBlock = false;
-        rl.setPrompt('>>> ');
-      } else {
-        buffer += '\n' + line;
+  rl.on('line', line => {
+    inputQueue = inputQueue.then(async () => {
+      if (line.trim() === '.exit') {
+        rl.close();
+        return;
+      }
+      if (line.trim() === '.compile') {
+        compileMode = !compileMode;
+        console.log(`  JavaScript inspection mode: ${compileMode ? 'ON' : 'OFF'}`);
         rl.prompt();
         return;
       }
-    } else if (line.trim().endsWith(':') && !line.trim().startsWith('#')) {
-      buffer = line;
-      inBlock = true;
-      rl.setPrompt('... ');
-    } else if (line.trim()) {
-      processInput(line);
-    }
-    rl.prompt();
+      if (line.trim() === '.eval') {
+        compileMode = false;
+        console.log('  Direct execution mode: ON');
+        rl.prompt();
+        return;
+      }
+
+      if (inBlock) {
+        if (line.trim() === '' && buffer.trim()) {
+          await processInput(buffer);
+          buffer = '';
+          inBlock = false;
+          rl.setPrompt('>>> ');
+        } else {
+          buffer += '\n' + line;
+          rl.prompt();
+          return;
+        }
+      } else if (line.trim().endsWith(':') && !line.trim().startsWith('#')) {
+        buffer = line;
+        inBlock = true;
+        rl.setPrompt('... ');
+      } else if (line.trim()) {
+        await processInput(line);
+      }
+      rl.prompt();
+    }).catch(error => {
+      console.error(`  ${error.message}`);
+      rl.prompt();
+    });
   });
 
-  rl.on('close', () => process.exit(0));
+  rl.on('close', async () => {
+    await inputQueue;
+    process.exit(0);
+  });
 
   // Keep the process running
   await new Promise(() => {});
@@ -733,7 +778,7 @@ if (files[0] === 'mws' && files[1] === 'discord') {
   writeFileSync(resolve(dir, 'bot.naide'), source, { flag: 'wx' });
   writeFileSync(resolve(dir, 'package.json'), `${JSON.stringify(projectPackage, null, 2)}\n`, { flag: 'wx' });
   writeFileSync(resolve(dir, 'nidpackage.json'), `${JSON.stringify(hostedManifest, null, 2)}\n`, { flag: 'wx' });
-  writeFileSync(resolve(dir, '.gitignore'), 'node_modules/\n.env\n', { flag: 'wx' });
+  writeFileSync(resolve(dir, '.gitignore'), 'node_modules/\nnaide_modules/\n.env\n', { flag: 'wx' });
   writeFileSync(resolve(dir, 'MWS.md'), `# NAIDE Discord bot for MWS
 
 The NAIDE source is \`bot.naide\`. \`nidpackage.json\` declares its entry, the NAIDE host runner, and npm dependencies. The runner registers NAIDE's loader and imports the source; no JavaScript bootstrap is needed.
@@ -811,8 +856,8 @@ if (files[0] === 'init') {
 
   const packagePath = resolve(dir, 'package.json');
   const defaultScripts = {
-    start: 'node -r dotenv/config --enable-source-maps --import naider/register app.naide',
-    dev: 'node -r dotenv/config --watch --enable-source-maps --import naider/register app.naide',
+    start: 'node -r dotenv/config node_modules/naider/bin/naide.js app.naide --env PORT --env JWT_SECRET',
+    dev: 'node -r dotenv/config node_modules/naider/bin/naide.js --watch app.naide --env PORT --env JWT_SECRET',
     check: 'naide check app.naide',
     test: 'node --test',
     build: 'naide --emit app.naide -o dist/app.mjs',
@@ -831,7 +876,6 @@ if (files[0] === 'init') {
   projectPackage.dependencies ||= {};
   for (const [dependency, version] of Object.entries({
     naider: `^${NAIDE_VERSION}`,
-    express: '^4.21.2',
     dotenv: '^16.4.7',
   })) {
     if (!projectPackage.dependencies[dependency] && !projectPackage.devDependencies?.[dependency]) {
@@ -959,7 +1003,7 @@ server app port PORT:
   }
 
   const gitignorePath = resolve(dir, '.gitignore');
-  const ignoredPaths = ['.env', 'data/', 'dist/', 'node_modules/'];
+  const ignoredPaths = ['.env', 'data/', 'dist/', 'node_modules/', 'naide_modules/'];
   const existingGitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf8') : '';
   const missingIgnoredPaths = ignoredPaths.filter(path => !existingGitignore.split(/\r?\n/).includes(path));
   if (missingIgnoredPaths.length > 0) {
@@ -1022,6 +1066,8 @@ test('starter API separates each authenticated user’s items', async () => {
     '-r', 'dotenv/config',
     './node_modules/naider/bin/naide.js',
     'app.naide',
+    '--env', 'PORT',
+    '--env', 'JWT_SECRET',
   ], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port) },
@@ -1343,7 +1389,13 @@ if (files[0] === 'build') {
       errors++;
     } else {
       try {
-        const { build } = await import('esbuild');
+        let build;
+        try {
+          ({ build } = await import('esbuild'));
+        } catch (error) {
+          if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+          throw new Error('Browser bundling requires the optional esbuild dependency. Install it with npm install esbuild.');
+        }
         for (const [entryPath, external] of browserBundleEntries) {
           if (!existsSync(entryPath)) {
             throw new Error(`Browser module not found: ${entryPath}. Ensure its page module URL matches the build output path.`);
@@ -1404,7 +1456,7 @@ if (files[0] === 'build') {
 
 // ── Type Check ──
 if (files[0] === 'check') {
-  const { compile } = await import('../src/index.js');
+  const { checkNativeSource } = await import('../src/native-check.js');
   const targets = files.slice(1);
   if (targets.length === 0) {
     console.log('  Usage: naide check <file.naide> [files...]');
@@ -1422,8 +1474,7 @@ if (files[0] === 'check') {
     const filePath = resolve(file);
     try {
       const source = readFileSync(filePath, 'utf-8');
-      const result = compile(source, { typeCheck: true });
-      const { typeErrors } = result;
+      const typeErrors = await checkNativeSource(source);
 
       if (typeErrors) {
         for (const e of typeErrors.errors) {
@@ -1455,25 +1506,18 @@ if (files[0] === 'native') {
     console.error('  Usage: naide native <file.naide> [--steps <maximum>] [--env <NAME>]... [-- <args...>]');
     process.exit(1);
   }
-  const stepIndex = files.indexOf('--steps');
-  const maxSteps = stepIndex === -1 ? 1_000_000 : Number(files[stepIndex + 1]);
+  const maxSteps = flags.maxSteps;
   if (!Number.isSafeInteger(maxSteps) || maxSteps < 1) {
     console.error('  Error: --steps must be a positive safe integer.');
     process.exit(1);
   }
-  const environmentNames = [];
-  for (let index = 2; index < files.length; index++) {
-    if (files[index] !== '--env') continue;
-    const name = files[index + 1];
-    if (!name || name.startsWith('--') || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+  const environmentNames = flags.environmentNames;
+  for (const name of environmentNames) {
+    if (typeof name !== 'string' || !name || name.startsWith('--') || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
       console.error('  Error: --env requires a valid environment variable name.');
       process.exit(1);
     }
-    environmentNames.push(name);
-    index++;
   }
-  const separatorIndex = files.indexOf('--');
-  const runtimeArgs = separatorIndex === -1 ? [] : files.slice(separatorIndex + 1);
   const allowedEnvironment = Object.fromEntries(
     [...new Set(environmentNames)]
       .filter(name => Object.hasOwn(process.env, name))
@@ -1482,7 +1526,10 @@ if (files[0] === 'native') {
   try {
     const result = await runNativeFileAsync(resolve(sourceFile), {
       maxSteps,
-      runtime: { args: runtimeArgs, env: allowedEnvironment },
+      nodeModules: flags.nodeModules,
+      serverHost: flags.serverHost,
+      nativeServices: createNativeServices(dirname(resolve(sourceFile))),
+      runtime: { args: flags.runtimeArgs, env: allowedEnvironment },
     });
     console.log(`\n  Native NAIDE execution completed in ${result.steps} steps.`);
     process.exitCode = result.globals.get('runtime').exitCode;
@@ -1493,6 +1540,89 @@ if (files[0] === 'native') {
 }
 
 // ── Package Ecosystem ──
+if (files[0] === 'status' || files[0] === 'release') {
+  const status = getReleaseStatus();
+  if (files.includes('--json')) {
+    console.log(JSON.stringify(status, null, 2));
+    process.exit(0);
+  }
+
+  console.log('\n  NAIDE release status\n');
+  console.log(`  Overall posture: ${status.status}`);
+  console.log(`  Local evidence: ${status.score}`);
+  console.log(`  Targets: ${status.targetCount} source targets (${status.targets.join(', ')})`);
+  console.log(`  Built-in adapters: ${status.builtInAdapters.join(', ')}`);
+  console.log(`  Verified optional adapters: ${status.verifiedOptionalAdapters.join(', ')}`);
+  console.log(`  Explicit unsupported boundaries: C and Rust reject CRUD, auth, and WebSocket declarations.`);
+  console.log(`  Recommendation: ${status.recommendation}`);
+  console.log('\n  Evidence:');
+  for (const item of status.evidence) console.log(`    - ${item}`);
+  process.exit(0);
+}
+
+if (files[0] === 'adapter') {
+  const action = files[1];
+  const builtInAdapters = ['oauth', 'payments'];
+
+  if (!action || action === 'help' || action === 'list') {
+    console.log('\n  NAIDE Native Service Adapters\n');
+    console.log('  Built in: oauth (Google/GitHub), payments (Stripe)');
+    for (const [name, dependencies] of Object.entries(NATIVE_ADAPTER_DEPENDENCIES)) {
+      console.log(`  Optional: ${name} (${dependencies.join(', ')})`);
+    }
+    console.log('\n  Install one optional service adapter with: naide adapter install <name>\n');
+    process.exit(0);
+  }
+
+  if (action === 'install') {
+    const adapterName = files[2];
+    if (!adapterName) {
+      console.error('  Usage: naide adapter install <oauth|payments|image|pdf|graphql|websocket>');
+      process.exit(1);
+    }
+    if (builtInAdapters.includes(adapterName)) {
+      console.log(`  The ${adapterName} adapter is built into NAIDE; no npm dependency is required.`);
+      process.exit(0);
+    }
+    const dependencies = NATIVE_ADAPTER_DEPENDENCIES[adapterName];
+    if (!dependencies) {
+      console.error(`  Error: no optional native adapter named '${adapterName}' is currently available.`);
+      process.exit(1);
+    }
+
+    let child;
+    try {
+      child = spawnNpm(['install', '--save', '--', ...dependencies], { stdio: 'inherit' });
+    } catch (error) {
+      console.error(`  Error: failed to start npm: ${error.message}`);
+      process.exit(1);
+    }
+    let code;
+    try {
+      code = await new Promise((resolveCode, rejectCode) => {
+        child.once('error', rejectCode);
+        child.once('close', resolveCode);
+      });
+    } catch (error) {
+      console.error(`  Error: failed to start npm: ${error.message}`);
+      process.exit(1);
+    }
+    if (code !== 0) process.exit(code ?? 1);
+    try {
+      const projectRequire = createRequire(resolve(process.cwd(), '__naide_adapter_check__.cjs'));
+      for (const dependency of dependencies) projectRequire.resolve(dependency);
+      console.log(`\n  Installed the ${adapterName} adapter dependencies: ${dependencies.join(', ')}.`);
+    } catch (error) {
+      console.error(`  Error: npm completed, but ${adapterName} adapter dependencies could not be verified: ${error.message}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  console.error(`  Error: unknown adapter command '${action}'. Run 'naide adapter list'.`);
+  process.exit(1);
+}
+
 if (files[0] === 'pkg') {
   const subcmd = files[1];
 
@@ -1502,7 +1632,7 @@ if (files[0] === 'pkg') {
 
   Usage:
     naide pkg init                Create naide.pkg.json manifest
-    naide pkg install <name>      Install a NAIDE package from npm
+    naide pkg install <name>      Install a package from npm (NAIDE source packages go to naide_modules/)
     naide pkg add <manager> <spec> Install through a native package manager
     naide pkg managers            List supported package ecosystems
     naide pkg publish             Publish current package to npm
@@ -1622,19 +1752,72 @@ if (files[0] === 'pkg') {
     });
     child.on('close', (code) => {
       if (code === 0) {
-        if (existsSync(pkgManifestPath)) {
-          try {
-            const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
-            manifest.dependencies ||= {};
-            const npmPkg = resolve('node_modules', packageSpec.name, 'package.json');
-            if (existsSync(npmPkg)) {
-              const ver = JSON.parse(readFileSync(npmPkg, 'utf-8')).version;
+        try {
+          const npmPackageDirectory = resolve('node_modules', ...packageSpec.name.split('/'));
+          const npmPkg = resolve(npmPackageDirectory, 'package.json');
+          if (existsSync(npmPkg)) {
+            const npmPackage = JSON.parse(readFileSync(npmPkg, 'utf-8'));
+            const ver = npmPackage.version;
+            if (typeof ver !== 'string' || ver.length === 0) {
+              throw new TypeError(`Installed npm package '${packageSpec.name}' has no valid version.`);
+            }
+            const naidePackageManifest = resolve(npmPackageDirectory, 'naide.pkg.json');
+            if (existsSync(naidePackageManifest)) {
+              const storedPackageDirectory = resolve('naide_modules', ...packageSpec.name.split('/'));
+              mkdirSync(dirname(storedPackageDirectory), { recursive: true });
+              cpSync(npmPackageDirectory, storedPackageDirectory, {
+                recursive: true,
+                force: true,
+                dereference: true,
+              });
+              resolveNaidePackage(packageSpec.name, resolve(process.cwd(), '__naide_pkg_install__.naide'));
+              let manifest;
+              if (existsSync(pkgManifestPath)) {
+                manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
+                if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+                  throw new TypeError('naide.pkg.json must contain a JSON object.');
+                }
+              } else {
+                manifest = {
+                  name: npmPackage.name || packageSpec.name,
+                  version: '1.0.0',
+                  description: '',
+                  main: 'index.naide',
+                  keywords: ['naide'],
+                  exports: {},
+                  dependencies: {},
+                  languageDependencies: {},
+                };
+              }
+              manifest.dependencies ||= {};
+              if (!manifest.dependencies || typeof manifest.dependencies !== 'object' || Array.isArray(manifest.dependencies)) {
+                throw new TypeError('naide.pkg.json "dependencies" must be an object.');
+              }
+              manifest.dependencies[packageSpec.name] = `^${ver}`;
+              writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
+              const gitignorePath = resolve('.gitignore');
+              const gitignore = existsSync(gitignorePath) ? readFileSync(gitignorePath, 'utf-8') : '';
+              if (!gitignore.split(/\r?\n/).includes('naide_modules/')) {
+                const separator = gitignore && !gitignore.endsWith('\n') ? '\n' : '';
+                writeFileSync(gitignorePath, `${gitignore}${separator}naide_modules/\n`);
+              }
+              console.log(`  NAIDE source package copied to ${relative(process.cwd(), storedPackageDirectory)}.`);
+            } else if (existsSync(pkgManifestPath)) {
+              const manifest = JSON.parse(readFileSync(pkgManifestPath, 'utf-8'));
+              if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+                throw new TypeError('naide.pkg.json must contain a JSON object.');
+              }
+              manifest.dependencies ||= {};
+              if (!manifest.dependencies || typeof manifest.dependencies !== 'object' || Array.isArray(manifest.dependencies)) {
+                throw new TypeError('naide.pkg.json "dependencies" must be an object.');
+              }
               manifest.dependencies[packageSpec.name] = `^${ver}`;
               writeFileSync(pkgManifestPath, JSON.stringify(manifest, null, 2) + '\n');
             }
-          } catch (error) {
-            console.error(`  Warning: package installed, but naide.pkg.json could not be updated: ${error.message}`);
           }
+        } catch (error) {
+          console.error(`  Error: package installed, but NAIDE package metadata could not be updated: ${error.message}`);
+          process.exit(1);
         }
         console.log(`\n  Installed ${pkgName}`);
       }
@@ -1767,10 +1950,11 @@ if (flags.help) {
   One readable syntax for people and tools
 
   Usage:
-    naide                        Start interactive REPL
-    naide <file.naide>           Run a NAIDE file
-      --native                   Execute directly without JavaScript generation
-    naide native <file.naide>    Execute core NAIDE directly without JS generation
+    naide                        Start native interpreter REPL
+    naide <file.naide>           Run directly with the native interpreter
+      --compile                  Compile and run with the JavaScript runtime
+      --native                   Alias for the default direct execution mode
+    naide native <file.naide>    Alias for direct execution
       --steps <maximum>          Bound native interpreter execution steps
       --env <NAME>               Expose one environment variable to native runtime
       -- <args...>               Pass arguments to the native program
@@ -1791,12 +1975,16 @@ if (flags.help) {
     naide deploy [dir]           Generate Dockerfile for deployment
     naide doctor [dir]           Diagnose local tools and project setup
     naide verify [dir]           Check project manifests and setup
+    naide status                 Show NAIDE release posture and support boundaries
+    naide release                Alias for status
     naide test [dir]             Run detected native project test suites
     naide fmt <files...>         Format NAIDE files
     naide pkg init               Create naide.pkg.json manifest
     naide pkg install <name>     Install a NAIDE package
     naide pkg add <manager> <spec> Install with a native package manager
     naide pkg managers           List supported package ecosystems
+    naide adapter list           List built-in and optional service adapters
+    naide adapter install <name> Install one optional service adapter
     naide pkg publish            Publish package to npm
     naide pkg list               List NAIDE dependencies
     naide --emit <file>          Output generated JavaScript
@@ -1830,9 +2018,13 @@ if (flags.help) {
     -e, --emit     Print generated JavaScript
     -o, --output   Write generated JavaScript to file
     -w, --watch    Watch mode: restart on file changes
-    -d, --debug    Start with Node.js debugger (--inspect-brk)
+    -d, --debug    Debug generated JavaScript with Node inspector (compiler mode)
     -t, --target   Compile target: node (default), bun, python/py
-    --check        Type-check files without running
+    --host         Native server bind host (default: 127.0.0.1)
+    --node-module  Explicitly grant one Node builtin import (repeatable)
+    --env          Expose one environment variable (repeatable)
+    --steps        Set the native interpreter step limit
+    --check        Type-check files without compiling or running
     --expand       Show ~~ directive expansion (debug)
     --ast          Print AST
     --tokens       Print tokens
@@ -1853,6 +2045,87 @@ if (flags.help) {
 
 const runtimeUrl = new URL('../src/runtime.js', import.meta.url).href;
 
+function watchNativeFile(filePath) {
+  return new Promise(resolveWatch => {
+    const watcher = fsWatch(dirname(filePath), (_event, changedName) => {
+      if (changedName !== null && String(changedName) !== basename(filePath)) return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(restart, 150);
+    });
+    let child = null;
+    let debounce = null;
+    let stopping = false;
+    let finished = false;
+
+    const childArgs = [filePath];
+    if (flags.maxSteps !== 1_000_000) childArgs.push('--steps', String(flags.maxSteps));
+    for (const name of flags.environmentNames) childArgs.push('--env', name);
+    for (const name of flags.nodeModules) childArgs.push('--node-module', name);
+    childArgs.push('--host', flags.serverHost);
+    if (flags.runtimeArgs.length > 0) childArgs.push('--', ...flags.runtimeArgs);
+
+    const start = () => {
+      if (stopping) return;
+      child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...childArgs], { stdio: 'inherit' });
+      child.once('error', error => {
+        console.error(`[NAIDE] Native watch process failed: ${error.message}`);
+        stop();
+      });
+      child.once('exit', code => {
+        child = null;
+        if (stopping) finish();
+        else if (code !== null && code !== 0) console.error(`[NAIDE] Native process exited with code ${code}`);
+      });
+    };
+    const restart = () => {
+      if (stopping) return;
+      console.log('\n[NAIDE] Change detected. Restarting native execution...');
+      if (!child) {
+        start();
+        return;
+      }
+      const previous = child;
+      child = null;
+      previous.once('exit', start);
+      previous.kill();
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (debounce) clearTimeout(debounce);
+      watcher.close();
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      process.off('message', onMessage);
+      resolveWatch();
+    };
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      if (child) {
+        const previous = child;
+        child = null;
+        previous.once('exit', finish);
+        previous.kill();
+      } else {
+        finish();
+      }
+    };
+    const onMessage = message => {
+      if (message === 'close') stop();
+    };
+    watcher.on('error', error => {
+      console.error(`[NAIDE] Native watch failed: ${error.message}`);
+      stop();
+    });
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+    process.on('message', onMessage);
+    console.log(`[NAIDE] Native watch mode — ${filePath}`);
+    start();
+  });
+}
+
 if (!['dev', 'native'].includes(files[0])) for (const file of files) {
   const filePath = resolve(file);
   let source;
@@ -1871,8 +2144,49 @@ if (!['dev', 'native'].includes(files[0])) for (const file of files) {
   }
 
   try {
-    if (flags.native) {
-      const result = await runNativeFileAsync(filePath);
+    const useNative = flags.native
+      || (!flags.compile
+        && !flags.emit
+        && !flags.output
+        && !flags.tokens
+        && !flags.ast
+        && !flags.debug
+        && flags.target === 'node');
+    if (flags.check && !flags.compile) {
+      const { checkNativeSource } = await import('../src/native-check.js');
+      const typeErrors = await checkNativeSource(source);
+      for (const error of typeErrors.errors) console.log(`  ${file}:${error.line} ERROR: ${error.message}`);
+      for (const warning of typeErrors.warnings) console.log(`  ${file}:${warning.line} WARN: ${warning.message}`);
+      if (typeErrors.errors.length === 0 && typeErrors.warnings.length === 0) console.log(`  ${file}: OK`);
+      process.exitCode = Math.max(process.exitCode || 0, typeErrors.errors.length > 0 ? 1 : 0);
+      continue;
+    }
+    if (useNative) {
+      if (!Number.isSafeInteger(flags.maxSteps) || flags.maxSteps < 1) {
+        throw new RangeError('--steps must be a positive safe integer.');
+      }
+      for (const name of flags.environmentNames) {
+        if (typeof name !== 'string' || !name || name.startsWith('--') || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          throw new TypeError('--env requires a valid environment variable name.');
+        }
+      }
+      const allowedEnvironment = Object.fromEntries(
+        [...new Set(flags.environmentNames)]
+          .filter(name => Object.hasOwn(process.env, name))
+          .map(name => [name, process.env[name]]),
+      );
+      if (flags.watch) {
+        if (files.length !== 1) throw new Error('Native watch mode accepts one .naide entry file at a time.');
+        await watchNativeFile(filePath);
+        continue;
+      }
+      const result = await runNativeFileAsync(filePath, {
+        maxSteps: flags.maxSteps,
+        nodeModules: flags.nodeModules,
+        serverHost: flags.serverHost,
+        nativeServices: createNativeServices(dirname(filePath)),
+        runtime: { args: flags.runtimeArgs, env: allowedEnvironment },
+      });
       console.log(`\n  Native NAIDE execution completed in ${result.steps} steps.`);
       process.exitCode = result.globals.get('runtime').exitCode;
       continue;
@@ -2025,7 +2339,10 @@ if (!['dev', 'native'].includes(files[0])) for (const file of files) {
     if (isSyntaxErr) {
       console.error(`\n${err.message}`);
     } else {
-      crashReport(err, { file, target: flags.target });
+      console.error(`\n  ${err.message}`);
+      if (err.message.includes('Native engine does not support')) {
+        console.error('  This declaration is not implemented by the native interpreter yet. Run with --compile to use the JavaScript runtime.');
+      }
     }
     if (process.env.NAIDE_DEBUG) console.error(err.stack);
     process.exit(1);

@@ -129,12 +129,21 @@ const runtimeCases = [
 ];
 
 const runtimeSmokeSource = [
-  'fn answer() -> int:',
-  '  ret 40 + 2',
-  'int naideRuntimeSmoke = answer()',
-  'if naideRuntimeSmoke == 42:',
-  '  log "runtime-ok"',
-  'log naideRuntimeSmoke',
+  'fn runtimeSmoke() -> int:',
+  '  mut int naideRuntimeSmoke = 40',
+  '  mut int increments = 0',
+  '  while increments < 2:',
+  '    naideRuntimeSmoke += 1',
+  '    increments += 1',
+  '  bool isExpected = naideRuntimeSmoke == 42',
+  '  if isExpected:',
+  '    log "runtime-ok"',
+  '  else:',
+  '    log "runtime-failed"',
+  '    ret 0',
+  '  ret naideRuntimeSmoke',
+  'int finalValue = runtimeSmoke()',
+  'log finalValue',
 ].join('\n');
 
 function runtimeAvailable(runtime) {

@@ -23,9 +23,9 @@ describe('new project onboarding', () => {
 
       const project = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
       assert.equal(project.dependencies.naider, `^${packageJson.version}`);
-      assert.ok(project.dependencies.express, 'the generated server imports Express');
-      assert.equal(project.scripts.start, 'node -r dotenv/config --enable-source-maps --import naider/register app.naide');
-      assert.equal(project.scripts.dev, 'node -r dotenv/config --watch --enable-source-maps --import naider/register app.naide');
+      assert.equal(project.dependencies.express, undefined, 'the native server does not require Express');
+      assert.equal(project.scripts.start, 'node -r dotenv/config node_modules/naider/bin/naide.js app.naide --env PORT --env JWT_SECRET');
+      assert.equal(project.scripts.dev, 'node -r dotenv/config node_modules/naider/bin/naide.js --watch app.naide --env PORT --env JWT_SECRET');
       assert.equal(project.scripts.check, 'naide check app.naide');
       assert.equal(project.scripts.test, 'node --test');
       assert.ok(existsSync(join(directory, 'dist')), 'the generated build script needs its output directory');

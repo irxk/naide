@@ -9,10 +9,9 @@
     "./loader": "./src/loader.js",
     "./register": "./src/register.js",
     "./host": "./src/host.js",
-    "./native": "./src/native.js"
-  },
-  "dependencies": {
-    "esbuild": "^0.25.0"
+    "./native": "./src/native.js",
+    "./native-adapters": "./src/native-adapters.js",
+    "./release-status": "./src/release-status.js"
   },
   "bin": {
     "naide": "bin/naide.js",
@@ -106,5 +105,8 @@
   "devDependencies": {
     "express": "^4.22.3",
     "typescript": "^7.0.2"
+  },
+  "optionalDependencies": {
+    "esbuild": "^0.25.12"
   }
 }

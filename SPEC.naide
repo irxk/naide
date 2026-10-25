@@ -15,20 +15,25 @@
 #   8. 直接実行エンジンは段階的に導入し、未対応機能を明示する
 # ============================================
 
-# ---- 直接実行エンジン (experimental) ----
-# `naide native file.naide` interprets the parsed NAIDE AST without generating JavaScript.
-# The initial engine supports core expressions, functions, conditions, loops, match,
-# basic error handling, fn.async, await, and await.all for cooperative I/O concurrency.
+# ---- 直接実行エンジン ----
+# `naide file.naide` interprets the parsed NAIDE AST without generating JavaScript.
+# The interpreter supports core expressions, functions, conditions, loops, match,
+# basic error handling, generators, models, fn.async, await, and await.all.
 # Relative .naide imports and installed NAIDE packages with naide.pkg.json
 # manifests and in-package .naide main entries are supported and cached.
 # Package subpaths must be explicitly mapped to in-package .naide files by
-# exact exports keys. JavaScript-only npm packages, Node.js built-ins,
-# generators, classes, and framework declarations are not implemented here.
+# exact exports keys. JavaScript npm dependencies require declaration in the
+# project manifest; Node.js built-ins require an explicit --node-module grant.
 # The async native runtime exposes io.readText, io.writeText, io.appendText,
 # io.exists, and io.listDir. File paths are relative to the entry file's
 # directory and are rejected if they escape that project root.
 # It also exposes http.request/get/post using the host Fetch implementation,
 # restricted to absolute HTTP(S) URLs. Embedders may inject an HTTP capability.
+# The native HTTP server supports JSON routes, schemas, file-backed CRUD,
+# bearer authentication (secrets must be at least 32 UTF-8 bytes), cookie
+# parsing, redirects, CORS, rate limits, and project-confined static files.
+# It binds to 127.0.0.1 by default. Unsupported advanced declarations fail
+# explicitly; use the compiler compatibility path for those features.
 # task.spawn/all/race/map/sleep provide cooperative asynchronous task coordination;
 # task.map takes (items, concurrencyLimit, asyncCallback) and keeps result order.
 # task.controller creates a cancellation signal; task.withTimeout appends one to
@@ -51,7 +56,8 @@
 # only explicitly injected variables; the CLI opts in with --env NAME.
 # runtime.exitCode sets the CLI exit status. Arbitrary process and shell access
 # are intentionally not part of the native runtime.
-# The default CLI runner and REPL still use the existing JavaScript runtime.
+# The REPL also interprets AST directly; .compile is explicit inspection mode.
+# Compiler-only targets and debugging workflows remain available by opt-in.
 
 
 # ---- 変数宣言 ----

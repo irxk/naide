@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveNaidePackage } from './naide-package.js';
 import { compile } from './index.js';
 
 const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -53,4 +54,23 @@ export async function load(url, context, nextLoad) {
   });
   const code = `${result.js}\n${inlineSourceMap(url, source, result.sourceMap)}\n`;
   return { format: 'module', shortCircuit: true, source: code };
+}
+
+export async function resolve(specifier, context, nextResolve) {
+  if (context.parentURL?.startsWith('file:')
+    && !specifier.startsWith('.')
+    && !specifier.startsWith('/')
+    && !specifier.startsWith('node:')
+    && !specifier.includes(':')) {
+    try {
+      const entry = resolveNaidePackage(specifier, fileURLToPath(context.parentURL));
+      return { url: pathToFileURL(entry).href, shortCircuit: true };
+    } catch (error) {
+      if (!error.message.startsWith('Cannot resolve NAIDE package ')
+        && !error.message.includes(' is not a NAIDE source package;')) {
+        throw error;
+      }
+    }
+  }
+  return nextResolve(specifier, context);
 }

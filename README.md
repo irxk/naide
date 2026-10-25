@@ -30,7 +30,7 @@ NAIDE source files use the `.naide` extension. There is one language syntax; no 
 
 The table describes exactly what CI is configured to verify: all 15 targets have automated code-generation checks and a hosted Linux job compiles and runs a small program with a function call and conditional output for each target. The dedicated runtime job treats missing compilers as failures rather than silently skipping them. This does **not** guarantee that every generated program compiles or runs, or that every built-in feature has equivalent behavior. Backend feature coverage varies; review generated code and target-specific requirements before relying on it in production.
 
-The server-framework column identifies the backend's intended framework; it is not a promise that every NAIDE server feature is implemented for that target. Some backends emit TODO comments instead of working behavior—for example, the C backend's CRUD, authentication, and WebSocket paths, and the Rust backend's CRUD and WebSocket paths. Treat those generated sections as unsupported until the backend emits executable implementations and the corresponding integration tests pass.
+The server-framework column identifies the backend's intended framework; it is not a promise that every NAIDE server feature is implemented for that target. The C backend rejects CRUD, authentication, and WebSocket declarations; the Rust backend rejects the same declarations instead of emitting placeholder TODO code. Other backend-specific feature gaps may still exist. Treat a feature as supported only when generated code is executable and its compile/runtime integration tests pass.
 
 NAIDE's measurable release-readiness criteria and current evidence are tracked in [docs/release-readiness.md](./docs/release-readiness.md). A configured CI check is not counted as passing until it has run successfully.
 
@@ -55,14 +55,14 @@ Or write a file directly:
 
 ```python
 # app.naide
-server app port 3000:
-  get "/":
-    ret {message: "Hello from NAIDE"}
+log "Hello from NAIDE"
 ```
 
 ```bash
 naide app.naide
 ```
+
+The default file runner and REPL execute NAIDE directly without generating JavaScript. Use `naide --compile app.naide` only for JavaScript runtime and framework-backed declarations outside the native interpreter's stated support. Use `naide --emit app.naide` to inspect generated JavaScript.
 
 ### Japanese Learning Path
 
@@ -88,9 +88,11 @@ Save as `lesson.naide`, then run `naide lesson.naide`. To inspect a project's lo
 ## CLI
 
 ```bash
-naide <file.naide>             # Check and run a NAIDE file
-naide --native <file.naide>    # Run directly without generating JavaScript
-naide native <file.naide>      # Run the supported core directly on the NAIDE AST
+naide <file.naide>             # Run directly with the interpreter
+naide --compile <file.naide>   # Opt in to JavaScript compilation/runtime
+naide --native <file.naide>    # Alias for the default direct execution mode
+naide --watch <file.naide>     # Restart native execution when the source changes
+naide --node-module node:crypto <file.naide> # Explicitly allow one Node.js builtin
 naide                         # Start interactive REPL
 naide repl                    # Start interactive REPL
 naide init [dir]              # Scaffold a new project
@@ -102,6 +104,8 @@ naide vscode                  # Install VS Code extension
 naide deploy [dir]            # Generate Dockerfile for deployment
 naide doctor [dir]            # Diagnose local tools and project setup
 naide verify [dir]            # Validate manifests and type-check NAIDE sources
+naide status                  # Show release posture, support boundaries, and evidence
+naide release                 # Alias for naide status
 naide test [dir]              # Run detected native test suites
 naide pkg init                # Create naide.pkg.json manifest
 naide pkg install <name>      # Install a NAIDE package
@@ -131,9 +135,9 @@ log "{runtime.platform}/{runtime.arch}"
 runtime.exitCode = 2
 ```
 
-`runtime.args` contains arguments after `--` in `naide native app.naide -- input.txt`. Environment variables are **not** exposed by default; opt in by name with `--env APP_MODE`, which makes only that variable visible through `runtime.env.get/has/keys`. Embedded runtimes can pass `runtime: {args, env, cwd, platform, arch}` to `NativeEngine` or `runNativeAsync`. The native runtime intentionally does not expose arbitrary process access or shell execution.
+`runtime.args` contains arguments after `--` in `naide app.naide -- input.txt`. Environment variables are **not** exposed by default; opt in by name with `--env APP_MODE`, which makes only that variable visible through `runtime.env.get/has/keys` and declared `env:` values. Embedded runtimes can pass `runtime: {args, env, cwd, platform, arch}` to `NativeEngine` or `runNativeAsync`.
 
-`naide --native` and `naide native` use NAIDE's experimental direct AST interpreter; neither generates or executes JavaScript. The `naider/native` package entry also exposes this API for embedding in Node.js applications. This interpreter supports core values, functions and synchronous/asynchronous generators, model declarations and inheritance, enums, expressions, conditionals, loops, matching, basic error handling, `fn.async`, `await`, `await.all`, task primitives and channels, relative imports of `.naide` modules, and installed NAIDE source packages. Export values, functions, models, and enums with `pub`, then import them with `use`:
+The default file runner, `naide --native`, and `naide native` use NAIDE's direct AST interpreter; these paths do not generate or execute JavaScript. The REPL also runs directly by default; `.compile` switches to JavaScript inspection mode and `.eval` returns to direct execution. `naide check` and `--check` type-check without compiling, and `--watch` restarts native runs by default. `--debug` remains a compiler/Node debugger workflow; use `--compile` explicitly when debugging generated JavaScript. The `naider/native` package entry exposes the interpreter API for embedding in Node.js applications. This interpreter supports core values, functions and synchronous/asynchronous generators, model declarations and inheritance, enums, expressions, conditionals, loops, matching, basic error handling, `fn.async`, `await`, `await.all`, task primitives and channels, relative imports of `.naide` modules, and installed NAIDE source packages. Export values, functions, models, and enums with `pub`, then import them with `use`:
 
 ```naide
 # math.naide
@@ -175,7 +179,7 @@ model User:
     self.age = age
 ```
 
-NAIDE packages installed in `node_modules` can also be imported by their package name. The package must include a `naide.pkg.json` whose `main` points to a `.naide` entry file inside that package; packages created by `naide pkg init` use `index.naide` by default. Package lookup walks the importing file's parent directories, allowing nested package dependencies. A package can expose additional files by exact subpath mappings in `exports`:
+NAIDE source packages installed with `naide pkg install` are stored in `naide_modules/` and can be imported by their package name. npm and other JavaScript dependencies continue to use `node_modules/`. The interpreter checks `naide_modules/` first and retains `node_modules/` as a compatibility fallback for existing projects. A NAIDE package must include a `naide.pkg.json` whose `main` points to a `.naide` entry file inside that package; packages created by `naide pkg init` use `index.naide` by default. Package lookup walks the importing file's parent directories, allowing nested package dependencies. A package can expose additional files by exact subpath mappings in `exports`:
 
 ```naide
 use { add } from "@example/math"
@@ -192,7 +196,13 @@ log add(20, 22)
 }
 ```
 
-Only declared subpaths can be imported, and each mapped `.naide` file must resolve inside the package (including through symbolic links). JavaScript-only npm packages and Node.js built-ins are not loaded by the native engine. Imported modules are evaluated once and cached. Cyclic imports fail with an explicit diagnostic. Synchronous and asynchronous generator functions, lambdas, and model methods support standalone `yield` statements and `yield*` delegation; async generators may await while producing values. `yield` nested inside another expression remains unsupported. `for await value of iterable:` consumes asynchronous or synchronous iterables in async functions and async generators; synchronous execution rejects it. Iterable consumption and collection callbacks count against the native execution step budget and close iterators on early exit or failure. Arbitrary JavaScript classes and framework declarations are also not supported by this engine yet. `await.all` starts all listed async operations before waiting for their results, enabling I/O concurrency. Synchronous iterable collections support `map`, `filter`, `reduce`, `find`, `some`, `every`, `flatMap`, `unique`, `enumerate`, streaming `zip`, `chunk`, `partition`, `groupBy`, `count`, and `sum`; `zip` stops at the shortest input and closes the other iterators, `groupBy` returns a `Map`, and `chunk` keeps the final partial group. Async iterables also support `zipAsync`, `chunkAsync`, `partitionAsync`, `groupByAsync`, `countAsync`, and `uniqueAsync`; callback-based partition/group/count operations preserve input order. `mapAsync`, `filterAsync`, and `forEachAsync` run callbacks with a positive-safe-integer concurrency limit and consume synchronous or asynchronous iterables; async map/filter preserve input order. `reduceAsync` runs its callback sequentially. `task.map` remains the task-oriented bounded-concurrency mapping API. The native runtime also exposes asynchronous file I/O through `io`; relative paths are confined to the entry file's directory, and paths escaping it (including symbolic-link escapes) are rejected:
+Only declared subpaths can be imported, and each mapped `.naide` file must resolve inside the package (including through symbolic links). JavaScript packages must be declared in the nearest project `package.json` or `nidpackage.json` dependencies before import. Node.js built-ins are disabled unless that exact module is granted with `--node-module node:crypto` (repeatable) or the `nodeModules` option to `NativeEngine`; `node:process`, `node:fs`, and `node:child_process` are not exposed implicitly. Allowed JavaScript modules execute with the host process's permissions and are not sandboxed. Imported modules are evaluated once and cached; cyclic imports fail with an explicit diagnostic. Synchronous and asynchronous generator functions, lambdas, and model methods support standalone `yield` statements and `yield*` delegation; async generators may await while producing values. `yield` nested inside another expression remains unsupported. `for await value of iterable:` consumes asynchronous or synchronous iterables in async functions and async generators; synchronous execution rejects it. Iterable consumption and collection callbacks count against the native execution step budget and close iterators on early exit or failure.
+
+The current native capability inventory classifies all 120 parser AST types: 62 supported, 58 contextual, and 0 unsupported. The measured AST availability is **120/120 (100%)** under the agreed contract: contextual nodes execute in their intended parent/server context or through an explicitly supplied, validated `NativeEngine` capability. This is an AST execution metric, not a compiler-parity, provider-bundling, or release-readiness score. Database, bot, object-storage, mail, Web Push, desktop, GraphQL, gRPC, image, migration, OAuth, payments, PDF, WebRTC, WebSocket, and blockchain integrations require host adapters; the CLI runner does not invent credentials or third-party provider implementations. `NativeEngine` accepts a `nativeServices` object of functions for those integrations and reports an error when a required adapter is absent. Native pages, screens, locale files, CSV output, and downloads use project-confined I/O. Native server support includes bounded JSON, URL-encoded, and multipart bodies; routes, schemas and file-backed CRUD; bearer authentication, signed in-memory sessions, CORS, rate limits, redirects, project-confined static files and downloads; bounded SSE; response caching; views; queues; and OpenAPI generation. GraphQL adapters supply an HTTP handler; WebSocket adapters supply an upgrade handler and optional cleanup callback. The server binds to `127.0.0.1` by default; use `--host 0.0.0.0` only when intentionally exposing it to the network.
+
+When embedding `NativeEngine`, existing integrations use explicit adapters: `database` provides `connect` and `createStore`; `bot.create` returns a client with `on`, `command`, and `start`; `storage.connect` returns `upload`, `download`, and `remove`; `mailer.createTransport` returns `sendMail`; and `push.configure` returns `sendNotification`. The `nativeServices` adapter map accepts functions named `desktop`, `graphql`, `websocket`, `grpc`, `webrtc`, `image`, `pdf`, `migration`, `oauth`, `payments`, and `blockchain`. Each receives evaluated declaration values; event and RPC adapters also receive callable handlers that execute the NAIDE bodies. GraphQL functions return an HTTP handler, while WebSocket server functions return `{ handler, close? }` for HTTP upgrade routing and orderly cleanup. Adapter failures are reported rather than silently replaced. See [release readiness](./docs/release-readiness.md) for the full native capability boundaries.
+
+`await.all` starts all listed async operations before waiting for their results, enabling I/O concurrency. Synchronous iterable collections support `map`, `filter`, `reduce`, `find`, `some`, `every`, `flatMap`, `unique`, `enumerate`, streaming `zip`, `chunk`, `partition`, `groupBy`, `count`, and `sum`; `zip` stops at the shortest input and closes the other iterators, `groupBy` returns a `Map`, and `chunk` keeps the final partial group. Async iterables also support `zipAsync`, `chunkAsync`, `partitionAsync`, `groupByAsync`, `countAsync`, and `uniqueAsync`; callback-based partition/group/count operations preserve input order. `mapAsync`, `filterAsync`, and `forEachAsync` run callbacks with a positive-safe-integer concurrency limit and consume synchronous or asynchronous iterables; async map/filter preserve input order. `reduceAsync` runs its callback sequentially. `task.map` remains the task-oriented bounded-concurrency mapping API. The native runtime also exposes asynchronous file I/O through `io`; relative paths are confined to the entry file's directory, and paths escaping it (including symbolic-link escapes) are rejected:
 
 ```naide
 await io.writeText("notes.txt", "hello")
@@ -202,7 +212,7 @@ bool present = await io.exists("notes.txt")
 list files = await io.listDir(".")
 ```
 
-`io` provides `readText`, `writeText`, `appendText`, `exists`, and `listDir`. Writes only target existing directories. When embedding the engine, pass an explicit `io` capability to `NativeEngine` / `runNativeAsync` to provide a host-specific implementation; otherwise source-only runs use the current working directory as the project root. These operations are asynchronous; use the asynchronous evaluator or `naide native`. Runtime errors include NAIDE source-line locations and a `NAIDE stack` with function and file frames when available. Step and call-depth limit errors use the same diagnostics. The path checks are a useful project boundary, not an OS-level sandbox for hostile code. It is a correctness-oriented prototype, not a high-performance VM: CPU-parallel execution, bytecode/JIT optimization, and Go-class throughput are future work and have not been measured. JavaScript generation and the existing default run command remain available and unchanged. A configurable step budget protects against runaway programs:
+`io` provides `readText`, `writeText`, `appendText`, `exists`, and `listDir`. Writes only target existing directories. When embedding the engine, pass an explicit `io` capability to `NativeEngine` / `runNativeAsync` to provide a host-specific implementation; otherwise source-only runs use the current working directory as the project root. These operations are asynchronous and work in the default file runner and REPL. Runtime errors include NAIDE source-line locations and a `NAIDE stack` with function and file frames when available. Step and call-depth limit errors use the same diagnostics. The path checks are a useful project boundary, not an OS-level sandbox for hostile code. It is a correctness-oriented prototype, not a high-performance VM: CPU-parallel execution, bytecode/JIT optimization, and Go-class throughput are future work and have not been measured. JavaScript generation remains available as an explicit compatibility path. A configurable step budget protects against runaway programs:
 
 Collection queries `find`, `some`, and `every` stop as soon as their result is known instead of consuming the entire iterable. `first`, `take`, and `takeWhile` also stop early and close the iterator; `drop` skips a specified non-negative item count. Their async counterparts are `firstAsync`, `findAsync`, `someAsync`, `everyAsync`, `takeAsync`, and `takeWhileAsync`. Count arguments must be non-negative safe integers, and iterable reads are covered by the execution step limit.
 
@@ -246,7 +256,7 @@ messages.close()
 ```
 
 ```bash
-naide native app.naide --steps 2000000
+naide app.naide --steps 2000000
 ```
 
 Example native async source:
@@ -351,7 +361,7 @@ function add(a, b) {
 
 Type `.eval` to switch to evaluation mode (runs the code instead of showing JS).
 
-The REPL's evaluation mode and the default file runner still use the existing JavaScript runtime. Use `naide native <file.naide>` to try the new direct interpreter; its CLI uses the asynchronous evaluator so top-level `await` and `await.all` work.
+The default runner and REPL use the direct asynchronous interpreter. Use `naide --compile <file.naide>` to opt in to the JavaScript runtime; generated applications that depend on unsupported framework declarations should continue to use this mode until the native runtime implements those integrations.
 
 JavaScript applications can embed the direct interpreter without importing the compiler API:
 
@@ -1866,17 +1876,13 @@ Error in app.naide:12
 
 The CLI tracks source-to-output line mappings and shows context from your `.naide` file, not the generated JavaScript.
 
-## Native Dependency Detection
+## Native Host Imports
 
-When you run a `.naide` file, the CLI scans generated JavaScript for missing dependencies (`express`, `better-sqlite3`, `pg`, `ws`) and prints install hints:
-
-```
-[NAIDE] Missing: express — run: npm install express
-```
+Direct execution can import Node.js built-ins only when each exact module is granted with a repeatable `--node-module` option. JavaScript npm packages must already be declared in the project's `dependencies` or `optionalDependencies` in `package.json` or `nidpackage.json`. These imports execute with the host process's permissions; this is explicit interoperability, not a sandbox. The compiler path remains available for other JavaScript integrations.
 
 ## Type Checker
 
-Compile-time type checking without running the code:
+Type-check without running the code or generating JavaScript:
 
 ```bash
 naide check app.naide

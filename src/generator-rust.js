@@ -517,7 +517,7 @@ export class RustGenerator {
       } else if (child.type === 'StaticDecl') {
         this.visitStatic(node.name, child);
       } else if (child.type === 'WsDecl') {
-        this.emit('// TODO: WebSocket support - use actix-web-actors crate');
+        this.visitWs(child);
       } else if (child.type === 'GroupDecl') {
         this.visitGroup(node.name, child);
       } else if (child.type === 'SessionDecl') {
@@ -774,23 +774,14 @@ export class RustGenerator {
   // ===== CRUD =====
 
   visitCrud(appName, node) {
-    const path = this.rawString(node.path);
     const schema = node.schemaName;
-
-    this.emit(`// TODO: CRUD endpoints for ${schema} at ${path}`);
-    this.emit(`// Use actix-web routes with a store (e.g., Arc<Mutex<Vec<${schema}>>>)`);
-    this.emitRaw('');
+    throw new Error(`Rust target does not support CRUD declarations for '${schema}' yet; select a target with executable CRUD support.`);
   }
 
   // ===== Auth =====
 
   visitAuth(appName, node) {
-    const secret = this.expr(node.secret);
-    this.authSecret = secret;
-
-    this.emit(`// TODO: JWT Auth middleware - use actix-web middleware + jsonwebtoken crate`);
-    this.emit(`let __auth_secret: &str = ${secret};`);
-    this.emitRaw('');
+    throw new Error('Rust target does not support authentication declarations yet; generated TODO comments are not executable.');
   }
 
   // ===== CORS =====
@@ -890,9 +881,7 @@ export class RustGenerator {
   // ===== WebSocket =====
 
   visitWs(node) {
-    this.emit('// TODO: WebSocket support - use actix-web-actors crate');
-    this.emit('// See https://actix.rs/docs/websockets/');
-    this.emitRaw('');
+    throw new Error('Rust target does not support WebSocket declarations yet; generated TODO comments are not executable.');
   }
 
   // ===== Group (route scope) =====

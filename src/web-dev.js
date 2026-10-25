@@ -26,7 +26,7 @@ const MIME_TYPES = new Map([
 function walkNaideFiles(root) {
   const files = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.name.startsWith('.') || ['build', 'dist', 'node_modules'].includes(entry.name)) continue;
+    if (entry.name.startsWith('.') || ['build', 'dist', 'node_modules', 'naide_modules'].includes(entry.name)) continue;
     const path = join(root, entry.name);
     if (entry.isDirectory()) files.push(...walkNaideFiles(path));
     else if (entry.isFile() && entry.name.endsWith('.naide')) files.push(path);
@@ -127,7 +127,7 @@ function snapshotFiles(root, ignoredPaths) {
   const snapshot = new Map();
   const visit = directory => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name.startsWith('.') || ['build', 'dist', 'node_modules'].includes(entry.name)) continue;
+      if (entry.name.startsWith('.') || ['build', 'dist', 'node_modules', 'naide_modules'].includes(entry.name)) continue;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) visit(path);
       else if (entry.isFile() && !ignoredPaths.has(path)) {
@@ -194,7 +194,7 @@ export function startWebDevServer(root, {
     ]);
     if (segments.some(segment => segment.startsWith('.') || blockedNames.has(segment.toLowerCase())
       || segment.toLowerCase().endsWith('.naide') || segment.toLowerCase().endsWith('.nx')
-      || segment.toLowerCase() === 'node_modules')) {
+      || ['node_modules', 'naide_modules'].includes(segment.toLowerCase()))) {
       response.writeHead(404).end('Not found');
       return;
     }

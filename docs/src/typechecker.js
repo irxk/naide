@@ -16,6 +16,8 @@ export class TypeChecker {
     this.visitedStatements = new WeakSet();
     this.functions = new Map();
     this.returnTypes = [];
+    this.classDepth = 0;
+    this.classContexts = [];
   }
 
   pushScope() { this.scopes.push(new Map()); }
@@ -79,6 +81,14 @@ export class TypeChecker {
     switch (node.type) {
       case 'TypedVar': return this.visitTypedVar(node, line);
       case 'Function': return this.visitFunction(node, line);
+      case 'EnumDecl':
+        this.setType(node.name, 'enum');
+        return;
+      case 'Model':
+      case 'ClassDecl':
+      case 'SchemaDecl':
+        this.setType(node.name, 'class');
+        return this.visitClass(node);
       case 'Assignment': return this.visitAssignment(node, line);
       case 'CompoundAssign': {
         const operators = {
@@ -180,7 +190,7 @@ export class TypeChecker {
   }
 
   visitFunction(node, line) {
-    this.registerFunction(node);
+    if (this.classDepth === 0) this.registerFunction(node);
 
     this.setType(node.name, 'function');
 
@@ -197,6 +207,35 @@ export class TypeChecker {
     this.popScope();
   }
 
+  visitClass(node) {
+    this.classDepth++;
+    this.pushScope();
+    this.classContexts.push({
+      fields: new Map((node.fields || []).map(field => [field.name, field.type || 'any'])),
+      methods: new Map((node.methods || []).map(method => [method.name, method])),
+    });
+    try {
+      for (const method of node.methods || []) this.visitStatement(method);
+      if (node.init) {
+        const initializer = node.init.type === 'Function'
+          ? node.init
+          : {
+            ...node.init,
+            type: 'Function',
+            name: 'init',
+            returnType: null,
+            isAsync: false,
+            isGenerator: false,
+          };
+        this.visitStatement(initializer);
+      }
+    } finally {
+      this.classContexts.pop();
+      this.popScope();
+      this.classDepth--;
+    }
+  }
+
   visitAssignment(node, line) {
     if (node.target.type === 'Identifier') {
       const existing = this.getType(node.target.name);
@@ -208,6 +247,14 @@ export class TypeChecker {
       }
       if (!existing) {
         this.setType(node.target.name, newType || 'any');
+      }
+      return;
+    }
+    if (node.target.type === 'MemberAccess') {
+      const declaredType = this.inferType(node.target);
+      const assignedType = this.inferType(node.value);
+      if (declaredType !== 'any' && assignedType !== 'any' && !this.typesCompatible(declaredType, assignedType)) {
+        this.error(`Type mismatch: cannot assign ${assignedType} to ${declaredType}`, line);
       }
     }
   }
@@ -338,7 +385,13 @@ export class TypeChecker {
       case 'OptionalIndexAccess':
       case 'OptionalAccess':
       case 'IndexAccess': return 'any';
-      case 'MemberAccess': return 'any';
+      case 'MemberAccess': {
+        if (node.object.type === 'Self') {
+          const classContext = this.classContexts.at(-1);
+          return classContext?.fields.get(node.property) || 'any';
+        }
+        return 'any';
+      }
       case 'Ternary': {
         const t = this.inferType(node.consequent);
         const f = this.inferType(node.alternate);
@@ -395,6 +448,21 @@ export class TypeChecker {
     if (node.callee.type === 'MemberAccess') {
       const obj = node.callee.object;
       const prop = node.callee.property;
+      if (obj.type === 'Self') {
+        const method = this.classContexts.at(-1)?.methods.get(prop);
+        if (method) {
+          this.checkCallArguments(node, {
+            params: method.params.map(param => ({
+              name: param.name,
+              type: param.type || 'any',
+              hasDefault: param.defaultValue !== null,
+              spread: param.spread,
+            })),
+            returnType: method.returnType || 'any',
+          });
+          return method.returnType || 'any';
+        }
+      }
       if (obj.type === 'Identifier' && obj.name === 'ai') {
         if (prop === 'ask' || prop === 'chat') return 'str';
         if (prop === 'json') return 'map';
@@ -415,12 +483,13 @@ export class TypeChecker {
   checkCallArguments(node, fn) {
     const params = fn.params;
     const line = node._line || 0;
+    const calleeName = node.callee.name || node.callee.property || 'call';
     const requiredCount = params.filter(p => !p.hasDefault && !p.spread).length;
     const hasSpread = params.some(p => p.spread);
 
     if (node.args.length < requiredCount || (!hasSpread && node.args.length > params.length)) {
       const expected = hasSpread ? `at least ${requiredCount}` : `${requiredCount}${params.length === requiredCount ? '' : ` to ${params.length}`}`;
-      this.error(`Argument count mismatch for '${node.callee.name}': expected ${expected}, got ${node.args.length}`, line);
+      this.error(`Argument count mismatch for '${calleeName}': expected ${expected}, got ${node.args.length}`, line);
     }
 
     const spreadIndex = params.findIndex(param => param.spread);
@@ -431,7 +500,7 @@ export class TypeChecker {
       const expectedType = param.type;
       const actualType = this.inferType(node.args[i]);
       if (expectedType !== 'any' && actualType !== 'any' && !this.typesCompatible(expectedType, actualType)) {
-        this.error(`Argument '${param.name}' of '${node.callee.name}' expects ${expectedType} but got ${actualType}`, line);
+        this.error(`Argument '${param.name}' of '${calleeName}' expects ${expectedType} but got ${actualType}`, line);
       }
     }
   }

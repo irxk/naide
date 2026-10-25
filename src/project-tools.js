@@ -2,7 +2,7 @@ import { closeSync, existsSync, openSync, readFileSync, readdirSync, renameSync,
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { relative, resolve, sep } from 'node:path';
-import { compile } from './index.js';
+import { checkNativeSource } from './native-check.js';
 
 const PACKAGE_ADAPTERS = {
   npm: {
@@ -190,21 +190,21 @@ export function listPackageAdapters() {
 
 export function checkNaideSource(source, sourceFile) {
   try {
-    const result = compile(source, { typeCheck: true, sourceFile });
+    const typeErrors = checkNativeSource(source, sourceFile);
     const diagnostics = [
-      ...result.typeErrors.errors.map(diagnostic => ({
+      ...typeErrors.errors.map(diagnostic => ({
         severity: 'error',
         line: diagnostic.line,
         message: diagnostic.message,
       })),
-      ...result.typeErrors.warnings.map(diagnostic => ({
+      ...typeErrors.warnings.map(diagnostic => ({
         severity: 'warning',
         line: diagnostic.line,
         message: diagnostic.message,
       })),
     ];
     return {
-      ok: result.typeErrors.errors.length === 0,
+      ok: typeErrors.errors.length === 0,
       diagnostics,
     };
   } catch (error) {
@@ -452,7 +452,7 @@ function readPackageJson(directory, manifestName = 'package.json') {
 
 function findNaideFiles(directory) {
   const files = [];
-  const ignoredDirectories = new Set(['.git', 'dist', 'node_modules']);
+  const ignoredDirectories = new Set(['.git', 'dist', 'node_modules', 'naide_modules']);
 
   function visit(currentDirectory) {
     for (const entry of readdirSync(currentDirectory, { withFileTypes: true })) {

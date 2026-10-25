@@ -56,10 +56,25 @@ describe('CLI and browser compiler parity', () => {
   }
 
   it('returns matching type diagnostics for CLI and browser compilers', () => {
-    const source = 'fn greet(str name) -> str:\n  ret name\nlog greet(42)';
-    const cli = compile(source, { typeCheck: true });
-    const browser = compileBrowser(source, { typeCheck: true });
-    assert.deepEqual(browser.typeErrors, cli.typeErrors);
+    const sources = [
+      'fn greet(str name) -> str:\n  ret name\nlog greet(42)',
+      [
+        'fn render(str value) -> str:',
+        '  ret value',
+        'schema Widget:',
+        '  value str',
+        '  fn render(int value) -> int:',
+        '    ret value',
+        'fn renderLabel() -> str:',
+        '  ret render("widget")',
+        '',
+      ].join('\n'),
+    ];
+    for (const source of sources) {
+      const cli = compile(source, { typeCheck: true });
+      const browser = compileBrowser(source, { typeCheck: true });
+      assert.deepEqual(browser.typeErrors, cli.typeErrors);
+    }
   });
 
   it('keeps new JavaScript interop syntax aligned in the browser compiler', () => {

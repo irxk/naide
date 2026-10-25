@@ -219,7 +219,9 @@ export class Parser {
       case T.PAY: return this.parsePay();
       case T.STORAGE: return this.parseStorage();
       case T.PDF: return this.parsePdf();
-      case T.I18N: return this.parseI18n();
+      case T.I18N:
+        if (this.peek(1).type === T.DOT) return this.parseExpressionStatement();
+        return this.parseI18n();
       case T.PUSH: return this.parsePush();
       case T.SEARCH: return this.parseSearch();
       case T.IMAGE: return this.parseImage();
@@ -1048,15 +1050,15 @@ export class Parser {
 
     if (this.match(T.ASSIGN)) {
       const value = this.parseExpression();
-      return new ASTNode('Assignment', { target: expr, value });
+      return new ASTNode('Assignment', { target: expr, value }, expr._line);
     }
     if (this.match(T.PLUS_ASSIGN)) {
       const value = this.parseExpression();
-      return new ASTNode('CompoundAssign', { target: expr, op: '+=', value });
+      return new ASTNode('CompoundAssign', { target: expr, op: '+=', value }, expr._line);
     }
     if (this.match(T.MINUS_ASSIGN)) {
       const value = this.parseExpression();
-      return new ASTNode('CompoundAssign', { target: expr, op: '-=', value });
+      return new ASTNode('CompoundAssign', { target: expr, op: '-=', value }, expr._line);
     }
     for (const [token, op] of [
       [T.STAR_ASSIGN, '*='],
@@ -1075,11 +1077,11 @@ export class Parser {
     ]) {
       if (this.match(token)) {
         const value = this.parseExpression();
-        return new ASTNode('CompoundAssign', { target: expr, op, value });
+        return new ASTNode('CompoundAssign', { target: expr, op, value }, expr._line);
       }
     }
 
-    return new ASTNode('ExprStatement', { expression: expr });
+    return new ASTNode('ExprStatement', { expression: expr }, expr._line);
   }
 
   parseExpression() {
@@ -2293,19 +2295,20 @@ export class Parser {
     this.expect(T.COLON);
     this.skipNewlines();
     this.expect(T.INDENT);
-    let webhook = null, successUrl = null, cancelUrl = null;
+    let webhook = null, webhookSecret = null, successUrl = null, cancelUrl = null;
     while (!this.at(T.DEDENT) && !this.at(T.EOF)) {
       this.skipNewlines();
       if (this.at(T.DEDENT) || this.at(T.EOF)) break;
       const kw = this.peek().value;
       if (kw === 'webhook') { this.advance(); webhook = this.parseString(); }
+      else if (kw === 'webhook_secret') { this.advance(); webhookSecret = this.parseExpression(); }
       else if (kw === 'success') { this.advance(); successUrl = this.parseString(); }
       else if (kw === 'cancel') { this.advance(); cancelUrl = this.parseString(); }
       else { this.advance(); }
       this.skipNewlines();
     }
     if (this.at(T.DEDENT)) this.advance();
-    return new ASTNode('PayDecl', { provider, secretKey, webhook, successUrl, cancelUrl });
+    return new ASTNode('PayDecl', { provider, secretKey, webhook, webhookSecret, successUrl, cancelUrl });
   }
 
   // storage "s3" bucket accessKey secretKey:

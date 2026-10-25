@@ -547,11 +547,11 @@ export class CGenerator {
   }
 
   visitCrud(node) {
-    this.emit(`/* TODO: CRUD for "${node.schemaName}" - implement with HTTP library */`);
+    throw new Error(`C target does not support CRUD declarations for '${node.schemaName}' yet; select a target with executable CRUD support.`);
   }
 
   visitAuth(node) {
-    this.emit('/* TODO: auth - use libcurl + JWT C library (libjwt) */');
+    throw new Error('C target does not support authentication declarations yet; generated TODO comments are not executable.');
   }
 
   visitCors(node) {
@@ -584,7 +584,7 @@ export class CGenerator {
   }
 
   visitWs(node) {
-    this.emit('/* TODO: WebSocket - use libwebsockets */');
+    throw new Error('C target does not support WebSocket declarations yet; generated TODO comments are not executable.');
   }
 
   visitGroup(node) {

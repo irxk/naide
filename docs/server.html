@@ -155,7 +155,8 @@
       <pre><code class="lang-naide"><span class="kw">cookie</span>                     <span class="cmt"># parses cookies into req.cookies</span></code></pre>
 
       <h3>session &mdash; Cookie Sessions</h3>
-      <pre><code class="lang-naide"><span class="kw">session</span> <span class="str">"my-secret"</span>        <span class="cmt"># enables req.session</span></code></pre>
+      <pre><code class="lang-naide"><span class="kw">session</span> <span class="str">"replace-with-a-secret-at-least-32-bytes-long"</span> <span class="cmt"># enables req.session</span></code></pre>
+      <p>Native sessions use signed, Secure, HttpOnly cookies and an in-memory store. Use a secret of at least 32 UTF-8 bytes; session data expires after 24 hours and is lost when the process restarts. Use HTTPS when exposing the server beyond localhost.</p>
 
       <!-- mid -->
       <h2>mid &mdash; Custom Middleware</h2>
@@ -212,9 +213,9 @@
   <span class="kw">sse</span> <span class="str">"/events"</span>
 
   <span class="kw">post</span> <span class="str">"/api/notify"</span> (req, res):
-    sse.broadcast req.body
+    sse.broadcast(req.body, <span class="str">"update"</span>)
     <span class="kw">ret</span> {ok: <span class="num">true</span>}</code></pre>
-      <p>Available functions: <code>sse.send(data)</code>, <code>sse.broadcast(data)</code>, <code>sse.count</code>.</p>
+      <p>Each declaration creates a streaming GET endpoint; multiple endpoints share the server-scoped <code>sse</code> hub. Available functions: <code>sse.send(data, event?)</code>, <code>sse.broadcast(data, event?)</code>, and <code>sse.count</code>. Slow clients are disconnected when their bounded pending-event queue fills, and active streams close with the server.</p>
 
       <!-- ws -->
       <h2>ws &mdash; WebSocket</h2>

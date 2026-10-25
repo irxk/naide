@@ -235,8 +235,10 @@ describe('project tools and native package adapters', () => {
       writeFileSync(join(directory, 'SPEC.naide'), 'syntax examples are not a project source file\n');
       mkdirSync(join(directory, 'src'), { recursive: true });
       mkdirSync(join(directory, 'node_modules', 'ignored-package'), { recursive: true });
+      mkdirSync(join(directory, 'naide_modules', 'ignored-source-package'), { recursive: true });
       writeFileSync(join(directory, 'src', 'nested.naide'), 'int count = 1\n');
       writeFileSync(join(directory, 'node_modules', 'ignored-package', 'ignored.naide'), 'int count = "bad"\n');
+      writeFileSync(join(directory, 'naide_modules', 'ignored-source-package', 'ignored.naide'), 'int count = "bad"\n');
       let report = inspectProject(directory);
       assert.equal(report.ok, true);
       assert.deepEqual(report.manifests, ['Node.js / npm']);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -69,6 +69,7 @@ test('packed npm artifact installs cleanly and its CLI compiles a NAIDE file', (
       '--prefix',
       installDirectory,
       join(temporaryDirectory, filename),
+      '--omit=optional',
       '--no-audit',
       '--no-fund',
     ], {
@@ -90,6 +91,39 @@ test('packed npm artifact installs cleanly and its CLI compiles a NAIDE file', (
     assert.ifError(compiled.error);
     assert.equal(compiled.status, 0, compiled.stderr);
     assert.match(compiled.stdout, /packed-install-ok/);
+
+    const direct = spawnSync(process.execPath, [cliPath, sourcePath], {
+      cwd: installDirectory,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(direct.error);
+    assert.equal(direct.status, 0, `${direct.stdout}\n${direct.stderr}`);
+    assert.match(direct.stdout, /packed-install-ok/);
+
+    assert.equal(
+      existsSync(join(installDirectory, 'node_modules', 'esbuild')),
+      false,
+      'optional browser bundler should not be installed when optional dependencies are omitted',
+    );
+
+    const checked = spawnSync(process.execPath, [cliPath, 'check', sourcePath], {
+      cwd: installDirectory,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(checked.error);
+    assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+    assert.match(checked.stdout, /OK/);
+
+    const checkedWithFlag = spawnSync(process.execPath, [cliPath, '--check', sourcePath], {
+      cwd: installDirectory,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    assert.ifError(checkedWithFlag.error);
+    assert.equal(checkedWithFlag.status, 0, `${checkedWithFlag.stdout}\n${checkedWithFlag.stderr}`);
+    assert.match(checkedWithFlag.stdout, /OK/);
 
     const nativeSmokePath = join(installDirectory, 'native-smoke.mjs');
     writeFileSync(nativeSmokePath, [
