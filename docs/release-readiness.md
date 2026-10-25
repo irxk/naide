@@ -14,29 +14,16 @@ The 90% goal is a release-readiness target, not a feature-count estimate. Score 
 
 Award points only for the evidence listed in each check. Partial credit is allowed when a check defines a measurable numerator, such as the number of executable targets that pass divided by the targets required.
 
-## Previous weighted checkpoint
-
-This score is retained as historical evidence from the previous checkpoint. The latest hosted run below supersedes its pending CI and target-runtime items.
-
-| Area | Earned | Point breakdown |
-| --- | ---: | --- |
-| Compiler and runtime validation | 24 / 25 | 5/5 all-target generation; 8/8 representative runtime targets (8 points); 4/4 Rust compile/runtime; 3/3 Java compile/runtime; 4/5 compile or execution checks for remaining targets (TypeScript, PHP, Ruby, and Kotlin compile and execute). |
-| End-to-end application workflows | 25 / 25 | 8/8 browser build/serve; 5/5 starter scaffold/type-check; 12/12 API flow over HTTP, including registration, login, protected CRUD, validation, rate limits, user isolation, file-store writes, and persistence across restart. |
-| Security and safe defaults | 20 / 20 | 6/6 secure scaffold defaults; 4/4 source-level API checks; 5/5 HTTP auth/validation/rate-limit behavior; 5/5 independent review completed, with its single HIGH finding fixed and covered by traversal/symlink regression tests. |
-| CI and installation reliability | 14 / 15 | 3/3 Node matrix coverage locally exercised on Windows and Linux (18, 20, 22, and 24); 4/4 Linux target checks exercised; 4/4 npm package contents and packed installation verified on both platforms; 3/4 full-suite platform evidence. The remaining point requires a green hosted CI run for this exact revision. |
-| Developer experience and support clarity | 15 / 15 | MCP/LSP/project tooling tests, onboarding tests, and explicit documentation of support limits pass locally. |
-| **Total** | **98 / 100** | Historical checkpoint only; the latest hosted verification below supersedes this score. |
-
 ## Latest hosted verification
 
-GitHub Actions run [#48](https://github.com/irxk/naide/actions/runs/40189829647) completed successfully for `main` at commit `60c16cea13cf425e56923f8853875b39bff4c704` on 2026-10-25. All five jobs passed: the Node.js 18, 20, 22, and 24 test matrix, plus the required runtime-target job. The runtime job ran the 15-target generation checks and compiled and executed the representative function/conditional program for all 15 targets with required toolchains enabled. The full suite on Node 24 reported 590 tests, 574 passed, 16 skipped, and 0 failed.
+GitHub Actions run [#51](https://github.com/irxk/naide/actions/runs/40190917682) completed successfully for `main` at commit `1048415854c54e9cc116e0675331358d698da44c` on 2026-10-25. All five jobs passed: the Node.js 18, 20, 22, and 24 test matrix, plus the required runtime-target job. The runtime job passed all-target generation checks and compiled and executed a representative function/conditional program for all 15 targets with required toolchains enabled. The Node 18 full suite reported 654 tests, 638 passed, 16 skipped, and 0 failed. Other configured Node versions also completed successfully. This is historical evidence for that commit; Node.js 18 and 20 are now upstream EOL, so those jobs demonstrate compatibility, not a currently maintained upstream support lifecycle.
 
 | Area | Earned | Current evidence |
 | --- | ---: | --- |
 | Compiler and runtime validation | 25 / 25 | All 15 targets pass hosted generation checks and representative compile/runtime execution. |
 | End-to-end application workflows | 25 / 25 | Browser build/serve, starter checks, and generated API HTTP/auth/persistence flows pass automated tests. |
 | Security and safe defaults | 20 / 20 | Secure defaults, HTTP protections, and the remediated security finding have regression coverage. |
-| CI and installation reliability | 15 / 15 | All four supported Node versions pass hosted CI; the hosted runtime job requires all target toolchains; package and clean-install checks run in the suite. |
+| CI and installation reliability | 15 / 15 | The prior four-version matrix passed hosted CI; the updated supported floor is Node 24 and its new 24/26 matrix awaits hosted verification; the hosted runtime job requires all target toolchains; package and clean-install checks run in the suite. |
 | Developer experience and support clarity | 15 / 15 | MCP/LSP, onboarding, diagnostics, project tooling, and support-boundary checks pass. |
 | **Total** | **100 / 100** | All defined release-readiness gates have reproducible evidence for the hosted commit above. This score does not claim provider integrations are bundled or that every target has full feature parity. |
 
@@ -44,7 +31,7 @@ GitHub Actions run [#48](https://github.com/irxk/naide/actions/runs/40189829647)
 
 | Check | Status | Evidence or remaining work |
 | --- | --- | --- |
-| Native interpreter AST capability inventory | Pass | `src/native-support.js` classifies all 120 parser AST types: 62 supported, 58 contextual, and 0 unsupported. The measured AST availability is 120/120 (100%) under the explicit-host-adapter contract; this is not full compiler parity or release readiness. The hosted Node 24 suite reports 590 tests, 574 passed, 16 skipped, and 0 failed. |
+| Native interpreter AST capability inventory | Pass | `src/native-support.js` classifies all 120 parser AST types: 62 supported, 58 contextual, and 0 unsupported. The measured AST availability is 120/120 (100%) under the explicit-host-adapter contract; this is not full compiler parity or release readiness. The latest hosted run's Node 18 suite reports 654 tests, 638 passed, 16 skipped, and 0 failed. |
 | 15 compiler targets produce source containing a sentinel | Pass (hosted) | `npm run test:targets` |
 | All 15 targets compile and execute a function/conditional representative program | Pass (hosted) | `npm run test:runtimes` with `NAIDE_REQUIRE_RUNTIME_TOOLS=true`; all 15 execution tests passed. |
 | npm package includes its required source, CLI, and linked release-readiness guide | Pass | `test/package-release.js` runs `npm pack --dry-run --json` and checks required/forbidden paths |
@@ -56,13 +43,14 @@ GitHub Actions run [#48](https://github.com/irxk/naide/actions/runs/40189829647)
 | File-backed updates survive a server restart | Pass | The HTTP test restarts the generated server and verifies the updated record is loaded |
 | Independent security review and remediation | Pass | Review found one HIGH browser-bundle path escape; `bin/naide.js` now checks project containment and canonical paths, and `test/native-meld.js` verifies traversal and symlink escapes cannot modify external files |
 | MCP, LSP, project tools, and onboarding checks | Pass | `npm run test:features` |
-| Full suite on Node 24 | Pass (hosted) | GitHub Actions run #48: 590 tests, 574 passed, 16 skipped, 0 failed |
-| Full supported Node-version CI matrix | Pass (hosted) | GitHub Actions run #48: Node 18, 20, 22, and 24 jobs all passed after clean `npm ci` |
+| Modern MCP protocol (`2026-07-28`) and NAIDE knowledge coverage | Pass locally; hosted rerun pending | Stdio server supports stateless per-request metadata and `server/discover`; legacy `initialize` clients are intentionally unsupported. `naide_search` indexes bundled first-party specification, docs, examples, implementation, and editor integrations; workspace files and dependencies are excluded. `test/mcp.js` verifies discovery, version rejection, metadata validation, notifications, tool annotations, source search, section lookup, and knowledge catalog. |
+| Node.js upstream lifecycle vs declared engine floor | Updated locally; hosted rerun pending | `package.json` now declares Node `>=24.0.0`; CI tests Node 24 LTS and Node 26 Current. The official [Node.js release schedule](https://nodejs.org/en/about/previous-releases) lists Node 18/20 as EOL and Node 24 as LTS. |
+| Full suite on prior configured Node versions | Pass (hosted, historical) | GitHub Actions run #51: Node 18, 20, 22, and 24 jobs passed after clean `npm ci`; this predates the Node 24 minimum and updated 24/26 matrix. |
 | Clean install from the packed artifact | Pass | `test/package-release.js` checks package contents, installs the packed artifact into a clean consumer, and runs the CLI |
-| All 15 targets compile and execute representative programs | Pass (hosted) | The required-toolchain `runtime-targets` job passed on Ubuntu 24.04 |
+| All 15 targets compile and execute representative programs | Pass (hosted) | GitHub Actions run #51 required-toolchain `runtime-targets` job passed on Ubuntu 24.04 |
 | Windows/Linux full-suite release checks | Pass on previously recorded local checkpoints; latest hosted matrix is Linux | The exact hosted revision passed the Linux Node matrix and all-target runtime job; Windows evidence is from the prior local cross-platform checkpoint |
 
-The latest hosted evidence scores 100/100 against the defined release-readiness gates. This is an evidence score, not a claim of full compiler parity, bundled external providers, or universal production readiness; platform and adapter boundaries remain as documented.
+The latest hosted evidence for commit `1048415854c54e9cc116e0675331358d698da44c` scores 100/100 against the defined release-readiness gates. This is an evidence score, not a claim of full compiler parity, bundled external providers, or universal production readiness; platform and adapter boundaries remain as documented. Subsequent local documentation and MCP protocol changes have passed the local checks listed below but still require a new hosted run.
 
 ## Compiler-independent execution
 

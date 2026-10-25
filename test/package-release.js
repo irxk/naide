@@ -29,6 +29,8 @@ test('npm package contains required CLI, runtime, and linked documentation files
     'src/native.js',
     'src/generator-rust.js',
     'docs/release-readiness.md',
+    'docs/guide.html',
+    'docs/src/parser.js',
     'README.md',
     'SPEC.naide',
     'LICENSE',

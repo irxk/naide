@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { resolve, dirname, isAbsolute } from 'path';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { createRequire } from 'module';
 import { checkNaideSource, getDoctorReport, inspectProject, listPackageAdapters, runProjectTests } from '../src/project-tools.js';
@@ -11,9 +11,131 @@ const requireFromServer = createRequire(import.meta.url);
 const packageVersion = JSON.parse(readFileSync(resolve(__dirname, '..', 'package.json'), 'utf8')).version;
 const SPEC_PATH = resolve(__dirname, '..', 'SPEC.naide');
 const HOSTED_EXAMPLE_DIRECTORY = resolve(__dirname, '..', 'examples', 'mws-discord');
+const KNOWLEDGE_ROOTS = ['SPEC.naide', 'README.md', 'docs', 'src', 'examples', 'mcp', 'lsp', 'vscode-naide'];
+const KNOWLEDGE_EXTENSIONS = new Set(['.naide', '.md', '.html', '.js', '.json', '.jsonc', '.css']);
+const EXCLUDED_KNOWLEDGE_DIRECTORIES = new Set(['.git', 'node_modules', 'out', 'dist', 'coverage']);
+const MCP_PROTOCOL_VERSION = '2026-07-28';
+const MCP_SERVER_INFO_KEY = 'io.modelcontextprotocol/serverInfo';
+const MCP_PROTOCOL_VERSION_KEY = 'io.modelcontextprotocol/protocolVersion';
 
 const NPM_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/;
 const NPM_VERSION_RANGE = /^[0-9A-Za-z.*^~<>=|+ -]{1,100}$/;
+const SPEC_TOPIC_ALIASES = {
+  ai: ['AI / LLM'],
+  async: ['非同期関数', 'await.all', 'iterator / post-test loops', 'generator functions'],
+  authentication: ['サーバー定義', 'OAuth'],
+  auth: ['サーバー定義', 'OAuth'],
+  bot: ['Discord Bot', 'マルチプラットフォーム Bot'],
+  browser: ['ページ生成', 'ブラウザーAPI'],
+  cli: ['CLI アプリ'],
+  cron: ['Cron / スケジュール'],
+  database: ['データベース永続化', 'スキーマ定義', 'スキーマ継承'],
+  db: ['データベース永続化', 'スキーマ定義'],
+  discord: ['Discord Bot', 'マルチプラットフォーム Bot'],
+  email: ['メール送信'],
+  enum: ['enum'],
+  error: ['エラーハンドリング'],
+  function: ['関数', '非同期関数'],
+  functions: ['関数', '非同期関数'],
+  graphql: ['GraphQL'],
+  html: ['ページ生成'],
+  http: ['サーバー定義', 'HTTPクライアント', 'HTTPメソッド', 'リクエストバリデーション'],
+  import: ['インポート', '動的インポート'],
+  imports: ['インポート', '動的インポート'],
+  interpreter: ['直接実行エンジン'],
+  loop: ['ループ', 'iterator / post-test loops'],
+  model: ['クラス (model)'],
+  native: ['直接実行エンジン'],
+  page: ['ページ生成'],
+  schema: ['スキーマ定義', 'スキーマ継承'],
+  server: ['サーバー定義'],
+  type: ['型チェック', '変数宣言'],
+  types: ['型チェック', '変数宣言'],
+  variable: ['変数宣言'],
+  variables: ['変数宣言'],
+  web: ['ページ生成', 'ブラウザーAPI'],
+};
+
+function collectKnowledgeFiles() {
+  const files = [];
+  const visit = (relativePath) => {
+    const absolutePath = resolve(__dirname, '..', relativePath);
+    const stat = statSync(absolutePath);
+    if (stat.isFile()) {
+      const extension = relativePath.slice(relativePath.lastIndexOf('.')).toLowerCase();
+      if (KNOWLEDGE_EXTENSIONS.has(extension)) files.push(relativePath);
+      return;
+    }
+    for (const entry of readdirSync(absolutePath, { withFileTypes: true })) {
+      if (entry.isSymbolicLink() || (entry.isDirectory() && EXCLUDED_KNOWLEDGE_DIRECTORIES.has(entry.name))) continue;
+      const childPath = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) visit(childPath);
+      else if (entry.isFile()) {
+        const extension = entry.name.slice(entry.name.lastIndexOf('.')).toLowerCase();
+        if (KNOWLEDGE_EXTENSIONS.has(extension)) files.push(childPath);
+      }
+    }
+  };
+  for (const root of KNOWLEDGE_ROOTS) visit(root);
+  return files.sort();
+}
+
+const KNOWLEDGE_FILES = collectKnowledgeFiles();
+
+function getSpecSections() {
+  const spec = readFileSync(SPEC_PATH, 'utf8');
+  const headings = [...spec.matchAll(/^# ---- (.+?) ----$/gm)];
+  return headings.map((heading, index) => {
+    const start = heading.index + heading[0].length;
+    const end = headings[index + 1]?.index ?? spec.length;
+    return { title: heading[1], content: spec.slice(start, end).trim() };
+  });
+}
+
+function getKnowledgeCatalog() {
+  return {
+    packageVersion,
+    searchableFileCount: KNOWLEDGE_FILES.length,
+    sources: [
+      { path: 'SPEC.naide', purpose: 'Canonical syntax, language features, and language-level examples.' },
+      { path: 'README.md and docs/', purpose: 'CLI, product guides, feature explanations, and published support boundaries.' },
+      { path: 'src/', purpose: 'Current compiler, runtime, type checker, adapters, project tooling, and native engine implementation.' },
+      { path: 'examples/', purpose: 'Runnable canonical NAIDE examples.' },
+      { path: 'mcp/, lsp/, vscode-naide/', purpose: 'Current MCP, language-server, and VS Code integration behavior.' },
+    ],
+    usage: 'Use naide_search to retrieve focused evidence from these bundled first-party files. Use naide_spec or naide://spec for the complete language specification. Search results are implementation evidence, not a claim that every backend or target has feature parity.',
+    exclusions: 'Workspace files, dependencies, build output, generated artifacts, and test fixtures are not indexed. naide://project only reports the selected project diagnostics.',
+  };
+}
+
+function searchKnowledge(query, limit = 10) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = [];
+  for (const file of KNOWLEDGE_FILES) {
+    const lines = readFileSync(resolve(__dirname, '..', file), 'utf8').split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const text = line.toLowerCase();
+      const matchedTerms = terms.filter(term => text.includes(term));
+      if (matchedTerms.length !== terms.length) return;
+      const phraseMatch = text.includes(query.toLowerCase());
+      const score = matchedTerms.length * 10 + (phraseMatch ? 5 : 0);
+      const firstMatch = Math.min(...terms.map(term => text.indexOf(term)));
+      const start = line.length > 700 ? Math.max(0, firstMatch - 200) : 0;
+      const excerpt = `${start ? '...' : ''}${line.slice(start, start + 697)}${start + 697 < line.length ? '...' : ''}`;
+      matches.push({ file, line: index + 1, excerpt, score });
+    });
+  }
+  matches.sort((a, b) => b.score - a.score);
+  const results = matches.slice(0, limit).map(({ score: _score, ...match }) => match);
+  return {
+    query,
+    totalMatches: matches.length,
+    returned: results.length,
+    truncated: matches.length > results.length,
+    results,
+    guidance: 'Treat SPEC.naide as the language contract, source as implementation evidence, and examples as usage patterns. Verify target-specific behavior; code-generation smoke coverage is not full feature parity.',
+  };
+}
 
 function validateNpmLibraries(libraries) {
   if (!libraries || typeof libraries !== 'object' || Array.isArray(libraries)) {
@@ -44,15 +166,18 @@ function createNidManifest(entry, dependencies = {}) {
 }
 
 function getAiGuide(topic) {
-  const spec = readFileSync(SPEC_PATH, 'utf8');
-  const headings = [...spec.matchAll(/^# ---- (.+?) ----$/gm)];
-  const specSections = headings.map((heading, index) => {
-    const start = heading.index + heading[0].length;
-    const end = headings[index + 1]?.index ?? spec.length;
-    return { title: heading[1], content: spec.slice(start, end).trim().slice(0, 8000) };
-  });
+  const specSections = getSpecSections();
+  const topicLower = topic?.toLowerCase();
+  const aliases = topicLower
+    ? [...(SPEC_TOPIC_ALIASES[topicLower] || []), topicLower]
+    : [];
   const selectedSections = topic
-    ? specSections.filter(section => section.title.toLowerCase().includes(topic.toLowerCase())).slice(0, 5)
+    ? specSections.filter(section => {
+      const title = section.title.toLowerCase();
+      const content = section.content.toLowerCase();
+      return aliases.some(alias => title.includes(alias.toLowerCase()))
+        || (topicLower.length >= 3 && content.includes(topicLower));
+    }).slice(0, 5)
     : [];
 
   return {
@@ -84,6 +209,7 @@ function getAiGuide(topic) {
     ],
     efficientWorkflow: [
       'Call naide_context with a topic when you need feature or syntax guidance.',
+      'Use naide_search to search the bundled documentation, examples, and current implementation when the relevant behavior is unclear; use naide_spec for canonical language rules.',
       'Read the matching SPEC.naide section or a relevant canonical example before writing unfamiliar constructs.',
       'For a small browser site, scaffold with naide init <dir> --template web and run naide dev <dir>; keep page/client behavior in .naide and styles in CSS.',
       'Write the application logic in .naide first and use naide_check on it. Keep generated JavaScript as build output, not as the authored source.',
@@ -109,6 +235,7 @@ function getAiGuide(topic) {
       dependenciesField: 'dependencies',
       limitation: 'The host must install npm dependencies from nidpackage.json and launch its main entry. Hosts that hard-code node <file>.naide without using this main/runner contract must add NAIDE loader support themselves.',
     },
+    knowledgeSources: getKnowledgeCatalog(),
     mcpTools: TOOLS.map(tool => ({ name: tool.name, description: tool.description })),
     specIndex: specSections.map(section => section.title),
     ...(topic ? { requestedSpecSections: selectedSections } : {}),
@@ -148,11 +275,40 @@ function send(msg) {
 }
 
 function respond(id, result) {
-  send({ jsonrpc: '2.0', id, result });
+  send({ jsonrpc: '2.0', id, result: { resultType: 'complete', ...result } });
 }
 
-function respondError(id, code, message) {
-  send({ jsonrpc: '2.0', id, error: { code, message } });
+function respondError(id, code, message, data) {
+  send({
+    jsonrpc: '2.0',
+    id,
+    error: { code, message, ...(data === undefined ? {} : { data }) },
+  });
+}
+
+function validateRequestMetadata(message) {
+  const metadata = message.params?._meta;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { code: -32602, message: 'Request params must include _meta metadata.' };
+  }
+  const protocolVersion = metadata[MCP_PROTOCOL_VERSION_KEY];
+  if (protocolVersion !== MCP_PROTOCOL_VERSION) {
+    return {
+      code: -32022,
+      message: 'Unsupported protocol version',
+      data: { supported: [MCP_PROTOCOL_VERSION], requested: protocolVersion ?? null },
+    };
+  }
+  const clientInfo = metadata['io.modelcontextprotocol/clientInfo'];
+  const clientCapabilities = metadata['io.modelcontextprotocol/clientCapabilities'];
+  if (!clientInfo || typeof clientInfo.name !== 'string' || typeof clientInfo.version !== 'string'
+    || !clientCapabilities || typeof clientCapabilities !== 'object' || Array.isArray(clientCapabilities)) {
+    return {
+      code: -32602,
+      message: '_meta must include valid clientInfo and clientCapabilities.',
+    };
+  }
+  return null;
 }
 
 const TOOLS = [
@@ -198,7 +354,7 @@ const TOOLS = [
   {
     name: 'naide_targets',
     description: 'List all available NAIDE compilation targets with details.',
-    inputSchema: { type: 'object', properties: {} }
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {
     name: 'naide_generate',
@@ -293,9 +449,32 @@ const TOOLS = [
   {
     name: 'naide_package_managers',
     description: 'List supported native package ecosystems and explain the limits of cross-language package interoperability.',
-    inputSchema: { type: 'object', properties: {} }
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
+  },
+  {
+    name: 'naide_search',
+    title: 'Search NAIDE Knowledge',
+    description: 'Search the bundled NAIDE language specification, README and guides, examples, compiler/runtime source, and MCP/LSP/VS Code implementation. Use this before concluding that a syntax feature, runtime behavior, target, or integration is unsupported. Results include file paths and line numbers; source implementation does not imply full target parity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', minLength: 1, maxLength: 200, description: 'One or more words or a phrase to find in first-party NAIDE documentation and source.' },
+        limit: { type: 'integer', minimum: 1, maximum: 20, description: 'Maximum evidence snippets to return (default 10).' },
+      },
+      required: ['query'],
+    },
   }
-];
+].map(tool => ({
+  ...tool,
+  title: tool.title || tool.name
+    .replace(/^naide_/, '')
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' '),
+  annotations: tool.name === 'naide_run' || tool.name === 'naide_test'
+    ? { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+    : { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+}));
 
 const TARGETS_INFO = [
   { name: 'node', language: 'JavaScript (ES Modules)', server: 'Express', flag: 'default' },
@@ -460,20 +639,45 @@ async function handleToolCall(name, args) {
       };
     }
 
+    case 'naide_search': {
+      if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 200) {
+        return { content: [{ type: 'text', text: 'query must be a non-empty string of at most 200 characters.' }], isError: true };
+      }
+      const limit = args.limit ?? 10;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+        return { content: [{ type: 'text', text: 'limit must be an integer from 1 to 20.' }], isError: true };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(searchKnowledge(args.query.trim(), limit), null, 2) }],
+      };
+    }
+
     case 'naide_spec': {
       try {
         let spec = readFileSync(resolve(__dirname, '..', 'SPEC.naide'), 'utf-8');
-        if (args.section) {
-          const s = args.section.toLowerCase();
-          const lines = spec.split('\n');
-          const chunks = [];
-          let capturing = false;
-          for (const line of lines) {
-            if (line.startsWith('# ---- ') && line.toLowerCase().includes(s)) capturing = true;
-            else if (line.startsWith('# ---- ') && capturing) break;
-            if (capturing) chunks.push(line);
+        if (args.section !== undefined) {
+          if (typeof args.section !== 'string' || !args.section.trim()) {
+            return { content: [{ type: 'text', text: 'section must be a non-empty string when provided.' }], isError: true };
           }
-          if (chunks.length > 0) spec = chunks.join('\n');
+          const sectionQuery = args.section.trim().toLowerCase();
+          const aliases = [...(SPEC_TOPIC_ALIASES[sectionQuery] || []), sectionQuery];
+          let sections = getSpecSections().filter(section =>
+            aliases.some(alias => section.title.toLowerCase().includes(alias.toLowerCase())));
+          if (!sections.length && sectionQuery.length >= 3) {
+            sections = getSpecSections()
+              .filter(section => section.content.toLowerCase().includes(sectionQuery))
+              .slice(0, 5);
+          }
+          if (!sections.length) {
+            return {
+              content: [{
+                type: 'text',
+                text: `No specification section matched "${args.section}". Use naide_search or omit section to read the full spec. Available section titles: ${getSpecSections().map(section => section.title).join(', ')}`,
+              }],
+              isError: true,
+            };
+          }
+          spec = sections.map(section => `# ---- ${section.title} ----\n${section.content}`).join('\n\n');
         }
         return { content: [{ type: 'text', text: spec }] };
       } catch (e) {
@@ -522,27 +726,40 @@ async function handleToolCall(name, args) {
 }
 
 async function handleMessage(msg) {
+  if (msg.id === undefined) return;
+
+  const metadataError = validateRequestMetadata(msg);
+  if (metadataError) {
+    respondError(msg.id, metadataError.code, metadataError.message, metadataError.data);
+    return;
+  }
+  if (msg.method === 'tools/call'
+    && (!msg.params || typeof msg.params.name !== 'string'
+      || (msg.params.arguments !== undefined
+        && (!msg.params.arguments || typeof msg.params.arguments !== 'object' || Array.isArray(msg.params.arguments))))) {
+    respondError(msg.id, -32602, 'tools/call params must include a tool name and an object of arguments.');
+    return;
+  }
+
   switch (msg.method) {
-    case 'initialize':
+    case 'server/discover':
       respond(msg.id, {
-        protocolVersion: '2024-11-05',
+        supportedVersions: [MCP_PROTOCOL_VERSION],
         capabilities: { tools: {}, prompts: {}, resources: {} },
-        serverInfo: { name: 'naide-mcp', version: packageVersion },
+        _meta: { [MCP_SERVER_INFO_KEY]: { name: 'naide-mcp', version: packageVersion } },
         instructions: [
           'NAIDE-FIRST CODING RULES:',
           '1. When the user asks for NAIDE, author the primary application and business logic in .naide. Do not silently substitute JavaScript/TypeScript or deliver mostly .js files.',
           '2. Keep .naide as the source of truth. Do not check in or present compiler-generated JavaScript as authored source unless the user explicitly requests generated output.',
           '3. If nidpackage.json exists or is requested, add/update npm dependencies there. Do not create a competing package.json or package-lock.json unless the user explicitly requests it or you verify the selected host requires it.',
           '4. Never create authored .js/.jsx/.mjs/.cjs/.ts/.tsx files, inline JavaScript, or JavaScript bootstraps unless the user explicitly approves JavaScript. Do not decide on the user behalf that JavaScript is necessary.',
-          '5. Check naide_context and SPEC.naide for supported JavaScript-compatible constructs before treating a feature as a gap. If a requested capability is still not expressible in NAIDE, stop before implementing it in JavaScript. State the concrete limitation and ask whether the user wants to approve a minimal JS/TS bridge or choose a NAIDE-supported alternative.',
-          '6. HTML, CSS, and media assets are allowed. Keep all application behavior in .naide. Generated compiler output may be written under build/ only and is not a substitute for NAIDE source.',
-          '7. Before coding, inspect the existing files and manifests, consult naide_context and the relevant spec section, then list the intended files. After editing .naide, run naide_check and fix reported diagnostics.',
-          '8. Browser support: page generates static HTML with nested elements and safe attributes. Use naide init <dir> --template web and naide dev <dir> for a NAIDE-first site starter, local static server, bundling, live reload, and build diagnostics. Import naide:browser from a separate .naide client module for DOM selection/events, Canvas 2D, animation, and Web API globals. Node-only packages and APIs are not browser-compatible.',
+          '5. Before concluding that a NAIDE syntax, runtime feature, compiler target, or integration is unsupported, search with naide_search, read the relevant SPEC.naide section, and inspect canonical examples. Treat the specification as the language contract and source as implementation evidence; do not infer complete target parity from a code match.',
+          '6. If a requested capability is still not expressible in NAIDE, stop before implementing it in JavaScript. State the concrete limitation and ask whether the user wants to approve a minimal JS/TS bridge or choose a NAIDE-supported alternative.',
+          '7. HTML, CSS, and media assets are allowed. Keep all application behavior in .naide. Generated compiler output may be written under build/ only and is not a substitute for NAIDE source.',
+          '8. Before coding, inspect the existing files and manifests, consult naide_context and the relevant spec section, then list the intended files. After editing .naide, run naide_check and fix reported diagnostics.',
+          '9. Browser support: page generates static HTML with nested elements and safe attributes. Use naide init <dir> --template web and naide dev <dir> for a NAIDE-first site starter, local static server, bundling, live reload, and build diagnostics. Import naide:browser from a separate .naide client module for DOM selection/events, Canvas 2D, and Web API globals. Node-only packages and APIs are not browser-compatible.',
         ].join('\n'),
       });
-      break;
-
-    case 'notifications/initialized':
       break;
 
     case 'tools/list':
@@ -595,6 +812,7 @@ async function handleMessage(msg) {
         resources: [
           { uri: 'naide://spec', name: 'NAIDE language specification', mimeType: 'text/plain', description: 'Canonical NAIDE syntax and language reference.' },
           { uri: 'naide://ai-guide', name: 'NAIDE AI coding guide', mimeType: 'application/json', description: 'AI-oriented overview of NAIDE strengths, idioms, feature index, hosted Node.js setup, and MCP workflow.' },
+          { uri: 'naide://knowledge', name: 'NAIDE knowledge catalog', mimeType: 'application/json', description: 'Searchable first-party documentation, examples, implementation coverage, and knowledge boundaries.' },
           { uri: 'naide://package-ecosystems', name: 'Native package ecosystems', mimeType: 'application/json', description: 'Supported NAIDE package manager adapters and interoperability guidance.' },
           { uri: 'naide://project', name: 'Current project diagnostics', mimeType: 'application/json', description: 'A read-only summary of project setup in the server working directory.' },
         ],
@@ -610,6 +828,9 @@ async function handleMessage(msg) {
       } else if (uri === 'naide://ai-guide') {
         mimeType = 'application/json';
         text = JSON.stringify(getAiGuide(), null, 2);
+      } else if (uri === 'naide://knowledge') {
+        mimeType = 'application/json';
+        text = JSON.stringify(getKnowledgeCatalog(), null, 2);
       } else if (uri === 'naide://package-ecosystems') {
         mimeType = 'application/json';
         text = JSON.stringify({
@@ -632,7 +853,10 @@ async function handleMessage(msg) {
         const result = await handleToolCall(msg.params.name, msg.params.arguments || {});
         respond(msg.id, result);
       } catch (e) {
-        respondError(msg.id, -32000, e.message);
+        respond(msg.id, {
+          content: [{ type: 'text', text: e.message }],
+          isError: true,
+        });
       }
       break;
 

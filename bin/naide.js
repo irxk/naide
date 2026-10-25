@@ -764,7 +764,7 @@ if (files[0] === 'mws' && files[1] === 'discord') {
     private: true,
     type: 'module',
     main: 'node_modules/naider/bin/naide-host.js',
-    engines: { node: '>=18.19.0' },
+    engines: { node: '>=24.0.0' },
     scripts: { start: 'node --enable-source-maps node_modules/naider/bin/naide-host.js' },
     dependencies: { naider: `^${NAIDE_VERSION}`, 'discord.js': '^14.27.0' },
   };

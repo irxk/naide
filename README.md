@@ -14,9 +14,9 @@ NAIDE is designed around one canonical syntax shared by people, AI tools, the co
 | `typescript` / `ts` | `--target ts` | TypeScript | Express | Compile + runtime smoke |
 | `go` | `--target go` | Go | net/http | Compile + runtime smoke |
 | `java` | `--target java` | Java | HttpServer | Compile + runtime smoke |
-| `rust` / `rs` | `--target rust` | Rust | actix-web | Code generation + basic runtime smoke |
-| `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib | Code generation + basic runtime smoke |
-| `c` | `--target c` | C | libmicrohttpd | Code generation + basic runtime smoke |
+| `rust` / `rs` | `--target rust` | Rust | actix-web | Compile + runtime smoke |
+| `cpp` / `c++` | `--target cpp` | C++ | cpp-httplib | Compile + runtime smoke |
+| `c` | `--target c` | C | libmicrohttpd | Compile + runtime smoke |
 | `csharp` / `cs` | `--target csharp` | C# | ASP.NET | Compile + runtime smoke |
 | `kotlin` / `kt` | `--target kotlin` | Kotlin | Ktor | Compile + runtime smoke |
 | `swift` | `--target swift` | Swift | Vapor | Compile + runtime smoke |
@@ -345,7 +345,7 @@ project.files.forEach(f => console.log(f.path));
 
 ```
 $ naide
-NAIDE REPL v2.0.2 — type NAIDE code, see JavaScript output
+NAIDE REPL v2.0.9 — type NAIDE code; use `.compile` to inspect JavaScript output
 Type .exit to quit, .eval to toggle eval mode
 
 >>> str name = "hello"
@@ -990,7 +990,7 @@ NAIDE's host runner removes the need to upload a JavaScript bootstrap. Upload `d
     "entry": "discord-bot.naide"
   },
   "dependencies": {
-    "naider": "^2.0.7",
+    "naider": "^2.0.9",
     "discord.js": "^14.27.0"
   }
 }
@@ -1699,7 +1699,7 @@ Native-Meld lets Node.js execute a `.naide` entry file directly, lets an ES modu
 node --enable-source-maps --import naider/register discord_bot.naide
 ```
 
-Install `naider` in the Node.js project first. The `--import naider/register` hook registers the loader before Node loads the entry file; Node.js 18.19.0 or newer is required.
+Install `naider` in the Node.js project first. The `--import naider/register` hook registers the loader before Node loads the entry file; Node.js 24.0.0 or newer is required. Node.js 24 is an LTS release; Node.js 26 is currently in its Current phase. See the [official Node.js release schedule](https://nodejs.org/en/about/previous-releases).
 
 ```js
 // app.js (in a package with "type": "module", or rename this to app.mjs)
@@ -1962,7 +1962,7 @@ This is package-manager interoperability, **not** automatic cross-language linki
 
 ## MCP Server
 
-`naide-mcp` communicates over stdio and provides compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. Its MCP initialization instructions enforce a NAIDE-only application-source workflow: application behavior belongs in `.naide`; the agent must not author JavaScript/TypeScript or inline JavaScript unless the user explicitly approves it. When NAIDE cannot express a requested capability, the agent must explain the specific limitation and ask before switching to JS/TS rather than making that decision for the user. Browser support includes static HTML generation, the `naide:browser` module for common DOM/events/Canvas/animation APIs, and native browser Web API access; generated JavaScript is build output, not authored source. This is a practical browser layer, not a complete typed DOM or a promise that Node-only npm packages work in browsers. When a project uses `nidpackage.json`, agents must not create a competing `package.json` or `package-lock.json` unless explicitly requested or a verified host requirement demands it. Call `naide_context` or read `naide://ai-guide` for NAIDE idioms, feature areas, target limitations, and project conventions; use the `naide_first` / `naide_coding_ja` prompts for task-specific guidance. The `naide_hosted_manifest` tool creates a `nidpackage.json` for hosted Node.js apps; `naide_mws_discord_template` returns exactly `discord-bot.naide` and `nidpackage.json`, with additional npm libraries accepted through `libraries`. These use `node_modules/naider/bin/naide-host.js` as the host runner and require the host to install dependencies from `nidpackage.json` and launch `main` (or select the runner as startup file). Other read-only resources include `naide://spec`, `naide://package-ecosystems`, and `naide://project`.
+`naide-mcp` communicates over stdio using the modern stateless [MCP protocol](https://modelcontextprotocol.io/specification/2026-07-28) (`2026-07-28`): clients send protocol version, identity, and capabilities in each request's `_meta`; the server supports `server/discover` and does not implement the older `initialize` handshake. It provides compilation/generation, non-executing `naide_check` diagnostics, project verification and tests, package ecosystem guidance, and the language specification. Its `naide_search` tool searches the package's first-party specification, documentation, examples, compiler/runtime source, and MCP/LSP/VS Code implementation, returning file and line evidence; it does not read arbitrary workspace files or dependencies. Use it before concluding a feature is unsupported, and distinguish language specification from implementation evidence and target parity. Its discovery instructions enforce a NAIDE-only application-source workflow: application behavior belongs in `.naide`; the agent must not author JavaScript/TypeScript or inline JavaScript unless the user explicitly approves it. When NAIDE cannot express a requested capability, the agent must explain the specific limitation and ask before switching to JS/TS rather than making that decision for the user. Browser support includes static HTML generation, the `naide:browser` module for common DOM/events/Canvas/animation APIs, and native browser Web API access; generated JavaScript is build output, not authored source. This is a practical browser layer, not a complete typed DOM or a promise that Node-only npm packages work in browsers. When a project uses `nidpackage.json`, agents must not create a competing `package.json` or `package-lock.json` unless explicitly requested or a verified host requirement demands it. Call `naide_context` or read `naide://ai-guide` for NAIDE idioms, feature areas, target limitations, and project conventions; use the `naide_first` / `naide_coding_ja` prompts for task-specific guidance. The `naide_hosted_manifest` tool creates a `nidpackage.json` for hosted Node.js apps; `naide_mws_discord_template` returns exactly `discord-bot.naide` and `nidpackage.json`, with additional npm libraries accepted through `libraries`. These use `node_modules/naider/bin/naide-host.js` as the host runner and require the host to install dependencies from `nidpackage.json` and launch `main` (or select the runner as startup file). Read-only knowledge resources include `naide://spec`, `naide://ai-guide`, `naide://knowledge`, and `naide://package-ecosystems`; `naide://project` reports project diagnostics.
 
 For VS Code, after installing `naider` in a location on `PATH`, add this to `.vscode/mcp.json`:
 

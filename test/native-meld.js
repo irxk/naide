@@ -618,7 +618,7 @@ describe('hosted Discord bot starter', () => {
       const project = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8'));
       assert.equal(project.type, 'module');
       assert.equal(project.main, 'node_modules/naider/bin/naide-host.js');
-      assert.equal(project.engines.node, '>=18.19.0');
+      assert.equal(project.engines.node, '>=24.0.0');
       assert.equal(project.scripts.start, 'node --enable-source-maps node_modules/naider/bin/naide-host.js');
       assert.equal(project.dependencies.naider, `^${JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version}`);
       assert.equal(project.dependencies['discord.js'], '^14.27.0');

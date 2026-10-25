@@ -6,8 +6,24 @@ import { fileURLToPath } from 'node:url';
 
 const serverPath = fileURLToPath(new URL('../mcp/server.js', import.meta.url));
 const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const protocolVersion = '2026-07-28';
 
-function messageLine(message) {
+function messageLine(message, { includeMetadata = true } = {}) {
+  if (includeMetadata && message && message.id !== undefined && typeof message.method === 'string') {
+    const params = message.params && typeof message.params === 'object' ? message.params : {};
+    message = {
+      ...message,
+      params: {
+        ...params,
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': protocolVersion,
+          'io.modelcontextprotocol/clientInfo': { name: 'naide-test', version: '1.0.0' },
+          'io.modelcontextprotocol/clientCapabilities': {},
+          ...params._meta,
+        },
+      },
+    };
+  }
   return Buffer.from(`${JSON.stringify(message)}\n`, 'utf8');
 }
 
@@ -16,9 +32,9 @@ function parseMessages(buffer) {
 }
 
 describe('NAIDE MCP server', () => {
-  it('uses newline-delimited JSON and offers project tools, prompts, and resources', () => {
+  it('uses modern stateless MCP metadata and offers project tools, prompts, and resources', () => {
     const input = Buffer.concat([
-      messageLine({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+      messageLine({ jsonrpc: '2.0', id: 1, method: 'server/discover' }),
       messageLine({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
       messageLine({ jsonrpc: '2.0', id: 3, method: 'prompts/list' }),
       messageLine({ jsonrpc: '2.0', id: 11, method: 'prompts/get', params: { name: 'mws_discord_ja' } }),
@@ -84,12 +100,44 @@ describe('NAIDE MCP server', () => {
         method: 'tools/call',
         params: { name: 'naide_context', arguments: { topic: 'Discord' } },
       }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 18,
+        method: 'tools/call',
+        params: { name: 'naide_search', arguments: { query: 'MCP_PROTOCOL_VERSION', limit: 3 } },
+      }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 19,
+        method: 'tools/call',
+        params: { name: 'naide_search', arguments: { query: '   ' } },
+      }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 20,
+        method: 'tools/call',
+        params: { name: 'naide_spec', arguments: { section: 'server' } },
+      }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 21,
+        method: 'tools/call',
+        params: { name: 'naide_spec', arguments: { section: 'missing-section' } },
+      }),
+      messageLine({
+        jsonrpc: '2.0',
+        id: 22,
+        method: 'resources/read',
+        params: { uri: 'naide://knowledge' },
+      }),
+      messageLine({ jsonrpc: '2.0', id: 23, method: 'resources/list' }),
+      messageLine({ jsonrpc: '2.0', id: 24, method: 'tools/call' }),
     ]);
     const result = spawnSync(process.execPath, [serverPath], { input, encoding: 'buffer' });
 
     assert.equal(result.status, 0, result.stderr.toString('utf8'));
     const messages = parseMessages(result.stdout);
-    const initialized = messages.find(message => message.id === 1);
+    const discovery = messages.find(message => message.id === 1);
     const tools = messages.find(message => message.id === 2).result.tools;
     const prompts = messages.find(message => message.id === 3).result.prompts;
     const mwsPrompt = messages.find(message => message.id === 11).result;
@@ -105,20 +153,29 @@ describe('NAIDE MCP server', () => {
     assert.ok(runtimeResponse.result, `${JSON.stringify(runtimeResponse)}; stderr: ${result.stderr.toString('utf8')}`);
     const runtimeResult = runtimeResponse.result;
 
-    assert.ok(initialized.result.capabilities.prompts);
-    assert.ok(initialized.result.capabilities.resources);
-    assert.match(initialized.result.instructions, /Never create authored \.js.*unless the user explicitly approves JavaScript/i);
-    assert.match(initialized.result.instructions, /ask whether the user wants to approve a minimal JS\/TS bridge/i);
-    assert.match(initialized.result.instructions, /do not create a competing package\.json or package-lock\.json/i);
-    assert.match(initialized.result.instructions, /all application behavior in \.naide/i);
-    assert.equal(initialized.result.serverInfo.name, 'naide-mcp');
-    assert.equal(initialized.result.serverInfo.version, packageVersion);
+    assert.equal(discovery.result.resultType, 'complete');
+    assert.deepEqual(discovery.result.supportedVersions, [protocolVersion]);
+    assert.ok(discovery.result.capabilities.tools);
+    assert.ok(discovery.result.capabilities.prompts);
+    assert.ok(discovery.result.capabilities.resources);
+    assert.match(discovery.result.instructions, /Never create authored \.js.*unless the user explicitly approves JavaScript/i);
+    assert.match(discovery.result.instructions, /ask whether the user wants to approve a minimal JS\/TS bridge/i);
+    assert.match(discovery.result.instructions, /do not create a competing package\.json or package-lock\.json/i);
+    assert.match(discovery.result.instructions, /all application behavior in \.naide/i);
+    assert.equal(discovery.result._meta['io.modelcontextprotocol/serverInfo'].name, 'naide-mcp');
+    assert.equal(discovery.result._meta['io.modelcontextprotocol/serverInfo'].version, packageVersion);
+    assert.equal(messages.find(message => message.id === 2).result.resultType, 'complete');
+    assert.equal(messages.find(message => message.id === 3).result.resultType, 'complete');
     assert.ok(tools.some(tool => tool.name === 'naide_doctor'));
     assert.ok(tools.some(tool => tool.name === 'naide_verify'));
     assert.ok(tools.some(tool => tool.name === 'naide_test'));
     assert.ok(tools.some(tool => tool.name === 'naide_mws_discord_template'));
     assert.ok(tools.some(tool => tool.name === 'naide_hosted_manifest'));
     assert.ok(tools.some(tool => tool.name === 'naide_context'));
+    assert.ok(tools.some(tool => tool.name === 'naide_search'));
+    assert.ok(tools.every(tool => tool.title && tool.annotations));
+    assert.equal(tools.find(tool => tool.name === 'naide_search').annotations.readOnlyHint, true);
+    assert.equal(tools.find(tool => tool.name === 'naide_run').annotations.destructiveHint, true);
     assert.ok(prompts.some(prompt => prompt.name === 'polyglot_dependency'));
     assert.ok(prompts.some(prompt => prompt.name === 'verify_changes_ja'));
     assert.ok(prompts.some(prompt => prompt.name === 'naide_coding_ja'));
@@ -141,6 +198,8 @@ describe('NAIDE MCP server', () => {
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => /ask the user/i.test(boundary)));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('competing package.json')));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('unless the user explicitly approves JavaScript')));
+    assert.ok(aiGuide.knowledgeSources.searchableFileCount > 0);
+    assert.ok(aiGuide.efficientWorkflow.some(rule => rule.includes('naide_search')));
     assert.match(spec, /人間とAI/);
     assert.match(packageInfo, /process, HTTP, FFI/);
     assert.equal(JSON.parse(validCheck.content[0].text).ok, true);
@@ -173,6 +232,56 @@ describe('NAIDE MCP server', () => {
     assert.match(invalidManifest.content[0].text, /relative \.naide/);
     const topicContext = JSON.parse(messages.find(message => message.id === 15).result.content[0].text);
     assert.ok(topicContext.requestedSpecSections.some(section => section.title === 'Discord Bot'));
+    const search = JSON.parse(messages.find(message => message.id === 18).result.content[0].text);
+    assert.ok(search.results.some(result => result.file === 'mcp/server.js'));
+    assert.equal(messages.find(message => message.id === 19).result.isError, true);
+    assert.match(messages.find(message => message.id === 20).result.content[0].text, /サーバー定義/);
+    assert.equal(messages.find(message => message.id === 21).result.isError, true);
+    const knowledge = JSON.parse(messages.find(message => message.id === 22).result.contents[0].text);
+    assert.ok(knowledge.searchableFileCount > 0);
+    assert.ok(knowledge.sources.some(source => source.path === 'src/'));
+    assert.ok(messages.find(message => message.id === 23).result.resources.some(resource => resource.uri === 'naide://knowledge'));
+    assert.equal(messages.find(message => message.id === 24).error.code, -32602);
+  });
+
+  it('requires modern per-request metadata and rejects legacy protocol handshakes', () => {
+    const input = Buffer.concat([
+      messageLine({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'server/discover',
+        params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2025-11-25' } },
+      }),
+      messageLine({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { includeMetadata: false }),
+      messageLine({ jsonrpc: '2.0', id: 3, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+    ]);
+    const result = spawnSync(process.execPath, [serverPath], { input, encoding: 'buffer' });
+
+    assert.equal(result.status, 0, result.stderr.toString('utf8'));
+    const messages = parseMessages(result.stdout);
+    assert.equal(messages[0].error.code, -32022);
+    assert.deepEqual(messages[0].error.data, {
+      supported: [protocolVersion],
+      requested: '2025-11-25',
+    });
+    assert.equal(messages[1].error.code, -32602);
+    assert.match(messages[1].error.message, /_meta/);
+    assert.equal(messages[2].error.code, -32601);
+    assert.match(messages[2].error.message, /initialize/);
+  });
+
+  it('does not answer JSON-RPC notifications', () => {
+    const result = spawnSync(process.execPath, [serverPath], {
+      input: messageLine({
+        jsonrpc: '2.0',
+        method: 'notifications/cancelled',
+        params: { requestId: 1 },
+      }),
+      encoding: 'buffer',
+    });
+
+    assert.equal(result.status, 0, result.stderr.toString('utf8'));
+    assert.equal(result.stdout.toString('utf8'), '');
   });
 
   it('rejects oversized messages', () => {

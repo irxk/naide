@@ -4,14 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NAIDE — One Readable Language, Built to Ship</title>
-  <meta name="description" content="NAIDE is a practical programming language with one readable syntax, built-in diagnostics, and code generation for 15 targets. Node.js, Python, and Bun outputs are runtime-tested in CI.">
+  <meta name="description" content="NAIDE is a practical programming language with one readable syntax, built-in diagnostics, and code generation for 15 targets. All 15 targets compile and run representative programs in hosted CI.">
   <meta property="og:title" content="NAIDE — One Readable Language, Built to Ship">
   <meta property="og:description" content="Write NAIDE once with one consistent syntax. Build, check, test, and compile applications with built-in tools.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://naide.k-r.lol/">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="NAIDE — One Syntax, 15 Code Generation Targets">
-  <meta name="twitter:description" content="One readable syntax and code generation for 15 targets. Node.js, Python, and Bun outputs are runtime-tested in CI. npm install -g naider">
+  <meta name="twitter:description" content="One readable syntax and code generation for 15 targets. All 15 targets compile and run representative programs in hosted CI. npm install -g naider">
   <meta name="theme-color" content="#4178DC">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -21,7 +21,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v2.0.2</span>
+      <span class="version">v2.0.9</span>
     </div>
     <nav>
       <a href="index.html" class="active">Home</a>
@@ -59,7 +59,7 @@
       <div class="features">
         <div class="feature-card">
           <h3>15 Code Generation Targets</h3>
-          <p>Generate code for Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, and Ruby. Node.js, Python, and Bun outputs are executed in CI; other targets currently have code-generation smoke coverage.</p>
+          <p>Generate code for Node.js, Python, Bun, TypeScript, Go, Java, Rust, C++, C, C#, Kotlin, Swift, Dart, PHP, and Ruby. Hosted CI compiles and runs a representative program for all 15 targets; feature and framework coverage still varies by target.</p>
         </div>
         <div class="feature-card">
           <h3>AI-Native</h3>
@@ -83,7 +83,7 @@
         </div>
         <div class="feature-card">
           <h3>MCP Server</h3>
-          <p>Built-in <code>naide-mcp</code> binary for Claude Code integration. Let AI agents read, write, and run NAIDE code directly.</p>
+          <p>Built-in <code>naide-mcp</code> stdio server using the stateless MCP 2026-07-28 protocol, with per-request metadata and server discovery.</p>
         </div>
         <div class="feature-card">
           <h3>Modern Syntax Sugar</h3>
