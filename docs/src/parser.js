@@ -188,7 +188,8 @@ export class Parser {
     this.skipNewlines();
     const tok = this.peek();
 
-    switch (tok.type) {
+    const statement = (() => {
+      switch (tok.type) {
       case T.USE: return this.parseUse();
       case T.FN: return this.parseFunction(false, false);
       case T.FN_ASYNC: return this.parseFunction(true, false);
@@ -298,7 +299,10 @@ export class Parser {
           return this.parseTypedVariable();
         }
         return this.parseExpressionStatement();
-    }
+      }
+    })();
+    if (statement && !statement._line) statement._line = tok.line;
+    return statement;
   }
 
   parseUse() {

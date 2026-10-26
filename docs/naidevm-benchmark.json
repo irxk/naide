@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
-  "benchmark": "sum-integer-range-v1",
-  "generatedAt": "2026-10-25T12:57:47.974Z",
+  "schemaVersion": 3,
+  "benchmark": "naidevm-representative-workloads-v3",
+  "generatedAt": "2026-10-25T22:55:26.385Z",
   "host": {
     "platform": "Windows_NT 10.0.26200",
     "architecture": "x64",
@@ -11,178 +11,1380 @@
   "method": {
     "iterations": 100000,
     "samples": 7,
-    "startupSamples": 7,
-    "statistic": "Median; startup includes process launch and a 1000-iteration correctness run. Throughput excludes process startup and measures the same sumTo loop body.",
-    "workloadFeatures": [
-      "integer range loop",
-      "mutable scalar",
-      "addition",
-      "function call",
-      "deterministic integer result"
-    ],
-    "peakRss": "Operating-system process high-water RSS: Node/Bun process.resourceUsage().maxRSS; CPython GetProcessMemoryInfo on Windows or getrusage elsewhere.",
-    "limitations": "Single machine and runtime versions; results vary by hardware, OS, runtime release, power mode, and background load. This microbenchmark is not a general language, application, compiler, or feature-parity ranking."
+    "warmupSamples": 1,
+    "sampleRepetitions": 5,
+    "statistic": "Median of independent in-process batches after one warm-up batch. Each runtime executes the same deterministic workload; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.",
+    "memory": "OS process high-water RSS. Node/Bun use process.resourceUsage(); CPython uses GetProcessMemoryInfo on Windows or getrusage elsewhere.",
+    "limitations": "Single host and fixed local runtime versions. Workloads measure only their named constructs and do not establish general language or application performance.",
+    "executionPath": "NaideVM is invoked through executeAsync(); the interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report."
   },
-  "workloadValidation": {
-    "requiredFeatures": [
-      "integer range iteration",
-      "mutable scalar assignment",
-      "integer addition",
-      "user-defined function call"
+  "acceptance": {
+    "baselineEngine": "node",
+    "requirement": "Every workload must exceed Node.js/V8 independently for a tier to pass; no aggregate-only pass. CPython results remain descriptive.",
+    "comparisons": [
+      {
+        "workload": "integer-sum",
+        "nodeOperationsPerSecond": 1992031873,
+        "pythonOperationsPerSecond": 34977020,
+        "naidevmOperationsPerSecond": 146352886,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 4310344828,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 5617977528,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "branch-count",
+        "nodeOperationsPerSecond": 853679358,
+        "pythonOperationsPerSecond": 28623933,
+        "naidevmOperationsPerSecond": 92936803,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 271032090,
+            "beatsNode": false
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 281293952,
+            "beatsNode": false
+          }
+        }
+      },
+      {
+        "workload": "function-calls",
+        "nodeOperationsPerSecond": 976562500,
+        "pythonOperationsPerSecond": 25032542,
+        "naidevmOperationsPerSecond": 47874378,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 508646999,
+            "beatsNode": false
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 401284109,
+            "beatsNode": false
+          }
+        }
+      },
+      {
+        "workload": "collection-sum",
+        "nodeOperationsPerSecond": 42936883,
+        "pythonOperationsPerSecond": 66093853,
+        "naidevmOperationsPerSecond": 110741971,
+        "naidevmBeatsNode": true,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 47869794,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 105932203,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "mixed-loop",
+        "nodeOperationsPerSecond": 564334086,
+        "pythonOperationsPerSecond": 15552583,
+        "naidevmOperationsPerSecond": 25241052,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 173370319,
+            "beatsNode": false
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 175131349,
+            "beatsNode": false
+          }
+        }
+      }
     ],
-    "passed": true,
-    "implementationsPassed": 4,
-    "implementationsMeasured": 4,
-    "scope": "These features were exercised together by one deterministic fixture. This is not a complete feature-coverage or language-parity score."
+    "allWorkloadsBeatNodeByEngine": {
+      "naidevm": false,
+      "naidevm-machine": false,
+      "naidevm-tiered": false
+    }
   },
   "engines": [
     {
       "id": "naidevm",
       "name": "NaideVM",
       "version": "v24.14.1",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 3.416399999999996,
+            "operationsPerSecond": 146352886,
+            "samplesMs": [
+              3.416399999999996,
+              3.405000000000001,
+              3.269199999999998,
+              3.4699000000000098,
+              3.3774999999999977,
+              3.4221999999999895,
+              3.4377999999999957
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 73072640,
+          "peakRssBytes": 73072640,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 5.38000000000001,
+            "operationsPerSecond": 92936803,
+            "samplesMs": [
+              5.290099999999995,
+              5.5809,
+              5.271000000000001,
+              6.366399999999999,
+              6.3004999999999995,
+              5.293300000000002,
+              5.38000000000001
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71176192,
+          "peakRssBytes": 71176192,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 1.044399999999996,
+            "operationsPerSecond": 47874378,
+            "samplesMs": [
+              1.1029000000000053,
+              1.044399999999996,
+              1.2254000000000076,
+              1.1768,
+              0.7104999999999961,
+              0.6099000000000103,
+              0.6056999999999988
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71745536,
+          "peakRssBytes": 71745536,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.09029999999999916,
+            "operationsPerSecond": 110741971,
+            "samplesMs": [
+              0.529900000000012,
+              0.12340000000000373,
+              0.08339999999999748,
+              0.08240000000000691,
+              0.09100000000000819,
+              0.09029999999999916,
+              0.08270000000000266
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 79958016,
+          "peakRssBytes": 79958016,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 1.9808999999999912,
+            "operationsPerSecond": 25241052,
+            "samplesMs": [
+              3.246700000000004,
+              3.2309999999999945,
+              2.401200000000003,
+              1.9649999999999892,
+              1.9350999999999914,
+              1.9565999999999946,
+              1.9808999999999912
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71655424,
+          "peakRssBytes": 71655424,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
       "startup": {
-        "medianMs": 94.70620000000002,
+        "medianMs": 131.72410000000002,
         "samplesMs": [
-          122.5216,
-          111.15350000000004,
-          93.24959999999999,
-          94.70620000000002,
-          96.60109999999997,
-          88.06299999999999,
-          90.41480000000001
-        ]
+          150.2284,
+          145.48880000000003,
+          150.14930000000004,
+          128.3831,
+          130.2618,
+          131.72410000000002,
+          111.3830999999999
+        ],
+        "peakRssBytes": 70254592
       },
-      "throughput": {
-        "iterations": 100000,
-        "medianMs": 14.617799999999988,
-        "iterationsPerSecond": 6840975,
-        "samplesMs": [
-          15.841399999999993,
-          14.617799999999988,
-          13.489099999999993,
-          17.320399999999992,
-          13.644300000000015,
-          13.393699999999995,
-          15.186599999999999
-        ]
-      },
-      "peakRssBytes": 95436800,
-      "correctness": {
-        "expected": 4999950000,
-        "actual": 4999950000,
-        "passed": true
-      }
+      "peakRssBytes": 79958016
     },
     {
       "id": "node",
       "name": "Node.js / V8",
       "version": "v24.14.1",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 0.2510000000000012,
+            "operationsPerSecond": 1992031873,
+            "samplesMs": [
+              0.3825000000000003,
+              0.36629999999999896,
+              0.25099999999999767,
+              0.252200000000002,
+              0.2510000000000012,
+              0.25090000000000146,
+              0.25099999999999767
+            ]
+          },
+          "runtimePeakRssBytes": 60755968,
+          "peakRssBytes": 60755968,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 0.5856999999999992,
+            "operationsPerSecond": 853679358,
+            "samplesMs": [
+              0.5853999999999999,
+              0.5852000000000004,
+              0.5851000000000006,
+              0.5862999999999978,
+              0.5856999999999992,
+              0.7809000000000026,
+              0.6207000000000029
+            ]
+          },
+          "runtimePeakRssBytes": 58626048,
+          "peakRssBytes": 58626048,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 0.051199999999997914,
+            "operationsPerSecond": 976562500,
+            "samplesMs": [
+              0.05249999999999844,
+              0.051199999999997914,
+              0.050799999999998846,
+              0.051600000000000534,
+              0.05100000000000193,
+              0.05109999999999815,
+              0.08429999999999893
+            ]
+          },
+          "runtimePeakRssBytes": 58761216,
+          "peakRssBytes": 58761216,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.23290000000000077,
+            "operationsPerSecond": 42936883,
+            "samplesMs": [
+              0.41589999999999705,
+              0.6155000000000008,
+              0.1919000000000004,
+              0.3724999999999987,
+              0.10730000000000217,
+              0.23290000000000077,
+              0.10379999999999967
+            ]
+          },
+          "runtimePeakRssBytes": 60674048,
+          "peakRssBytes": 60674048,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 0.08859999999999957,
+            "operationsPerSecond": 564334086,
+            "samplesMs": [
+              0.33699999999999974,
+              0.3725000000000023,
+              0.08520000000000039,
+              0.08859999999999957,
+              0.09100000000000108,
+              0.08689999999999998,
+              0.08040000000000092
+            ]
+          },
+          "runtimePeakRssBytes": 58748928,
+          "peakRssBytes": 58748928,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
       "startup": {
-        "medianMs": 52.71119999999996,
+        "medianMs": 59.826200000000426,
         "samplesMs": [
-          58.52240000000006,
-          52.14859999999999,
-          91.1078,
-          54.246200000000044,
-          51.75710000000004,
-          51.51940000000013,
-          52.71119999999996
-        ]
+          57.74649999999997,
+          61.761200000000144,
+          64.86199999999985,
+          62.955700000000206,
+          59.826200000000426,
+          53.845800000000054,
+          56.35829999999987
+        ],
+        "peakRssBytes": 58441728
       },
-      "throughput": {
-        "iterations": 100000,
-        "medianMs": 0.08129999999999882,
-        "iterationsPerSecond": 1230012300,
+      "peakRssBytes": 60755968
+    },
+    {
+      "id": "naidevm-machine",
+      "name": "NaideVM direct x64 JIT",
+      "version": "v24.14.1",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 0.11599999999999966,
+            "operationsPerSecond": 4310344828,
+            "samplesMs": [
+              0.16540000000000532,
+              0.11599999999999966,
+              0.09210000000000207,
+              0.11260000000000048,
+              0.07609999999999673,
+              0.1414000000000044,
+              0.11909999999998888
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 3.267399999999995,
+            "generatedCodeBytes": 114,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 40,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71241728,
+          "peakRssBytes": 71241728,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 1.8447999999999922,
+            "operationsPerSecond": 271032090,
+            "samplesMs": [
+              2.355800000000002,
+              1.731800000000007,
+              1.6753000000000071,
+              1.8447999999999922,
+              1.772599999999997,
+              3.023600000000002,
+              2.715199999999996
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 3.4069000000000074,
+            "generatedCodeBytes": 653,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 40,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71577600,
+          "peakRssBytes": 71577600,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 0.09829999999999472,
+            "operationsPerSecond": 508646999,
+            "samplesMs": [
+              0.1495000000000033,
+              0.09329999999999927,
+              0.07500000000000284,
+              0.09530000000000882,
+              0.09829999999999472,
+              0.1711999999999989,
+              0.14040000000001385
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 2,
+            "compiledFunctions": 2,
+            "tieredFunctions": 0,
+            "inlinedCalls": 1,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 3.922399999999996,
+            "generatedCodeBytes": 124,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 40,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71274496,
+          "peakRssBytes": 71274496,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.20889999999999986,
+            "operationsPerSecond": 47869794,
+            "samplesMs": [
+              0.45409999999999684,
+              0.8800999999999988,
+              0.24280000000000257,
+              0.14200000000001012,
+              0.1963000000000079,
+              0.125,
+              0.20889999999999986
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 1,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.875700000000009,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 78606336,
+          "peakRssBytes": 78606336,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 0.28840000000001,
+            "operationsPerSecond": 173370319,
+            "samplesMs": [
+              0.35029999999999006,
+              0.3044000000000011,
+              0.32209999999999184,
+              0.28840000000001,
+              0.2640999999999991,
+              0.2746000000000066,
+              0.2506000000000057
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 2,
+            "compiledFunctions": 1,
+            "tieredFunctions": 0,
+            "inlinedCalls": 1,
+            "unsupportedFunctions": 1,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 4.065799999999982,
+            "generatedCodeBytes": 880,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 40,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71577600,
+          "peakRssBytes": 71577600,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
+      "startup": {
+        "medianMs": 106.96160000000009,
         "samplesMs": [
-          0.8609000000000009,
-          0.2472999999999992,
-          0.08070000000000022,
-          0.08129999999999882,
-          0.08019999999999783,
-          0.08019999999999783,
-          0.10769999999999769
-        ]
+          106.96160000000009,
+          113.19160000000011,
+          105.96320000000014,
+          103.6286,
+          105.98610000000008,
+          123.85399999999981,
+          108.03940000000011
+        ],
+        "peakRssBytes": 70721536
       },
-      "peakRssBytes": 59682816,
-      "correctness": {
-        "expected": 4999950000,
-        "actual": 4999950000,
-        "passed": true
-      }
+      "peakRssBytes": 78606336
+    },
+    {
+      "id": "naidevm-tiered",
+      "name": "NaideVM tiered x64 JIT",
+      "version": "v24.14.1",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 0.08899999999999864,
+            "operationsPerSecond": 5617977528,
+            "samplesMs": [
+              0.21510000000000673,
+              0.12510000000000332,
+              0.07200000000000273,
+              0.10869999999999891,
+              0.08899999999999864,
+              0.08289999999999509,
+              0.07160000000000366
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 1,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 3.6555999999999926,
+            "generatedCodeBytes": 114,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 36,
+            "tieringWarmupCalls": 4,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 73068544,
+          "peakRssBytes": 73068544,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 1.7775000000000034,
+            "operationsPerSecond": 281293952,
+            "samplesMs": [
+              1.8648000000000025,
+              2.4938999999999965,
+              1.7775000000000034,
+              1.793999999999997,
+              1.6913999999999874,
+              1.7168000000000063,
+              1.6813000000000073
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 1,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 3.8800999999999988,
+            "generatedCodeBytes": 653,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 36,
+            "tieringWarmupCalls": 4,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71757824,
+          "peakRssBytes": 71757824,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 0.12460000000000093,
+            "operationsPerSecond": 401284109,
+            "samplesMs": [
+              0.23699999999999477,
+              0.1238999999999919,
+              0.07620000000000005,
+              0.12460000000000093,
+              0.18210000000000548,
+              0.12930000000000064,
+              0.09539999999999793
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 1,
+            "inlinedCalls": 1,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 3.4446000000000083,
+            "generatedCodeBytes": 56,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 36,
+            "tieringWarmupCalls": 4,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71958528,
+          "peakRssBytes": 71958528,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.09439999999999316,
+            "operationsPerSecond": 105932203,
+            "samplesMs": [
+              0.4744000000000028,
+              0.3044000000000011,
+              0.08419999999999561,
+              0.09439999999999316,
+              0.11549999999999727,
+              0.0782999999999987,
+              0.07880000000000109
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 80408576,
+          "peakRssBytes": 80408576,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 0.285499999999999,
+            "operationsPerSecond": 175131349,
+            "samplesMs": [
+              0.35089999999999577,
+              0.3160999999999916,
+              0.3025999999999982,
+              0.285499999999999,
+              0.2640999999999991,
+              0.25489999999999213,
+              0.2533999999999992
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 1,
+            "inlinedCalls": 1,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 4.588000000000008,
+            "generatedCodeBytes": 880,
+            "allocatedNativeValues": 3,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 3,
+            "nativeCalls": 36,
+            "tieringWarmupCalls": 4,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 71794688,
+          "peakRssBytes": 71794688,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
+      "startup": {
+        "medianMs": 101.16940000000068,
+        "samplesMs": [
+          101.44770000000017,
+          100.77619999999979,
+          98.72009999999955,
+          105.03829999999925,
+          109.80609999999979,
+          101.16940000000068,
+          99.22080000000005
+        ],
+        "peakRssBytes": 70406144
+      },
+      "peakRssBytes": 80408576
     },
     {
       "id": "bun",
       "name": "Bun / JavaScriptCore",
       "version": "1.3.13",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 0.43720000000000425,
+            "operationsPerSecond": 1143641354,
+            "samplesMs": [
+              1.2550999999999988,
+              0.9372000000000043,
+              0.43720000000000425,
+              0.4363000000000028,
+              0.4245000000000019,
+              0.4332999999999956,
+              0.4375
+            ]
+          },
+          "runtimePeakRssBytes": 141119488,
+          "peakRssBytes": 141119488,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 0.505199999999995,
+            "operationsPerSecond": 989707047,
+            "samplesMs": [
+              1.0459999999999994,
+              1.3314000000000021,
+              0.5878000000000014,
+              0.40039999999999765,
+              0.3978000000000037,
+              0.3978000000000037,
+              0.505199999999995
+            ]
+          },
+          "runtimePeakRssBytes": 141082624,
+          "peakRssBytes": 141082624,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 0.06320000000000192,
+            "operationsPerSecond": 791139241,
+            "samplesMs": [
+              0.1894999999999989,
+              0.06070000000000064,
+              0.0677999999999983,
+              0.06259999999999977,
+              0.06320000000000192,
+              0.06609999999999872,
+              0.0622000000000007
+            ]
+          },
+          "runtimePeakRssBytes": 144318464,
+          "peakRssBytes": 144318464,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.07529999999999859,
+            "operationsPerSecond": 132802125,
+            "samplesMs": [
+              0.08830000000000027,
+              0.07209999999999894,
+              0.07280000000000086,
+              0.08020000000000138,
+              0.07529999999999859,
+              0.07870000000000132,
+              0.06370000000000076
+            ]
+          },
+          "runtimePeakRssBytes": 144678912,
+          "peakRssBytes": 144678912,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 0.11629999999999896,
+            "operationsPerSecond": 429922614,
+            "samplesMs": [
+              0.2986000000000004,
+              0.11720000000000041,
+              0.11629999999999896,
+              0.11319999999999908,
+              0.11759999999999948,
+              0.11329999999999885,
+              0.10619999999999763
+            ]
+          },
+          "runtimePeakRssBytes": 145895424,
+          "peakRssBytes": 145895424,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
       "startup": {
-        "medianMs": 77.2349999999999,
+        "medianMs": 73.3172999999997,
         "samplesMs": [
-          77.75189999999998,
-          78.15160000000014,
-          75.97350000000006,
-          79.03420000000006,
-          77.2349999999999,
-          72.75849999999991,
-          75.5110000000002
-        ]
+          71.05199999999968,
+          69.82049999999981,
+          70.37800000000061,
+          77.85680000000048,
+          76.92180000000008,
+          73.3172999999997,
+          79.86130000000048
+        ],
+        "peakRssBytes": 136925184
       },
-      "throughput": {
-        "iterations": 100000,
-        "medianMs": 0.16870000000000118,
-        "iterationsPerSecond": 592768228,
-        "samplesMs": [
-          0.16870000000000118,
-          0.16839999999999833,
-          0.1676000000000002,
-          0.16769999999999996,
-          0.17450000000000188,
-          0.37569999999999837,
-          0.26500000000000057
-        ]
-      },
-      "peakRssBytes": 137236480,
-      "correctness": {
-        "expected": 4999950000,
-        "actual": 4999950000,
-        "passed": true
-      }
+      "peakRssBytes": 145895424
     },
     {
       "id": "python",
       "name": "Python / CPython",
       "version": "3.13.7",
+      "workloads": [
+        {
+          "id": "integer-sum",
+          "name": "Integer range sum",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 4999950000,
+          "throughput": {
+            "medianMs": 14.2951,
+            "operationsPerSecond": 34977020,
+            "samplesMs": [
+              12.9318,
+              16.7523,
+              14.2951,
+              15.6484,
+              13.8872,
+              12.9438,
+              14.7481
+            ]
+          },
+          "runtimePeakRssBytes": 19804160,
+          "peakRssBytes": 19804160,
+          "correctness": {
+            "actual": 4999950000,
+            "passed": true
+          }
+        },
+        {
+          "id": "branch-count",
+          "name": "Branch-heavy loop",
+          "units": "loop iterations",
+          "iterations": 100000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 500000,
+          "expected": 33334,
+          "throughput": {
+            "medianMs": 17.4679,
+            "operationsPerSecond": 28623933,
+            "samplesMs": [
+              17.7597,
+              20.5974,
+              17.4679,
+              16.3789,
+              16.9796,
+              16.9358,
+              18.5334
+            ]
+          },
+          "runtimePeakRssBytes": 20000768,
+          "peakRssBytes": 20000768,
+          "correctness": {
+            "actual": 33334,
+            "passed": true
+          }
+        },
+        {
+          "id": "function-calls",
+          "name": "Function-call loop",
+          "units": "function calls",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 10000,
+          "throughput": {
+            "medianMs": 1.9974,
+            "operationsPerSecond": 25032542,
+            "samplesMs": [
+              1.9974,
+              1.925,
+              2.0005,
+              2.0544,
+              2.1213,
+              1.9675,
+              1.9916
+            ]
+          },
+          "runtimePeakRssBytes": 19701760,
+          "peakRssBytes": 19701760,
+          "correctness": {
+            "actual": 10000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-sum",
+          "name": "Collection iteration",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 10000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 0.1513,
+            "operationsPerSecond": 66093853,
+            "samplesMs": [
+              0.1555,
+              0.1534,
+              0.1502,
+              0.1495,
+              0.1783,
+              0.1456,
+              0.1513
+            ]
+          },
+          "runtimePeakRssBytes": 19886080,
+          "peakRssBytes": 19886080,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "mixed-loop",
+          "name": "Mixed arithmetic, branch, and calls",
+          "units": "loop iterations",
+          "iterations": 10000,
+          "sampleRepetitions": 5,
+          "operationsPerSample": 50000,
+          "expected": 49995000,
+          "throughput": {
+            "medianMs": 3.2149,
+            "operationsPerSecond": 15552583,
+            "samplesMs": [
+              3.4996,
+              3.2149,
+              3.2069,
+              3.1187,
+              3.0576,
+              3.3812,
+              4.5466
+            ]
+          },
+          "runtimePeakRssBytes": 19804160,
+          "peakRssBytes": 19804160,
+          "correctness": {
+            "actual": 49995000,
+            "passed": true
+          }
+        }
+      ],
       "startup": {
-        "medianMs": 77.2471999999998,
+        "medianMs": 81.67199999999957,
         "samplesMs": [
-          86.34249999999975,
-          77.2471999999998,
-          77.1875,
-          78.64180000000033,
-          78.00979999999981,
-          76.78520000000026,
-          73.45850000000019
-        ]
+          81.67199999999957,
+          74.13940000000002,
+          73.00470000000041,
+          73.38460000000032,
+          82.68040000000019,
+          84.09449999999924,
+          81.88949999999932
+        ],
+        "peakRssBytes": 19849216
       },
-      "throughput": {
-        "iterations": 100000,
-        "medianMs": 2.3857,
-        "iterationsPerSecond": 41916419,
-        "samplesMs": [
-          2.4463,
-          2.6812,
-          2.3205,
-          2.3857,
-          2.3338,
-          2.3845,
-          2.5497
-        ]
-      },
-      "peakRssBytes": 19763200,
-      "correctness": {
-        "expected": 4999950000,
-        "actual": 4999950000,
-        "passed": true
-      }
+      "peakRssBytes": 20000768
     }
   ]
 }

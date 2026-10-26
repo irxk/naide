@@ -6,16 +6,239 @@ import os from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { nativeMachineCodeAvailable } from '../src/native-machine-bridge.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DEFAULT_ITERATIONS = 10_000;
-const DEFAULT_SAMPLES = 5;
+const DEFAULT_ITERATIONS = 100_000;
+const DEFAULT_SAMPLES = 7;
+const SAMPLE_REPETITIONS = 5;
 const ENGINE_NAMES = {
   naidevm: 'NaideVM',
+  'naidevm-machine': 'NaideVM direct x64 JIT',
+  'naidevm-tiered': 'NaideVM tiered x64 JIT',
   node: 'Node.js / V8',
   bun: 'Bun / JavaScriptCore',
   python: 'Python / CPython',
 };
+
+const WORKLOADS = [
+  {
+    id: 'integer-sum',
+    name: 'Integer range sum',
+    units: 'loop iterations',
+    iterations: base => base,
+    expected: n => n * (n - 1) / 2,
+    naide: n => `
+      fn benchmark(int n) -> int:
+        mut int total = 0
+        for i in 0..n:
+          total = total + i
+        ret total
+      int n = ${n}
+      mut int result = 0
+    `,
+    javascript: n => `
+      function benchmark(n) {
+        let total = 0;
+        for (let i = 0; i < n; i++) total += i;
+        return total;
+      }
+      const n = ${n};
+      let result = 0;
+    `,
+    python: n => `
+def benchmark(n):
+    total = 0
+    for i in range(n):
+        total += i
+    return total
+
+n = ${n}
+result = 0
+`,
+    invocation: 'result = benchmark(n)',
+  },
+  {
+    id: 'branch-count',
+    name: 'Branch-heavy loop',
+    units: 'loop iterations',
+    iterations: base => base,
+    expected: n => Math.ceil(n / 3),
+    naide: n => `
+      fn benchmark(int n) -> int:
+        mut int count = 0
+        for i in 0..n:
+          if i % 3 == 0:
+            count = count + 1
+        ret count
+      int n = ${n}
+      mut int result = 0
+    `,
+    javascript: n => `
+      function benchmark(n) {
+        let count = 0;
+        for (let i = 0; i < n; i++) {
+          if (i % 3 === 0) count++;
+        }
+        return count;
+      }
+      const n = ${n};
+      let result = 0;
+    `,
+    python: n => `
+def benchmark(n):
+    count = 0
+    for i in range(n):
+        if i % 3 == 0:
+            count += 1
+    return count
+
+n = ${n}
+result = 0
+`,
+    invocation: 'result = benchmark(n)',
+  },
+  {
+    id: 'function-calls',
+    name: 'Function-call loop',
+    units: 'function calls',
+    iterations: base => Math.max(1_000, Math.floor(base / 10)),
+    expected: n => n,
+    naide: n => `
+      fn increment(int value) -> int:
+        ret value + 1
+      fn benchmark(int n) -> int:
+        mut int result = 0
+        for i in 0..n:
+          result = increment(result)
+        ret result
+      int n = ${n}
+      mut int result = 0
+    `,
+    javascript: n => `
+      function increment(value) { return value + 1; }
+      function benchmark(n) {
+        let result = 0;
+        for (let i = 0; i < n; i++) result = increment(result);
+        return result;
+      }
+      const n = ${n};
+      let result = 0;
+    `,
+    python: n => `
+def increment(value):
+    return value + 1
+
+def benchmark(n):
+    result = 0
+    for _ in range(n):
+        result = increment(result)
+    return result
+
+n = ${n}
+result = 0
+`,
+    invocation: 'result = benchmark(n)',
+  },
+  {
+    id: 'collection-sum',
+    name: 'Collection iteration',
+    units: 'collection elements',
+    iterations: () => 2_000,
+    expected: n => n * (n - 1) / 2,
+    naide: n => `
+      list values = [${Array.from({ length: n }, (_, index) => index).join(', ')}]
+      fn benchmark(list values) -> int:
+        mut int total = 0
+        for value of values:
+          total = total + value
+        ret total
+      mut int result = 0
+    `,
+    javascript: n => `
+      const values = Array.from({ length: ${n} }, (_, index) => index);
+      function benchmark(values) {
+        let total = 0;
+        for (const value of values) total += value;
+        return total;
+      }
+      let result = 0;
+    `,
+    python: n => `
+values = list(range(${n}))
+
+def benchmark(values):
+    total = 0
+    for value in values:
+        total += value
+    return total
+
+result = 0
+`,
+    invocation: 'result = benchmark(values)',
+  },
+  {
+    id: 'mixed-loop',
+    name: 'Mixed arithmetic, branch, and calls',
+    units: 'loop iterations',
+    iterations: base => Math.max(1_000, Math.floor(base / 10)),
+    expected: n => {
+      let total = 0;
+      for (let index = 0; index < n; index++) {
+        total += index % 2 === 0 ? index + 1 : index - 1;
+      }
+      return total;
+    },
+    naide: n => `
+      fn adjust(int value) -> int:
+        if value % 2 == 0:
+          ret value + 1
+        ret value - 1
+      fn benchmark(int n) -> int:
+        mut int total = 0
+        for i in 0..n:
+          total = total + adjust(i)
+        ret total
+      int n = ${n}
+      mut int result = 0
+    `,
+    javascript: n => `
+      function adjust(value) {
+        if (value % 2 === 0) return value + 1;
+        return value - 1;
+      }
+      function benchmark(n) {
+        let total = 0;
+        for (let i = 0; i < n; i++) total += adjust(i);
+        return total;
+      }
+      const n = ${n};
+      let result = 0;
+    `,
+    python: n => `
+def adjust(value):
+    if value % 2 == 0:
+        return value + 1
+    return value - 1
+
+def benchmark(n):
+    total = 0
+    for i in range(n):
+        total += adjust(i)
+    return total
+
+n = ${n}
+result = 0
+`,
+    invocation: 'result = benchmark(n)',
+  },
+];
+
+function dedent(source) {
+  const lines = source.replace(/^\r?\n/, '').replace(/\r?\n[ \t]*$/, '').split(/\r?\n/);
+  const indentation = Math.min(...lines.filter(line => line.trim()).map(line => line.match(/^\s*/)[0].length));
+  return lines.map(line => line.slice(indentation)).join('\n');
+}
 
 function parseOptions(args) {
   const options = { iterations: DEFAULT_ITERATIONS, samples: DEFAULT_SAMPLES, output: null };
@@ -27,8 +250,8 @@ function parseOptions(args) {
     else if (flag === '--json') options.output = value, index++;
     else throw new Error(`Unknown argument: ${flag}`);
   }
-  if (!Number.isSafeInteger(options.iterations) || options.iterations < 1 || options.iterations > 10_000_000) {
-    throw new Error('--iterations must be an integer between 1 and 10000000.');
+  if (!Number.isSafeInteger(options.iterations) || options.iterations < 10_000 || options.iterations > 10_000_000) {
+    throw new Error('--iterations must be an integer between 10000 and 10000000.');
   }
   if (!Number.isSafeInteger(options.samples) || options.samples < 3 || options.samples > 25) {
     throw new Error('--samples must be an integer between 3 and 25.');
@@ -36,63 +259,66 @@ function parseOptions(args) {
   return options;
 }
 
-function runnerSource(engine, mode, iterations, samples) {
-  if (engine === 'naidevm') {
+function runtimeSource(engine, workload, iterations, samples, mode) {
+  const n = mode === 'startup' ? Math.min(iterations, 1_000) : workload.iterations(iterations);
+  const invocation = workload.invocation;
+  const repetitions = mode === 'startup' ? 1 : SAMPLE_REPETITIONS;
+  if (engine.startsWith('naidevm')) {
     const moduleUrl = pathToFileURL(resolve(ROOT, 'src', 'native-engine.js')).href;
-    const naideSource = [
-      'fn sumTo(int n) -> int:',
-      '  mut int total = 0',
-      '  each i in range(0, n):',
-      '    total = total + i',
-      '  ret total',
-      'mut int result = 0',
-    ].join('\n');
-    const operation = `result = sumTo(${iterations})`;
+    const source = dedent(workload.naide(n));
+    const nativeMachineCode = engine !== 'naidevm';
+    const nativeMachineCodeThreshold = engine === 'naidevm-tiered' ? 5 : 0;
     return `
       import { NaideVM } from ${JSON.stringify(moduleUrl)};
       const output = { log() {}, error() {} };
-      const engine = new NaideVM({ output, maxSteps: 100000000 });
-      const setup = engine.parse(${JSON.stringify(naideSource)});
-      await engine.executeAsync(setup);
-      const operation = engine.parse(${JSON.stringify(operation)});
+      const engine = new NaideVM({
+        output,
+        maxSteps: 1000000000,
+        nativeMachineCode: ${nativeMachineCode},
+        nativeMachineCodeThreshold: ${nativeMachineCodeThreshold},
+        nativeMachineCodeDiagnostics: ${nativeMachineCode},
+      });
+      await engine.executeAsync(${JSON.stringify(source)});
+      const operation = engine.parse(${JSON.stringify(invocation)});
       const timings = [];
-      for (let sample = 0; sample < ${mode === 'startup' ? 1 : samples + 1}; sample++) {
+      let result;
+      const sampleCount = ${mode === 'startup' ? 1 : samples + 1};
+      for (let sample = 0; sample < sampleCount; sample++) {
         const started = performance.now();
-        await engine.executeAsync(operation);
+        for (let repetition = 0; repetition < ${repetitions}; repetition++) await engine.executeAsync(operation);
         const elapsedMs = performance.now() - started;
+        result = engine.global.get('result');
         if (sample > 0 || ${mode === 'startup'}) timings.push(elapsedMs);
       }
-      const result = engine.global.get('result');
       const usage = process.resourceUsage();
       console.log(JSON.stringify({
         engine: 'naidevm',
         version: process.version,
         result,
         timings,
+        nativeMachineCodeStats: engine.getNativeMachineCodeStats(),
         maxRssBytes: usage.maxRSS * 1024,
       }));
     `;
   }
   if (engine === 'node' || engine === 'bun') {
     return `
-      function sumTo(n) {
-        let total = 0;
-        for (let i = 0; i < n; i++) total += i;
-        return total;
-      }
+      ${workload.javascript(n)}
       const timings = [];
-      for (let sample = 0; sample < ${mode === 'startup' ? 1 : samples + 1}; sample++) {
+      const sampleCount = ${mode === 'startup' ? 1 : samples + 1};
+      for (let sample = 0; sample < sampleCount; sample++) {
         const started = performance.now();
-        const result = sumTo(${iterations});
+        for (let repetition = 0; repetition < ${repetitions}; repetition++) {
+          result = ${invocation.replace('result = ', '')};
+        }
         const elapsedMs = performance.now() - started;
         if (sample > 0 || ${mode === 'startup'}) timings.push(elapsedMs);
-        globalThis.benchmarkResult = result;
       }
       const usage = process.resourceUsage();
       console.log(JSON.stringify({
         engine: ${JSON.stringify(engine)},
         version: ${engine === 'bun' ? 'Bun.version' : 'process.version'},
-        result: globalThis.benchmarkResult,
+        result,
         timings,
         maxRssBytes: usage.maxRSS * 1024,
       }));
@@ -104,16 +330,13 @@ import sys
 import time
 import platform
 
-def sum_to(n):
-    total = 0
-    for i in range(n):
-        total += i
-    return total
-
+${workload.python(n)}
 timings = []
-for sample in range(${mode === 'startup' ? 1 : samples + 1}):
+sample_count = ${mode === 'startup' ? 1 : samples + 1}
+for sample in range(sample_count):
     started = time.perf_counter_ns()
-    result = sum_to(${iterations})
+    for repetition in range(${repetitions}):
+        ${invocation}
     elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
     if sample > 0 or ${mode === 'startup' ? 'True' : 'False'}:
         timings.append(elapsed_ms)
@@ -146,9 +369,7 @@ if sys.platform == 'win32':
     ]
     psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
     process = kernel32.GetCurrentProcess()
-    ok = psapi.GetProcessMemoryInfo(
-        process, ctypes.byref(counters), counters.cb
-    )
+    ok = psapi.GetProcessMemoryInfo(process, ctypes.byref(counters), counters.cb)
     if not ok:
         raise OSError('GetProcessMemoryInfo failed')
     max_rss_bytes = counters.PeakWorkingSetSize
@@ -168,15 +389,15 @@ print(json.dumps({
 }
 
 function commandFor(engine, source) {
-  if (engine === 'naidevm' || engine === 'node') {
+  if (engine.startsWith('naidevm') || engine === 'node') {
     return { executable: process.execPath, args: ['--input-type=module', '-e', source] };
   }
   if (engine === 'bun') return { executable: 'bun', args: ['-e', source] };
   return { executable: 'python', args: ['-c', source] };
 }
 
-function runEngine(engine, mode, iterations, samples) {
-  const source = runnerSource(engine, mode, iterations, samples);
+function runEngine(engine, workload, mode, iterations, samples) {
+  const source = runtimeSource(engine, workload, iterations, samples, mode);
   const { executable, args } = commandFor(engine, source);
   const started = performance.now();
   const result = spawnSync(executable, args, {
@@ -188,12 +409,13 @@ function runEngine(engine, mode, iterations, samples) {
   const processElapsedMs = performance.now() - started;
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error(`${ENGINE_NAMES[engine]} ${mode} runner failed:\n${result.stderr}`);
+    throw new Error(`${ENGINE_NAMES[engine]} ${workload.id} ${mode} runner failed:\n${result.stderr}`);
   }
   const report = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
-  const expected = iterations * (iterations - 1) / 2;
+  const count = workload.iterations(iterations);
+  const expected = workload.expected(mode === 'startup' ? Math.min(iterations, 1_000) : count);
   if (report.result !== expected) {
-    throw new Error(`${ENGINE_NAMES[engine]} returned ${report.result}; expected ${expected}.`);
+    throw new Error(`${ENGINE_NAMES[engine]} returned ${report.result} for ${workload.id}; expected ${expected}.`);
   }
   return { report, processElapsedMs };
 }
@@ -206,6 +428,9 @@ function median(values) {
 
 function detectRuntimes() {
   const available = ['naidevm', 'node'];
+  if (nativeMachineCodeAvailable) {
+    available.push('naidevm-machine', 'naidevm-tiered');
+  }
   for (const [engine, executable, args] of [
     ['bun', 'bun', ['--version']],
     ['python', 'python', ['--version']],
@@ -216,41 +441,91 @@ function detectRuntimes() {
   return available;
 }
 
+function benchmarkWorkload(engine, workload, options) {
+  const { report } = runEngine(engine, workload, 'throughput', options.iterations, options.samples);
+  const medianMs = median(report.timings);
+  const iterations = workload.iterations(options.iterations);
+  return {
+    id: workload.id,
+    name: workload.name,
+    units: workload.units,
+    iterations,
+    sampleRepetitions: SAMPLE_REPETITIONS,
+    operationsPerSample: iterations * SAMPLE_REPETITIONS,
+    expected: workload.expected(iterations),
+    throughput: {
+      medianMs,
+      operationsPerSecond: Math.round(iterations * SAMPLE_REPETITIONS / (medianMs / 1000)),
+      samplesMs: report.timings,
+    },
+    nativeMachineCodeStats: report.nativeMachineCodeStats,
+    runtimePeakRssBytes: report.maxRssBytes,
+    peakRssBytes: report.maxRssBytes,
+    correctness: {
+      actual: report.result,
+      passed: report.result === workload.expected(iterations),
+    },
+  };
+}
+
 function main() {
   const options = parseOptions(process.argv.slice(2));
   const engines = detectRuntimes();
-  const results = engines.map((engine) => {
-    const startupSamples = Array.from({ length: options.samples }, () => {
-      const { processElapsedMs } = runEngine(engine, 'startup', 1000, 1);
-      return processElapsedMs;
-    });
-    const { report } = runEngine(engine, 'throughput', options.iterations, options.samples);
-    const medianMs = median(report.timings);
+  const results = engines.map(engine => {
+    const startupSamples = Array.from({ length: options.samples }, () =>
+      runEngine(engine, WORKLOADS[0], 'startup', options.iterations, 1));
+    const workloads = WORKLOADS.map(workload => benchmarkWorkload(engine, workload, options));
+    const runtimeVersion = startupSamples[0].report.version;
+    const startupPeakRssBytes = Math.max(...startupSamples.map(sample => sample.report.maxRssBytes));
     return {
       id: engine,
       name: ENGINE_NAMES[engine],
-      version: report.version,
+      version: runtimeVersion,
+      workloads,
       startup: {
-        medianMs: median(startupSamples),
-        samplesMs: startupSamples,
+        medianMs: median(startupSamples.map(sample => sample.processElapsedMs)),
+        samplesMs: startupSamples.map(sample => sample.processElapsedMs),
+        peakRssBytes: startupPeakRssBytes,
       },
-      throughput: {
-        iterations: options.iterations,
-        medianMs,
-        iterationsPerSecond: Math.round(options.iterations / (medianMs / 1000)),
-        samplesMs: report.timings,
-      },
-      peakRssBytes: report.maxRssBytes,
-      correctness: {
-        expected: options.iterations * (options.iterations - 1) / 2,
-        actual: report.result,
-        passed: true,
-      },
+      peakRssBytes: Math.max(startupPeakRssBytes, ...workloads.map(workload => workload.peakRssBytes)),
     };
   });
+  const comparisons = WORKLOADS.map(workload => {
+    const node = results.find(engine => engine.id === 'node')?.workloads.find(item => item.id === workload.id);
+    const python = results.find(engine => engine.id === 'python')?.workloads.find(item => item.id === workload.id);
+    const naidevm = results.find(engine => engine.id === 'naidevm')?.workloads.find(item => item.id === workload.id);
+    const nativeTiers = results.filter(engine => engine.id.startsWith('naidevm-'));
+    return {
+      workload: workload.id,
+      nodeOperationsPerSecond: node?.throughput.operationsPerSecond ?? null,
+      pythonOperationsPerSecond: python?.throughput.operationsPerSecond ?? null,
+      naidevmOperationsPerSecond: naidevm?.throughput.operationsPerSecond ?? null,
+      naidevmBeatsNode: node && naidevm
+        ? naidevm.throughput.operationsPerSecond > node.throughput.operationsPerSecond
+        : null,
+      naidevmBeatsPython: python && naidevm
+        ? naidevm.throughput.operationsPerSecond > python.throughput.operationsPerSecond
+        : null,
+      nativeTiers: Object.fromEntries(nativeTiers.map(engine => {
+        const nativeWorkload = engine.workloads.find(item => item.id === workload.id);
+        return [engine.id, {
+          operationsPerSecond: nativeWorkload?.throughput.operationsPerSecond ?? null,
+          beatsNode: nativeWorkload && node
+            ? nativeWorkload.throughput.operationsPerSecond > node.throughput.operationsPerSecond
+            : null,
+        }];
+      })),
+    };
+  });
+  const engineAcceptance = Object.fromEntries(results
+    .filter(engine => engine.id.startsWith('naidevm'))
+    .map(engine => [engine.id, comparisons.every(comparison => {
+      if (engine.id === 'naidevm') return comparison.naidevmBeatsNode === true;
+      return comparison.nativeTiers[engine.id]?.beatsNode === true;
+    })]));
   const result = {
-    schemaVersion: 1,
-    benchmark: 'sum-integer-range-v1',
+    schemaVersion: 3,
+    benchmark: 'naidevm-representative-workloads-v3',
     generatedAt: new Date().toISOString(),
     host: {
       platform: `${os.type()} ${os.release()}`,
@@ -261,23 +536,18 @@ function main() {
     method: {
       iterations: options.iterations,
       samples: options.samples,
-      startupSamples: options.samples,
-      statistic: 'Median; startup includes process launch and a 1000-iteration correctness run. Throughput excludes process startup and measures the same sumTo loop body.',
-      workloadFeatures: ['integer range loop', 'mutable scalar', 'addition', 'function call', 'deterministic integer result'],
-      peakRss: 'Operating-system process high-water RSS: Node/Bun process.resourceUsage().maxRSS; CPython GetProcessMemoryInfo on Windows or getrusage elsewhere.',
-      limitations: 'Single machine and runtime versions; results vary by hardware, OS, runtime release, power mode, and background load. This microbenchmark is not a general language, application, compiler, or feature-parity ranking.',
+      warmupSamples: 1,
+      sampleRepetitions: SAMPLE_REPETITIONS,
+      statistic: 'Median of independent in-process batches after one warm-up batch. Each runtime executes the same deterministic workload; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.',
+      memory: 'OS process high-water RSS. Node/Bun use process.resourceUsage(); CPython uses GetProcessMemoryInfo on Windows or getrusage elsewhere.',
+      limitations: 'Single host and fixed local runtime versions. Workloads measure only their named constructs and do not establish general language or application performance.',
+      executionPath: 'NaideVM is invoked through executeAsync(); the interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report.',
     },
-    workloadValidation: {
-      requiredFeatures: [
-        'integer range iteration',
-        'mutable scalar assignment',
-        'integer addition',
-        'user-defined function call',
-      ],
-      passed: results.every(engine => engine.correctness.passed),
-      implementationsPassed: results.filter(engine => engine.correctness.passed).length,
-      implementationsMeasured: results.length,
-      scope: 'These features were exercised together by one deterministic fixture. This is not a complete feature-coverage or language-parity score.',
+    acceptance: {
+      baselineEngine: 'node',
+      requirement: 'Every workload must exceed Node.js/V8 independently for a tier to pass; no aggregate-only pass. CPython results remain descriptive.',
+      comparisons,
+      allWorkloadsBeatNodeByEngine: engineAcceptance,
     },
     engines: results,
   };

@@ -64,30 +64,45 @@
       <h1>NaideVM</h1>
       <p>NaideVM is NAIDE's direct AST interpreter. It executes NAIDE source on Node.js without generating JavaScript. The public class is <code>NaideVM</code>; <code>NativeEngine</code> remains as a backwards-compatible alias.</p>
 
+      <h2>Experimental direct native tier</h2>
+      <p>An opt-in Windows x64 tier compiles a conservative scalar-numeric function subset to machine code. Build the Node-API bridge from a source checkout with Visual Studio C++ Build Tools installed:</p>
+      <pre><code>npm install
+npm run build:native-jit</code></pre>
+      <p>Enable direct compilation with <code>new NaideVM({ nativeMachineCode: true })</code>. To compile only after repeated calls, set <code>nativeMachineCodeThreshold</code> to a positive call count; this tier currently considers functions containing range loops and keeps low-benefit leaf helpers on the existing fast tier. The backend uses liveness-based allocation across volatile XMM registers with stack spills, and can inline bounded immutable pure numeric helpers with simple conditional returns. Inlining preserves branch outcomes, source-line step charges, and call-depth checks. The native compiler also recognizes exact zero-initialized accumulator loops (triangular sums and unit increments), applies a closed-form reduction only within safe integer bounds, and still charges the original logical step budget. It supports integer remainder only for guarded range-iterator cases. Set <code>nativeMachineCodeDiagnostics: true</code> and read <code>getNativeMachineCodeStats()</code> for compile, inlining, code-size, native-call, warmup, and fallback counters. Unsupported functions and guarded arguments retain the existing NaideVM fast/interpreter fallback. Both modes are opt-in, Windows x64-only, and experimental.</p>
+
       <h2>Measured runtime comparison</h2>
-      <p>This page compares one identical integer-summation workload on NaideVM, Node.js/V8, Bun/JavaScriptCore, and Python/CPython. Results below are from the included benchmark run; they are measurements, not a general engine ranking.</p>
+      <p>This page compares the default NaideVM fast tier and, when the Windows x64 bridge is available, direct and hotness-tiered native machine code against Node.js/V8, Bun/JavaScriptCore, and Python/CPython. Each implementation must return the expected result before timing is reported. V8 is the performance gate; results are measurements from one host, not a general engine ranking.</p>
       <div id="benchmark-status" class="notice" role="status">Loading the checked-in benchmark measurements…</div>
       <div id="benchmark-content" hidden>
         <p id="benchmark-host" class="meta"></p>
         <p id="benchmark-method" class="meta"></p>
         <h3>Cold process startup — lower is better</h3>
         <div id="startup-chart" class="chart" role="img" aria-label="Median cold process startup time comparison"></div>
-        <h3>Integer-loop throughput — higher is better</h3>
-        <p class="meta">Bars show speed relative to NaideVM on a logarithmic scale; labels show measured iterations per second and the exact ratio.</p>
-        <div id="throughput-chart" class="chart" role="img" aria-label="Integer loop throughput comparison on a logarithmic scale"></div>
-        <h3>Peak resident memory (RSS) — lower is better</h3>
-        <div id="memory-chart" class="chart" role="img" aria-label="Peak process resident memory comparison"></div>
-        <h3>Measured workload coverage</h3>
-        <p>The same single fixture exercised integer range iteration, a mutable scalar, addition, and a function call. Every implementation had to return the exact expected sum. This checks only those constructs in this workload; it is <strong>not</strong> a language feature-coverage or compiler-parity score.</p>
+        <h3>Throughput by workload — higher is better</h3>
+        <p class="meta">Each chart uses a 100% scale relative to the fastest runtime for that workload. Labels show exact operations per second and the ratio to Node.js/V8.</p>
+        <div id="throughput-charts"></div>
+        <h3>Native tier compilation and fallback activity</h3>
+        <p class="meta">Counters are collected by the benchmark runner and their small instrumentation overhead remains included in the measured native-tier timings. Closed-form reductions execute fewer machine instructions for the recognized loop pattern, but preserve its exact result and logical NaideVM step charge. Register allocation and bounded conditional-helper inlining reduce stack traffic and enable the mixed-loop fixture to compile; they do not yet bring it to V8 throughput.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Execution engine</th><th>Runtime version</th><th>Fixture result</th><th>Expected result</th><th>Validation</th></tr></thead>
+            <thead><tr><th>Tier</th><th>Workload</th><th>Compiled functions</th><th>Inlined calls</th><th>Native calls</th><th>Warmup calls</th><th>Allocated values</th><th>Spilled values</th><th>Peak live values</th><th>Skipped leaf functions</th><th>Unsupported candidates</th><th>Compile time</th><th>Code bytes</th></tr></thead>
+            <tbody id="tiering-table"></tbody>
+          </table>
+        </div>
+        <h3>Peak resident memory (RSS) — lower is better</h3>
+        <div id="memory-chart" class="chart" role="img" aria-label="Peak process resident memory comparison"></div>
+        <h3>Correctness by workload</h3>
+        <p>Each implementation must return the exact expected result before its timing is accepted. These fixtures exercise only their listed work patterns; they are <strong>not</strong> a language feature-coverage or compiler-parity score.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Workload</th><th>Execution engine</th><th>Runtime version</th><th>Work units</th><th>Actual</th><th>Expected</th><th>Validation</th></tr></thead>
             <tbody id="correctness-table"></tbody>
           </table>
         </div>
         <h3>Raw measurements</h3>
         <p><a href="naidevm-benchmark.json">Download the exact benchmark JSON</a>. Values are retained unrounded in that file.</p>
-        <p class="meta">Reproduce from the repository root with <code>node benchmark/engines.js --iterations 100000 --samples 7 --json docs/naidevm-benchmark.json</code>. Source: <a href="https://github.com/irxk/naide/blob/main/benchmark/engines.js">benchmark harness</a>.</p>
+        <p class="meta">The earlier single-workload run is preserved as <a href="naidevm-benchmark-v1.json">historical data</a>; its fixture used eager <code>range()</code> allocation and async interpretation, so do not compare its rates directly with this revised suite.</p>
+        <p class="meta">Reproduce from the repository root with <code>node benchmark/engines.js --iterations 100000 --samples 7 --json docs/naidevm-benchmark.json</code>. Build the Windows x64 bridge first to include both native tiers. NaideVM uses its async entry point, which dispatches these verified sync-only fixtures to synchronous execution. Setup and parsing are excluded from throughput; compile cost is reported separately and startup remains a separate measurement. Source: <a href="https://github.com/irxk/naide/blob/main/benchmark/engines.js">benchmark harness</a>.</p>
         <div id="benchmark-limits" class="notice"></div>
       </div>
     </div>
@@ -130,38 +145,97 @@
       })
       .then(data => {
         const engines = data.engines;
-        const baseRate = engines.find(engine => engine.id === 'naidevm').throughput.iterationsPerSecond;
+        const v8 = engines.find(engine => engine.id === 'node');
         document.querySelector('#benchmark-host').textContent =
           `Measured ${data.generatedAt} on ${data.host.platform} (${data.host.architecture}), ${data.host.cpu}; runtimes: ${engines.map(engine => `${engine.name} ${engine.version}`).join(', ')}.`;
         document.querySelector('#benchmark-method').textContent =
-          `${number(data.method.iterations)} loop iterations per sample; ${data.method.samples} throughput samples after one warm-up; medians shown. Startup is separately measured across ${data.method.startupSamples} fresh processes, each running a 1,000-iteration correctness fixture.`;
+          `${number(data.method.iterations)} base iterations; ${data.method.samples} batches of ${number(data.method.sampleRepetitions)} invocations after one warm-up batch; medians shown. Startup is separately measured across ${engines[0].startup.samplesMs.length} fresh processes.`;
         drawLinearChart(document.querySelector('#startup-chart'), engines, engine => engine.startup.medianMs, ms);
-        const throughput = document.querySelector('#throughput-chart');
-        const maximumRatio = Math.max(...engines.map(engine => engine.throughput.iterationsPerSecond / baseRate));
-        for (const engine of engines) {
-          const ratio = engine.throughput.iterationsPerSecond / baseRate;
-          const width = Math.log10(ratio) / Math.log10(maximumRatio || 1);
-          throughput.append(row(engine, ratio === 1 ? 0.005 : width, `${number(engine.throughput.iterationsPerSecond)} iter/s (${ratio.toFixed(2)}× NaideVM)`));
+        const throughputCharts = document.querySelector('#throughput-charts');
+        const workloads = engines.find(engine => engine.id === 'naidevm').workloads;
+        for (const workload of workloads) {
+          const heading = document.createElement('h4');
+          heading.textContent = workload.name;
+          throughputCharts.append(heading);
+          const chart = document.createElement('div');
+          chart.className = 'chart';
+          chart.setAttribute('role', 'img');
+          chart.setAttribute('aria-label', `${workload.name} throughput comparison`);
+          const rates = engines.map(engine => engine.workloads.find(item => item.id === workload.id).throughput.operationsPerSecond);
+          const maximumRate = Math.max(...rates);
+          const v8Rate = v8.workloads
+            .find(item => item.id === workload.id).throughput.operationsPerSecond;
+          for (const engine of engines) {
+            const measurement = engine.workloads.find(item => item.id === workload.id);
+            const rate = measurement.throughput.operationsPerSecond;
+            chart.append(row(engine, rate / maximumRate,
+              `${number(rate)} ops/s (${(rate / v8Rate).toFixed(2)}× V8)`));
+          }
+          const axis = document.createElement('div');
+          axis.className = 'chart-axis';
+          axis.innerHTML = '<span>0</span><span>50%</span><span>100% of fastest</span>';
+          chart.append(axis);
+          throughputCharts.append(chart);
         }
-        const axis = document.createElement('div');
-        axis.className = 'chart-axis';
-        axis.innerHTML = `<span>1×</span><span>${(Math.sqrt(maximumRatio)).toFixed(0)}×</span><span>${maximumRatio.toFixed(0)}× (log scale)</span>`;
-        throughput.append(axis);
+        const tieringTable = document.querySelector('#tiering-table');
+        for (const engine of engines.filter(item => item.id.startsWith('naidevm-'))) {
+          for (const workload of engine.workloads) {
+            const stats = workload.nativeMachineCodeStats;
+            const cells = [
+              engine.name,
+              workload.name,
+              number(stats.compiledFunctions),
+              number(stats.inlinedCalls),
+              number(stats.nativeCalls),
+              number(stats.tieringWarmupCalls),
+              number(stats.allocatedNativeValues),
+              number(stats.spilledNativeValues),
+              number(stats.peakLiveNativeValues),
+              number(stats.skippedLowBenefitFunctions),
+              number(stats.unsupportedFunctions),
+              `${stats.compilationTimeMs.toFixed(3)} ms`,
+              number(stats.generatedCodeBytes),
+            ];
+            const tr = document.createElement('tr');
+            cells.forEach(value => {
+              const td = document.createElement('td');
+              td.textContent = value;
+              tr.append(td);
+            });
+            tieringTable.append(tr);
+          }
+        }
         drawLinearChart(document.querySelector('#memory-chart'), engines, engine => engine.peakRssBytes, mib);
         const table = document.querySelector('#correctness-table');
-        for (const engine of engines) {
-          const cells = [engine.name, engine.version, number(engine.correctness.actual), number(engine.correctness.expected), engine.correctness.passed ? 'PASS' : 'FAIL'];
-          const tr = document.createElement('tr');
-          cells.forEach((value, index) => {
-            const td = document.createElement('td');
-            td.textContent = value;
-            if (index === cells.length - 1) td.className = 'status';
-            tr.append(td);
-          });
-          table.append(tr);
+        for (const workload of workloads) {
+          for (const engine of engines) {
+            const measurement = engine.workloads.find(item => item.id === workload.id);
+            const cells = [
+              workload.name,
+              engine.name,
+              engine.version,
+              number(measurement.operationsPerSample),
+              number(measurement.correctness.actual),
+              number(measurement.expected),
+              measurement.correctness.passed ? 'PASS' : 'FAIL',
+            ];
+            const tr = document.createElement('tr');
+            cells.forEach((value, index) => {
+              const td = document.createElement('td');
+              td.textContent = value;
+              if (index === cells.length - 1) td.className = 'status';
+              tr.append(td);
+            });
+            table.append(tr);
+          }
         }
         document.querySelector('#benchmark-limits').textContent = data.method.limitations;
-        document.querySelector('#benchmark-status').textContent = 'All reported runtimes passed the benchmark result check.';
+        const gates = data.acceptance.allWorkloadsBeatNodeByEngine;
+        const gateSummary = Object.entries(gates)
+          .map(([engine, passed]) => `${engine}: ${passed ? 'PASS' : 'not yet met'}`)
+          .join('; ');
+        document.querySelector('#benchmark-status').textContent =
+          `Exact-result checks passed. Per-workload Node.js/V8 performance gates: ${gateSummary}.`;
         document.querySelector('#benchmark-content').hidden = false;
       })
       .catch(error => {

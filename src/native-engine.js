@@ -23,8 +23,65 @@ import { Lexer } from './lexer.js';
 import { Parser } from './parser.js';
 import { createNativeCacheMiddleware, NativeHttpApp } from './native-server.js';
 import { NATIVE_AST_SUPPORT, NATIVE_SERVER_SUPPORT } from './native-support.js';
+import { compileNativeFunction } from './native-jit.js';
+import { nativeMachineCodeAvailable } from './native-machine-bridge.js';
+import {
+  compileNativeMachineFunction,
+  createTieredNativeMachineFunction,
+} from './native-machine-compiler.js';
 
 const UNINITIALIZED = Symbol('uninitialized');
+const LOOP_SCOPE_CAPTURE_TYPES = new Set([
+  'ArrowFn',
+  'ClassDecl',
+  'Function',
+  'Lambda',
+  'Model',
+  'On',
+  'PromptDecl',
+  'QueueDecl',
+  'WatchDecl',
+]);
+const SYNCHRONOUS_AST_TYPES = new Set([
+  'Program',
+  'Function',
+  'TypedVar',
+  'Return',
+  'If',
+  'For',
+  'ForEach',
+  'Each',
+  'Assignment',
+  'CompoundAssign',
+  'ExprStatement',
+  'Break',
+  'Continue',
+  'AssertStmt',
+  'Number',
+  'String',
+  'Bool',
+  'Null',
+  'Identifier',
+  'Array',
+  'Object',
+  'Binary',
+  'Unary',
+  'Ternary',
+  'Call',
+]);
+const TYPE_ANNOTATION_NAMES = new Set([
+  'any',
+  'auto',
+  'bool',
+  'float',
+  'int',
+  'list',
+  'map',
+  'num',
+  'str',
+  'string',
+  'void',
+]);
 
 class ReturnSignal {
   constructor(value) { this.value = value; }
@@ -61,16 +118,30 @@ class Environment {
   }
 
   get(name) {
-    const { binding } = this.find(name);
-    if (binding.value === UNINITIALIZED) throw new Error(`'${name}' was used before it was initialized.`);
-    return binding.value;
+    let environment = this;
+    while (environment) {
+      const binding = environment.bindings.get(name);
+      if (binding) {
+        if (binding.value === UNINITIALIZED) throw new Error(`'${name}' was used before it was initialized.`);
+        return binding.value;
+      }
+      environment = environment.parent;
+    }
+    throw new Error(`Unknown name '${name}'.`);
   }
 
   assign(name, value) {
-    const { binding } = this.find(name);
-    if (!binding.mutable) throw new Error(`Cannot reassign immutable binding '${name}'. Declare it with 'mut'.`);
-    binding.value = value;
-    return value;
+    let environment = this;
+    while (environment) {
+      const binding = environment.bindings.get(name);
+      if (binding) {
+        if (!binding.mutable) throw new Error(`Cannot reassign immutable binding '${name}'. Declare it with 'mut'.`);
+        binding.value = value;
+        return value;
+      }
+      environment = environment.parent;
+    }
+    throw new Error(`Unknown name '${name}'.`);
   }
 }
 
@@ -91,6 +162,64 @@ function formatValue(value) {
   if (value === null) return 'null';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function canReuseLoopScope(body) {
+  const pending = [body];
+  const visited = new Set();
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || visited.has(value)) continue;
+    visited.add(value);
+    if (LOOP_SCOPE_CAPTURE_TYPES.has(value.type)) return false;
+    if (Array.isArray(value)) pending.push(...value);
+    else pending.push(...Object.values(value));
+  }
+  return true;
+}
+
+function canExecuteSynchronously(ast) {
+  if (ast?.type !== 'Program') return false;
+  const functions = new Map();
+  const names = new Set();
+  const calls = [];
+  const pending = [ast];
+  const visited = new Set();
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object' || visited.has(value)) continue;
+    visited.add(value);
+    if (value.type) {
+      if (TYPE_ANNOTATION_NAMES.has(value.type)) continue;
+      if (!SYNCHRONOUS_AST_TYPES.has(value.type)) return false;
+      if (value.type === 'Function') {
+        if (value.isAsync || value.isGenerator) return false;
+        functions.set(value.name, value);
+        for (const parameter of value.params) names.add(parameter.name);
+      } else if (value.type === 'TypedVar') {
+        names.add(value.name);
+      } else if (value.type === 'For') {
+        names.add(value.varName);
+      } else if (value.type === 'Each') {
+        names.add(value.value);
+        if (value.key) names.add(value.key);
+      } else if (value.type === 'ForEach') {
+        if (value.isAsync) return false;
+        names.add(value.varName);
+      } else if (value.type === 'Call') {
+        if (value.callee.type !== 'Identifier') return false;
+        calls.push(value.callee.name);
+      }
+    }
+    if (Array.isArray(value)) pending.push(...value);
+    else pending.push(...Object.entries(value)
+      .filter(([key]) => key !== '_line')
+      .map(([, child]) => child));
+  }
+  for (const name of calls) {
+    if (!functions.has(name) || names.has(name)) return false;
+  }
+  return true;
 }
 
 function unsupportedNodeError(engineName, kind, node) {
@@ -114,6 +243,9 @@ export class NaideVM {
     output = console,
     maxSteps = 1_000_000,
     maxCallDepth = 512,
+    nativeMachineCode = false,
+    nativeMachineCodeThreshold = 0,
+    nativeMachineCodeDiagnostics = false,
     sourceFile = null,
     moduleLoader = path => readFileSync(path, 'utf8'),
     io = null,
@@ -131,6 +263,23 @@ export class NaideVM {
   } = {}) {
     if (!Number.isSafeInteger(maxSteps) || maxSteps < 1) throw new RangeError('maxSteps must be a positive safe integer.');
     if (!Number.isSafeInteger(maxCallDepth) || maxCallDepth < 1) throw new RangeError('maxCallDepth must be a positive safe integer.');
+    if (typeof nativeMachineCode !== 'boolean') {
+      throw new TypeError('nativeMachineCode must be a boolean.');
+    }
+    if (!Number.isSafeInteger(nativeMachineCodeThreshold)
+      || nativeMachineCodeThreshold < 0
+      || nativeMachineCodeThreshold > 1_000_000) {
+      throw new RangeError('nativeMachineCodeThreshold must be an integer between 0 and 1000000.');
+    }
+    if (typeof nativeMachineCodeDiagnostics !== 'boolean') {
+      throw new TypeError('nativeMachineCodeDiagnostics must be a boolean.');
+    }
+    if (nativeMachineCodeThreshold > 0 && !nativeMachineCode) {
+      throw new TypeError('nativeMachineCodeThreshold requires nativeMachineCode to be enabled.');
+    }
+    if (nativeMachineCode && !nativeMachineCodeAvailable) {
+      throw new Error('Native machine code requires the Windows x64 bridge; build it with npm run build:native-jit.');
+    }
     if (globals && Object.hasOwn(globals, 'io')) {
       throw new TypeError("Pass the native engine I/O capability through the 'io' option, not 'globals.io'.");
     }
@@ -145,8 +294,37 @@ export class NaideVM {
     }
     this.maxSteps = maxSteps;
     this.maxCallDepth = maxCallDepth;
+    this.nativeMachineCode = nativeMachineCode;
+    this.nativeMachineCodeThreshold = nativeMachineCodeThreshold;
+    this.nativeMachineCodeDiagnostics = nativeMachineCodeDiagnostics;
+    this.nativeMachineCodeStats = {
+      compilationAttempts: 0,
+      compiledFunctions: 0,
+      tieredFunctions: 0,
+      inlinedCalls: 0,
+      unsupportedFunctions: 0,
+      skippedLowBenefitFunctions: 0,
+      compilationTimeMs: 0,
+      generatedCodeBytes: 0,
+      allocatedNativeValues: 0,
+      spilledNativeValues: 0,
+      peakLiveNativeValues: 0,
+      nativeCalls: 0,
+      tieringWarmupCalls: 0,
+      guardFallbacks: 0,
+      stepBudgetFallbacks: 0,
+      callDepthFallbacks: 0,
+    };
+    this.nativeFunctionNodes = new WeakMap();
     this.steps = 0;
     this.callDepth = 0;
+    this.nativeArrays = new WeakSet();
+    this.nativeArrayIterator = Array.prototype[Symbol.iterator];
+    this.nativeArrayIteratorPrototype = Object.getPrototypeOf([][Symbol.iterator]());
+    this.nativeArrayIteratorNext = Object.getOwnPropertyDescriptor(
+      this.nativeArrayIteratorPrototype,
+      'next',
+    ).value;
     this.output = output;
     this.sourceFile = sourceFile ? resolve(sourceFile) : null;
     this.moduleLoader = moduleLoader;
@@ -193,6 +371,14 @@ export class NaideVM {
         return engine.scheduleHandles.size;
       },
     }), false);
+  }
+
+  getNativeMachineCodeStats() {
+    return {
+      enabled: this.nativeMachineCodeDiagnostics,
+      threshold: this.nativeMachineCodeThreshold,
+      ...this.nativeMachineCodeStats,
+    };
   }
 
   installGlobals(globals) {
@@ -371,6 +557,15 @@ export class NaideVM {
         if (!completed && typeof iterator.return === 'function') iterator.return();
       }
     }());
+  }
+
+  isFastNativeArray(value) {
+    return this.nativeArrays.has(value)
+      && Object.getPrototypeOf(value) === Array.prototype
+      && !Object.hasOwn(value, Symbol.iterator)
+      && Array.prototype[Symbol.iterator] === this.nativeArrayIterator
+      && Object.getOwnPropertyDescriptor(this.nativeArrayIteratorPrototype, 'next')?.value
+        === this.nativeArrayIteratorNext;
   }
 
   *enumerateIterable(value) {
@@ -1134,6 +1329,16 @@ export class NaideVM {
     }
   }
 
+  tickBatch(nodes) {
+    const stepsRemaining = this.maxSteps - this.steps;
+    if (nodes.length > stepsRemaining) {
+      this.steps = this.maxSteps;
+      this.tick(nodes[stepsRemaining]);
+      return;
+    }
+    this.steps += nodes.length;
+  }
+
   execute(sourceOrAst) {
     const ast = typeof sourceOrAst === 'string' ? this.parse(sourceOrAst) : sourceOrAst;
     if (ast?.type !== 'Program') throw new TypeError('NaideVM.execute expects NAIDE source or a Program AST.');
@@ -1160,6 +1365,7 @@ export class NaideVM {
   async executeAsync(sourceOrAst) {
     const ast = typeof sourceOrAst === 'string' ? this.parse(sourceOrAst) : sourceOrAst;
     if (ast?.type !== 'Program') throw new TypeError('NaideVM.executeAsync expects NAIDE source or a Program AST.');
+    if (canExecuteSynchronously(ast)) return this.execute(ast);
     try {
       await this.executeAsyncStatements(ast.body, this.global);
     } catch (error) {
@@ -4299,19 +4505,44 @@ export class NaideVM {
           : Array.isArray(collection) || typeof collection === 'string'
             ? Array.from(collection, (value, index) => [index, value])
             : Object.entries(collection);
+      const reuseScope = node.key !== node.value && canReuseLoopScope(node.body);
+      const sharedScope = reuseScope ? new Environment(environment) : null;
+      const keyBinding = reuseScope ? { value: undefined, mutable: false } : null;
+      const valueBinding = reuseScope ? { value: undefined, mutable: false } : null;
       for (const [key, value] of entries) {
         this.tick(node);
-        const scope = new Environment(environment);
-        scope.define(node.key, key);
-        scope.define(node.value, value);
+        let scope;
+        if (sharedScope) {
+          sharedScope.bindings.clear();
+          sharedScope.bindings.set(node.key, keyBinding);
+          sharedScope.bindings.set(node.value, valueBinding);
+          keyBinding.value = key;
+          valueBinding.value = value;
+          scope = sharedScope;
+        } else {
+          scope = new Environment(environment);
+          scope.define(node.key, key);
+          scope.define(node.value, value);
+        }
         if (this.loopBody(node.body, scope)) break;
       }
       return;
     }
+    const reuseScope = canReuseLoopScope(node.body);
+    const sharedScope = reuseScope ? new Environment(environment) : null;
+    const loopBinding = reuseScope ? { value: undefined, mutable: false } : null;
     for (const value of this.iterable(collection)) {
       this.tick(node);
-      const scope = new Environment(environment);
-      scope.define(node.value, value);
+      let scope;
+      if (sharedScope) {
+        sharedScope.bindings.clear();
+        sharedScope.bindings.set(node.value, loopBinding);
+        loopBinding.value = value;
+        scope = sharedScope;
+      } else {
+        scope = new Environment(environment);
+        scope.define(node.value, value);
+      }
       if (this.loopBody(node.body, scope)) break;
     }
   }
@@ -4323,10 +4554,21 @@ export class NaideVM {
     const entries = node.iteration === 'in'
       ? Object.keys(iterable)
       : this.iterable(iterable);
+    const reuseScope = canReuseLoopScope(node.body);
+    const sharedScope = reuseScope ? new Environment(environment) : null;
+    const loopBinding = reuseScope ? { value: undefined, mutable: false } : null;
     for (const value of entries) {
       this.tick(node);
-      const scope = new Environment(environment);
-      scope.define(node.varName, value);
+      let scope;
+      if (sharedScope) {
+        sharedScope.bindings.clear();
+        sharedScope.bindings.set(node.varName, loopBinding);
+        loopBinding.value = value;
+        scope = sharedScope;
+      } else {
+        scope = new Environment(environment);
+        scope.define(node.varName, value);
+      }
       if (this.loopBody(node.body, scope)) break;
     }
   }
@@ -4337,10 +4579,21 @@ export class NaideVM {
     if (!Number.isFinite(start) || !Number.isFinite(end)) {
       throw new TypeError('Native range bounds must be finite numbers.');
     }
+    const reuseScope = canReuseLoopScope(node.body);
+    const sharedScope = reuseScope ? new Environment(environment) : null;
+    const loopBinding = reuseScope ? { value: undefined, mutable: true } : null;
     for (let value = start; value < end;) {
       this.tick(node);
-      const scope = new Environment(environment);
-      scope.define(node.varName, value, true);
+      let scope;
+      if (sharedScope) {
+        sharedScope.bindings.clear();
+        sharedScope.bindings.set(node.varName, loopBinding);
+        loopBinding.value = value;
+        scope = sharedScope;
+      } else {
+        scope = new Environment(environment);
+        scope.define(node.varName, value, true);
+      }
       if (this.loopBody(node.body, scope)) break;
       value = scope.get(node.varName) + 1;
     }
@@ -4423,6 +4676,10 @@ export class NaideVM {
 
   createFunction(node, closure) {
     const engine = this;
+    const registerFunctionNode = value => {
+      this.nativeFunctionNodes.set(value, node);
+      return value;
+    };
     if (node.isGenerator) {
       if (node.isAsync) {
         return function naideAsyncGeneratorFunction(...args) {
@@ -4438,9 +4695,28 @@ export class NaideVM {
         return engine.invokeFunctionAsync(node, closure, args, this);
       };
     }
-    return function naideFunction(...args) {
+    if (this.nativeMachineCode && this.nativeMachineCodeThreshold > 0) {
+      const fallbackFunction = compileNativeFunction(node, closure, engine)
+        || function naideFunction(...args) {
+          return engine.invokeFunction(node, closure, args, this);
+        };
+      return registerFunctionNode(createTieredNativeMachineFunction(
+        node,
+        closure,
+        engine,
+        this.nativeMachineCodeThreshold,
+        fallbackFunction,
+      ));
+    }
+    const machineFunction = this.nativeMachineCode
+      ? compileNativeMachineFunction(node, closure, engine)
+      : null;
+    if (machineFunction) return registerFunctionNode(machineFunction);
+    const fastFunction = compileNativeFunction(node, closure, engine);
+    if (fastFunction) return registerFunctionNode(fastFunction);
+    return registerFunctionNode(function naideFunction(...args) {
       return engine.invokeFunction(node, closure, args, this);
-    };
+    });
   }
 
   invokeGeneratorFunction(node, closure, args, receiver = undefined, superPrototype = null) {
@@ -4645,10 +4921,13 @@ export class NaideVM {
         throw new Error('Native dynamic import requires asynchronous execution; use runNativeAsync or async file execution.');
       case 'Identifier': return environment.get(node.name);
       case 'Self': return environment.get('self');
-      case 'Array':
-        return node.elements.flatMap(element => element.type === 'Spread'
+      case 'Array': {
+        const values = node.elements.flatMap(element => element.type === 'Spread'
           ? Array.from(this.evaluate(element.expr, environment))
           : [this.evaluate(element, environment)]);
+        this.nativeArrays.add(values);
+        return values;
+      }
       case 'Object':
         return this.evaluateObject(node.properties, environment);
       case 'Binary':

@@ -16,6 +16,7 @@ import {
 } from '../src/index.js';
 import { NativeEngine, runNative, runNativeAsync } from '../src/native-engine.js';
 import { NaideVM } from '../src/native-engine.js';
+import { isCompiledNativeFunction } from '../src/native-jit.js';
 import { createStore } from '../src/runtime.js';
 import { createNativeCacheMiddleware, createNativeSseHub } from '../src/native-server.js';
 import { NATIVE_AST_SUPPORT, NATIVE_SERVER_SUPPORT } from '../src/native-support.js';
@@ -192,6 +193,134 @@ test('native engine directly evaluates variables, interpolation, functions, and 
   assert.deepEqual(output.lines, ['result=7']);
   assert.equal(result.globals.get('add')(), 7);
   assert.ok(result.steps > 0);
+});
+
+test('native JIT matches interpreter results and step accounting for numeric functions', () => {
+  const source = [
+    'fn increment(int value) -> int:',
+    '  ret value + 1',
+    'fn sum(int n) -> int:',
+    '  mut int total = 0',
+    '  for i in 0..n:',
+    '    total += increment(i)',
+    '  ret total',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  const fastAst = fastEngine.parse(source);
+  fastEngine.execute(fastAst);
+  const fastSum = fastEngine.global.get('sum');
+  assert.ok(isCompiledNativeFunction(fastEngine.global.get('increment')));
+  assert.ok(isCompiledNativeFunction(fastSum));
+  const fastStepsBeforeCall = fastEngine.steps;
+  assert.equal(fastSum(100), 5050);
+  const fastSteps = fastEngine.steps - fastStepsBeforeCall;
+
+  const interpreterEngine = new NaideVM();
+  const interpreterAst = interpreterEngine.parse(source);
+  interpreterEngine.execute(interpreterAst);
+  for (const node of interpreterAst.body.filter(statement => statement.type === 'Function')) {
+    interpreterEngine.global.bindings.get(node.name).value =
+      (...args) => interpreterEngine.invokeFunction(node, interpreterEngine.global, args);
+  }
+  const interpreterStepsBeforeCall = interpreterEngine.steps;
+  assert.equal(interpreterEngine.global.get('sum')(100), 5050);
+  assert.equal(fastSteps, interpreterEngine.steps - interpreterStepsBeforeCall);
+  fastEngine.maxSteps = fastEngine.steps + fastSteps - 1;
+  assert.throws(() => fastSum(100), /Native engine step limit/);
+  assert.equal(fastEngine.steps, fastEngine.maxSteps + 1);
+});
+
+test('native JIT array iteration preserves interpreter results and step accounting', () => {
+  const source = [
+    'fn sumValues(list values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    'fn sumUntilThree(list values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    if value == 3:',
+    '      break',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  const fastAst = fastEngine.parse(source);
+  fastEngine.execute(fastAst);
+  const fastSum = fastEngine.global.get('sumValues');
+  assert.ok(isCompiledNativeFunction(fastSum));
+  const fastStepsBeforeCall = fastEngine.steps;
+  assert.equal(fastSum([1, 2, 3, 4]), 10);
+  const fastSumSteps = fastEngine.steps - fastStepsBeforeCall;
+  const fastUntil = fastEngine.global.get('sumUntilThree');
+  assert.ok(isCompiledNativeFunction(fastUntil));
+  const fastUntilStepsBeforeCall = fastEngine.steps;
+  assert.equal(fastUntil([1, 2, 3, 4]), 3);
+  const fastUntilSteps = fastEngine.steps - fastUntilStepsBeforeCall;
+
+  const interpreterEngine = new NaideVM();
+  const interpreterAst = interpreterEngine.parse(source);
+  interpreterEngine.execute(interpreterAst);
+  for (const node of interpreterAst.body.filter(statement => statement.type === 'Function')) {
+    interpreterEngine.global.bindings.get(node.name).value =
+      (...args) => interpreterEngine.invokeFunction(node, interpreterEngine.global, args);
+  }
+  const interpreterStepsBeforeCall = interpreterEngine.steps;
+  assert.equal(interpreterEngine.global.get('sumValues')([1, 2, 3, 4]), 10);
+  assert.equal(fastSumSteps, interpreterEngine.steps - interpreterStepsBeforeCall);
+  const interpreterUntilStepsBeforeCall = interpreterEngine.steps;
+  assert.equal(interpreterEngine.global.get('sumUntilThree')([1, 2, 3, 4]), 3);
+  assert.equal(fastUntilSteps, interpreterEngine.steps - interpreterUntilStepsBeforeCall);
+  fastEngine.maxSteps = fastEngine.steps + fastSumSteps - 1;
+  assert.throws(() => fastSum([1, 2, 3, 4]), /Native engine step limit/);
+  assert.equal(fastEngine.steps, fastEngine.maxSteps + 1);
+});
+
+test('native JIT uses live captured bindings and falls back for shadowed function calls', () => {
+  const engine = new NaideVM();
+  engine.execute([
+    'mut int base = 4',
+    'fn add(int value) -> int:',
+    '  ret base + value',
+    'fn invoke(int add) -> int:',
+    '  ret add(1)',
+    '',
+  ].join('\n'));
+  const add = engine.global.get('add');
+  assert.ok(isCompiledNativeFunction(add));
+  assert.equal(add(3), 7);
+  engine.global.bindings.get('base').value = 10;
+  assert.equal(add(3), 13);
+  assert.equal(isCompiledNativeFunction(engine.global.get('invoke')), false);
+  assert.throws(() => engine.global.get('invoke')(42), /Value is not callable/);
+});
+
+test('native JIT preserves call-depth enforcement for compiled calls', () => {
+  const engine = new NativeEngine({ maxCallDepth: 1 });
+  engine.execute([
+    'fn inner() -> int:',
+    '  ret 1',
+    'fn outer() -> int:',
+    '  ret inner()',
+    '',
+  ].join('\n'));
+  assert.ok(isCompiledNativeFunction(engine.global.get('inner')));
+  assert.ok(isCompiledNativeFunction(engine.global.get('outer')));
+  assert.throws(() => engine.global.get('outer')(), error =>
+    error instanceof RangeError && /call depth limit \(1\) exceeded/.test(error.message));
+});
+
+test('native loop optimization preserves per-iteration closure captures', () => {
+  const { globals } = runNative([
+    'list callbacks = []',
+    'for i in 0..3:',
+    '  callbacks.push(() => i)',
+    '',
+  ].join('\n'));
+  assert.deepEqual(globals.get('callbacks').map(callback => callback()), [0, 1, 2]);
 });
 
 test('native engine runs conditions, loops, break/continue, and match branches', () => {
@@ -780,6 +909,31 @@ test('native async engine supports async functions, await, and concurrent await_
   assert.deepEqual(globals.get('results'), [10, 20]);
   assert.equal(globals.get('first'), 30);
   assert.equal(peakActive, 2);
+});
+
+test('async execution dispatches statically synchronous programs through the synchronous interpreter', async () => {
+  const source = [
+    'fn sumTo(int n) -> int:',
+    '  mut int total = 0',
+    '  for i in 0..n:',
+    '    total = total + i',
+    '  ret total',
+    'mut int result = sumTo(100)',
+    '',
+  ].join('\n');
+  const engine = new NaideVM();
+  let synchronousDispatches = 0;
+  const execute = engine.execute.bind(engine);
+  engine.execute = ast => {
+    synchronousDispatches++;
+    return execute(ast);
+  };
+
+  const result = await engine.executeAsync(source);
+  assert.equal(synchronousDispatches, 1);
+  assert.equal(result.globals.get('result'), 4950);
+  const reference = new NaideVM().execute(source);
+  assert.equal(result.steps, reference.steps);
 });
 
 test('native engine exposes project-scoped asynchronous file I/O', async () => {

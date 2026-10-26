@@ -26,6 +26,7 @@
     "mcp/",
     "lsp/",
     "benchmark/",
+    "native/",
     "examples/",
     "docs/",
     "vscode-naide/",
@@ -41,6 +42,7 @@
     "test:onboarding": "node --test test/onboarding.js",
     "test:features": "node --test test/project-tools.js test/mcp.js test/lsp.js test/security.js test/onboarding.js test/onboarding-integration.js test/native-meld.js",
     "benchmark:engines": "node benchmark/engines.js",
+    "build:native-jit": "node-gyp rebuild --directory native",
     "example": "node bin/naide.js examples/hello.naide",
     "postinstall": "node bin/postinstall.js"
   },
@@ -106,6 +108,7 @@
   },
   "devDependencies": {
     "express": "^4.22.3",
+    "node-gyp": "^12.4.0",
     "typescript": "^7.0.2"
   },
   "optionalDependencies": {

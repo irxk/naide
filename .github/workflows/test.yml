@@ -53,6 +53,20 @@ jobs:
             echo "::endgroup::"
           done
 
+  native-bridge:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        node-version: [24, 26]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npm run build:native-jit
+      - run: node --test test/native-bridge.js test/native-machine-jit.js
+
   runtime-targets:
     runs-on: ubuntu-24.04
     steps:

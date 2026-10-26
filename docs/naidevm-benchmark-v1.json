@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "sum-integer-range-v1",
+  "generatedAt": "2026-10-25T12:57:47.974Z",
+  "host": {
+    "platform": "Windows_NT 10.0.26200",
+    "architecture": "x64",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12400F",
+    "logicalCpus": 12
+  },
+  "method": {
+    "iterations": 100000,
+    "samples": 7,
+    "startupSamples": 7,
+    "statistic": "Median; startup includes process launch and a 1000-iteration correctness run. Throughput excludes process startup and measures the same sumTo loop body.",
+    "workloadFeatures": [
+      "integer range loop",
+      "mutable scalar",
+      "addition",
+      "function call",
+      "deterministic integer result"
+    ],
+    "peakRss": "Operating-system process high-water RSS: Node/Bun process.resourceUsage().maxRSS; CPython GetProcessMemoryInfo on Windows or getrusage elsewhere.",
+    "limitations": "Single machine and runtime versions; results vary by hardware, OS, runtime release, power mode, and background load. This microbenchmark is not a general language, application, compiler, or feature-parity ranking."
+  },
+  "workloadValidation": {
+    "requiredFeatures": [
+      "integer range iteration",
+      "mutable scalar assignment",
+      "integer addition",
+      "user-defined function call"
+    ],
+    "passed": true,
+    "implementationsPassed": 4,
+    "implementationsMeasured": 4,
+    "scope": "These features were exercised together by one deterministic fixture. This is not a complete feature-coverage or language-parity score."
+  },
+  "engines": [
+    {
+      "id": "naidevm",
+      "name": "NaideVM",
+      "version": "v24.14.1",
+      "startup": {
+        "medianMs": 94.70620000000002,
+        "samplesMs": [
+          122.5216,
+          111.15350000000004,
+          93.24959999999999,
+          94.70620000000002,
+          96.60109999999997,
+          88.06299999999999,
+          90.41480000000001
+        ]
+      },
+      "throughput": {
+        "iterations": 100000,
+        "medianMs": 14.617799999999988,
+        "iterationsPerSecond": 6840975,
+        "samplesMs": [
+          15.841399999999993,
+          14.617799999999988,
+          13.489099999999993,
+          17.320399999999992,
+          13.644300000000015,
+          13.393699999999995,
+          15.186599999999999
+        ]
+      },
+      "peakRssBytes": 95436800,
+      "correctness": {
+        "expected": 4999950000,
+        "actual": 4999950000,
+        "passed": true
+      }
+    },
+    {
+      "id": "node",
+      "name": "Node.js / V8",
+      "version": "v24.14.1",
+      "startup": {
+        "medianMs": 52.71119999999996,
+        "samplesMs": [
+          58.52240000000006,
+          52.14859999999999,
+          91.1078,
+          54.246200000000044,
+          51.75710000000004,
+          51.51940000000013,
+          52.71119999999996
+        ]
+      },
+      "throughput": {
+        "iterations": 100000,
+        "medianMs": 0.08129999999999882,
+        "iterationsPerSecond": 1230012300,
+        "samplesMs": [
+          0.8609000000000009,
+          0.2472999999999992,
+          0.08070000000000022,
+          0.08129999999999882,
+          0.08019999999999783,
+          0.08019999999999783,
+          0.10769999999999769
+        ]
+      },
+      "peakRssBytes": 59682816,
+      "correctness": {
+        "expected": 4999950000,
+        "actual": 4999950000,
+        "passed": true
+      }
+    },
+    {
+      "id": "bun",
+      "name": "Bun / JavaScriptCore",
+      "version": "1.3.13",
+      "startup": {
+        "medianMs": 77.2349999999999,
+        "samplesMs": [
+          77.75189999999998,
+          78.15160000000014,
+          75.97350000000006,
+          79.03420000000006,
+          77.2349999999999,
+          72.75849999999991,
+          75.5110000000002
+        ]
+      },
+      "throughput": {
+        "iterations": 100000,
+        "medianMs": 0.16870000000000118,
+        "iterationsPerSecond": 592768228,
+        "samplesMs": [
+          0.16870000000000118,
+          0.16839999999999833,
+          0.1676000000000002,
+          0.16769999999999996,
+          0.17450000000000188,
+          0.37569999999999837,
+          0.26500000000000057
+        ]
+      },
+      "peakRssBytes": 137236480,
+      "correctness": {
+        "expected": 4999950000,
+        "actual": 4999950000,
+        "passed": true
+      }
+    },
+    {
+      "id": "python",
+      "name": "Python / CPython",
+      "version": "3.13.7",
+      "startup": {
+        "medianMs": 77.2471999999998,
+        "samplesMs": [
+          86.34249999999975,
+          77.2471999999998,
+          77.1875,
+          78.64180000000033,
+          78.00979999999981,
+          76.78520000000026,
+          73.45850000000019
+        ]
+      },
+      "throughput": {
+        "iterations": 100000,
+        "medianMs": 2.3857,
+        "iterationsPerSecond": 41916419,
+        "samplesMs": [
+          2.4463,
+          2.6812,
+          2.3205,
+          2.3857,
+          2.3338,
+          2.3845,
+          2.5497
+        ]
+      },
+      "peakRssBytes": 19763200,
+      "correctness": {
+        "expected": 4999950000,
+        "actual": 4999950000,
+        "passed": true
+      }
+    }
+  ]
+}
