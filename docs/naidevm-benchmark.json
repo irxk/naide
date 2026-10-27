@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 3,
-  "benchmark": "naidevm-representative-workloads-v3",
-  "generatedAt": "2026-10-25T22:55:26.385Z",
+  "schemaVersion": 4,
+  "benchmark": "naidevm-representative-workloads-v6",
+  "generatedAt": "2026-10-26T14:57:22.578Z",
   "host": {
     "platform": "Windows_NT 10.0.26200",
     "architecture": "x64",
@@ -12,11 +12,11 @@
     "iterations": 100000,
     "samples": 7,
     "warmupSamples": 1,
-    "sampleRepetitions": 5,
-    "statistic": "Median of independent in-process batches after one warm-up batch. Each runtime executes the same deterministic workload; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.",
+    "statistic": "Median of independent in-process batches targeted at a minimum duration after one warm-up batch. Each runtime repeatedly invokes the same deterministic benchmark function; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.",
+    "targetSampleDurationMs": 25,
     "memory": "OS process high-water RSS. Node/Bun use process.resourceUsage(); CPython uses GetProcessMemoryInfo on Windows or getrusage elsewhere.",
     "limitations": "Single host and fixed local runtime versions. Workloads measure only their named constructs and do not establish general language or application performance.",
-    "executionPath": "NaideVM is invoked through executeAsync(); the interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report."
+    "executionPath": "The NaideVM benchmark function is obtained once from the VM global environment and invoked directly, matching Node and CPython function-call measurements; setup and parsing are excluded from steady-state timing. The interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report."
   },
   "acceptance": {
     "baselineEngine": "node",
@@ -24,99 +24,171 @@
     "comparisons": [
       {
         "workload": "integer-sum",
-        "nodeOperationsPerSecond": 1992031873,
-        "pythonOperationsPerSecond": 34977020,
-        "naidevmOperationsPerSecond": 146352886,
+        "nodeOperationsPerSecond": 1961817224,
+        "pythonOperationsPerSecond": 37748527,
+        "naidevmOperationsPerSecond": 236902792,
         "naidevmBeatsNode": false,
         "naidevmBeatsPython": true,
         "nativeTiers": {
           "naidevm-machine": {
-            "operationsPerSecond": 4310344828,
+            "operationsPerSecond": 95143706640,
             "beatsNode": true
           },
           "naidevm-tiered": {
-            "operationsPerSecond": 5617977528,
+            "operationsPerSecond": 102579132474,
             "beatsNode": true
           }
         }
       },
       {
         "workload": "branch-count",
-        "nodeOperationsPerSecond": 853679358,
-        "pythonOperationsPerSecond": 28623933,
-        "naidevmOperationsPerSecond": 92936803,
+        "nodeOperationsPerSecond": 903086751,
+        "pythonOperationsPerSecond": 29290725,
+        "naidevmOperationsPerSecond": 89986052,
         "naidevmBeatsNode": false,
         "naidevmBeatsPython": true,
         "nativeTiers": {
           "naidevm-machine": {
-            "operationsPerSecond": 271032090,
-            "beatsNode": false
+            "operationsPerSecond": 86273833146,
+            "beatsNode": true
           },
           "naidevm-tiered": {
-            "operationsPerSecond": 281293952,
-            "beatsNode": false
+            "operationsPerSecond": 85090960661,
+            "beatsNode": true
           }
         }
       },
       {
         "workload": "function-calls",
-        "nodeOperationsPerSecond": 976562500,
-        "pythonOperationsPerSecond": 25032542,
-        "naidevmOperationsPerSecond": 47874378,
+        "nodeOperationsPerSecond": 1531763021,
+        "pythonOperationsPerSecond": 23207625,
+        "naidevmOperationsPerSecond": 91937115,
         "naidevmBeatsNode": false,
         "naidevmBeatsPython": true,
         "nativeTiers": {
           "naidevm-machine": {
-            "operationsPerSecond": 508646999,
-            "beatsNode": false
+            "operationsPerSecond": 10460798159,
+            "beatsNode": true
           },
           "naidevm-tiered": {
-            "operationsPerSecond": 401284109,
-            "beatsNode": false
+            "operationsPerSecond": 10297965186,
+            "beatsNode": true
           }
         }
       },
       {
         "workload": "collection-sum",
-        "nodeOperationsPerSecond": 42936883,
-        "pythonOperationsPerSecond": 66093853,
-        "naidevmOperationsPerSecond": 110741971,
+        "nodeOperationsPerSecond": 1466243411,
+        "pythonOperationsPerSecond": 54483480,
+        "naidevmOperationsPerSecond": 280309649,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 9644736144,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 8596234849,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "collection-helper-sum",
+        "nodeOperationsPerSecond": 2427380856,
+        "pythonOperationsPerSecond": 365507930,
+        "naidevmOperationsPerSecond": 184731908,
+        "naidevmBeatsNode": false,
+        "naidevmBeatsPython": false,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 7319545749,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 7648914810,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "string-iteration",
+        "nodeOperationsPerSecond": 233377675,
+        "pythonOperationsPerSecond": 51112724,
+        "naidevmOperationsPerSecond": 684162215,
         "naidevmBeatsNode": true,
         "naidevmBeatsPython": true,
         "nativeTiers": {
           "naidevm-machine": {
-            "operationsPerSecond": 47869794,
+            "operationsPerSecond": 626535011,
             "beatsNode": true
           },
           "naidevm-tiered": {
-            "operationsPerSecond": 105932203,
+            "operationsPerSecond": 672861478,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "map-iteration",
+        "nodeOperationsPerSecond": 152513200,
+        "pythonOperationsPerSecond": 50614171,
+        "naidevmOperationsPerSecond": 163563726,
+        "naidevmBeatsNode": true,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 162623772,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 155059194,
+            "beatsNode": true
+          }
+        }
+      },
+      {
+        "workload": "set-iteration",
+        "nodeOperationsPerSecond": 501295012,
+        "pythonOperationsPerSecond": 47570021,
+        "naidevmOperationsPerSecond": 553683797,
+        "naidevmBeatsNode": true,
+        "naidevmBeatsPython": true,
+        "nativeTiers": {
+          "naidevm-machine": {
+            "operationsPerSecond": 542346407,
+            "beatsNode": true
+          },
+          "naidevm-tiered": {
+            "operationsPerSecond": 540796323,
             "beatsNode": true
           }
         }
       },
       {
         "workload": "mixed-loop",
-        "nodeOperationsPerSecond": 564334086,
-        "pythonOperationsPerSecond": 15552583,
-        "naidevmOperationsPerSecond": 25241052,
+        "nodeOperationsPerSecond": 1044073837,
+        "pythonOperationsPerSecond": 14931576,
+        "naidevmOperationsPerSecond": 40562055,
         "naidevmBeatsNode": false,
         "naidevmBeatsPython": true,
         "nativeTiers": {
           "naidevm-machine": {
-            "operationsPerSecond": 173370319,
-            "beatsNode": false
+            "operationsPerSecond": 8026469513,
+            "beatsNode": true
           },
           "naidevm-tiered": {
-            "operationsPerSecond": 175131349,
-            "beatsNode": false
+            "operationsPerSecond": 7763020850,
+            "beatsNode": true
           }
         }
       }
     ],
     "allWorkloadsBeatNodeByEngine": {
       "naidevm": false,
-      "naidevm-machine": false,
-      "naidevm-tiered": false
+      "naidevm-machine": true,
+      "naidevm-tiered": true
     }
   },
   "engines": [
@@ -130,20 +202,20 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 64,
+          "operationsPerSample": 6400000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 3.416399999999996,
-            "operationsPerSecond": 146352886,
+            "medianMs": 27.015299999999968,
+            "operationsPerSecond": 236902792,
             "samplesMs": [
-              3.416399999999996,
-              3.405000000000001,
-              3.269199999999998,
-              3.4699000000000098,
-              3.3774999999999977,
-              3.4221999999999895,
-              3.4377999999999957
+              38.35669999999999,
+              26.574299999999994,
+              27.12360000000001,
+              25.974900000000048,
+              27.056500000000028,
+              25.69470000000001,
+              27.015299999999968
             ]
           },
           "nativeMachineCodeStats": {
@@ -166,8 +238,8 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 73072640,
-          "peakRssBytes": 73072640,
+          "runtimePeakRssBytes": 73101312,
+          "peakRssBytes": 73101312,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -178,20 +250,20 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 24,
+          "operationsPerSample": 2400000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 5.38000000000001,
-            "operationsPerSecond": 92936803,
+            "medianMs": 26.670799999999986,
+            "operationsPerSecond": 89986052,
             "samplesMs": [
-              5.290099999999995,
-              5.5809,
-              5.271000000000001,
-              6.366399999999999,
-              6.3004999999999995,
-              5.293300000000002,
-              5.38000000000001
+              28.792299999999983,
+              29.11669999999998,
+              25.753500000000003,
+              26.670799999999986,
+              25.669899999999984,
+              26.486200000000053,
+              27.739000000000033
             ]
           },
           "nativeMachineCodeStats": {
@@ -214,8 +286,8 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71176192,
-          "peakRssBytes": 71176192,
+          "runtimePeakRssBytes": 71409664,
+          "peakRssBytes": 71409664,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -226,20 +298,20 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 200,
+          "operationsPerSample": 2000000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 1.044399999999996,
-            "operationsPerSecond": 47874378,
+            "medianMs": 21.753999999999962,
+            "operationsPerSecond": 91937115,
             "samplesMs": [
-              1.1029000000000053,
-              1.044399999999996,
-              1.2254000000000076,
-              1.1768,
-              0.7104999999999961,
-              0.6099000000000103,
-              0.6056999999999988
+              22.288600000000002,
+              20.907999999999987,
+              21.686800000000005,
+              23.603100000000012,
+              21.2509,
+              21.777800000000013,
+              21.753999999999962
             ]
           },
           "nativeMachineCodeStats": {
@@ -262,8 +334,8 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71745536,
-          "peakRssBytes": 71745536,
+          "runtimePeakRssBytes": 71344128,
+          "peakRssBytes": 71344128,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -274,20 +346,20 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 6000,
+          "operationsPerSample": 12000000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.09029999999999916,
-            "operationsPerSecond": 110741971,
+            "medianMs": 42.809799999999996,
+            "operationsPerSecond": 280309649,
             "samplesMs": [
-              0.529900000000012,
-              0.12340000000000373,
-              0.08339999999999748,
-              0.08240000000000691,
-              0.09100000000000819,
-              0.09029999999999916,
-              0.08270000000000266
+              43.170500000000004,
+              40.39269999999999,
+              40.51840000000004,
+              44.218800000000044,
+              39.93549999999999,
+              42.809799999999996,
+              45.471600000000024
             ]
           },
           "nativeMachineCodeStats": {
@@ -310,8 +382,200 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 79958016,
-          "peakRssBytes": 79958016,
+          "runtimePeakRssBytes": 78221312,
+          "peakRssBytes": 78221312,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 3000,
+          "operationsPerSample": 6000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 32.47950000000003,
+            "operationsPerSecond": 184731908,
+            "samplesMs": [
+              30.356700000000018,
+              29.375699999999995,
+              37.586899999999986,
+              33.180499999999995,
+              29.7577,
+              35.793000000000006,
+              32.47950000000003
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 86548480,
+          "peakRssBytes": 86548480,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 12000,
+          "operationsPerSample": 24000000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 35.07939999999999,
+            "operationsPerSecond": 684162215,
+            "samplesMs": [
+              39.42339999999999,
+              36.77770000000001,
+              35.07939999999999,
+              34.79669999999999,
+              34.98719999999997,
+              34.877700000000004,
+              35.35480000000001
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 78041088,
+          "peakRssBytes": 78041088,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 4000,
+          "operationsPerSample": 8000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 48.910600000000045,
+            "operationsPerSecond": 163563726,
+            "samplesMs": [
+              51.3219,
+              47.643399999999986,
+              47.60200000000003,
+              46.89300000000003,
+              49.94250000000005,
+              49.03680000000003,
+              48.910600000000045
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 81342464,
+          "peakRssBytes": 81342464,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 10000,
+          "operationsPerSample": 20000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 36.121699999999976,
+            "operationsPerSecond": 553683797,
+            "samplesMs": [
+              37.49090000000001,
+              35.50110000000001,
+              36.11189999999999,
+              36.121699999999976,
+              37.21430000000004,
+              41.41289999999998,
+              34.45749999999998
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": false,
+            "threshold": 0,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 79077376,
+          "peakRssBytes": 79077376,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -322,20 +586,20 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 120,
+          "operationsPerSample": 1200000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 1.9808999999999912,
-            "operationsPerSecond": 25241052,
+            "medianMs": 29.584299999999985,
+            "operationsPerSecond": 40562055,
             "samplesMs": [
-              3.246700000000004,
-              3.2309999999999945,
-              2.401200000000003,
-              1.9649999999999892,
-              1.9350999999999914,
-              1.9565999999999946,
-              1.9808999999999912
+              28.226200000000006,
+              29.584299999999985,
+              31.531000000000006,
+              26.834599999999995,
+              27.29079999999999,
+              32.16919999999999,
+              29.689200000000028
             ]
           },
           "nativeMachineCodeStats": {
@@ -358,8 +622,8 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71655424,
-          "peakRssBytes": 71655424,
+          "runtimePeakRssBytes": 71786496,
+          "peakRssBytes": 71786496,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -367,19 +631,19 @@
         }
       ],
       "startup": {
-        "medianMs": 131.72410000000002,
+        "medianMs": 109.69999999999993,
         "samplesMs": [
-          150.2284,
-          145.48880000000003,
-          150.14930000000004,
-          128.3831,
-          130.2618,
-          131.72410000000002,
-          111.3830999999999
+          108.67639999999999,
+          115.90209999999999,
+          111.16389999999996,
+          108.86679999999996,
+          109.16879999999992,
+          109.69999999999993,
+          111.23629999999991
         ],
-        "peakRssBytes": 70254592
+        "peakRssBytes": 70410240
       },
-      "peakRssBytes": 79958016
+      "peakRssBytes": 86548480
     },
     {
       "id": "node",
@@ -391,24 +655,24 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 540,
+          "operationsPerSample": 54000000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 0.2510000000000012,
-            "operationsPerSecond": 1992031873,
+            "medianMs": 27.525499999999994,
+            "operationsPerSecond": 1961817224,
             "samplesMs": [
-              0.3825000000000003,
-              0.36629999999999896,
-              0.25099999999999767,
-              0.252200000000002,
-              0.2510000000000012,
-              0.25090000000000146,
-              0.25099999999999767
+              29.0715,
+              28.24220000000001,
+              27.053200000000004,
+              26.817000000000007,
+              27.525499999999994,
+              29.55279999999999,
+              27.158799999999985
             ]
           },
-          "runtimePeakRssBytes": 60755968,
-          "peakRssBytes": 60755968,
+          "runtimePeakRssBytes": 60547072,
+          "peakRssBytes": 60547072,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -419,24 +683,24 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 300,
+          "operationsPerSample": 30000000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 0.5856999999999992,
-            "operationsPerSecond": 853679358,
+            "medianMs": 33.21940000000001,
+            "operationsPerSecond": 903086751,
             "samplesMs": [
-              0.5853999999999999,
-              0.5852000000000004,
-              0.5851000000000006,
-              0.5862999999999978,
-              0.5856999999999992,
-              0.7809000000000026,
-              0.6207000000000029
+              32.489599999999996,
+              33.21940000000001,
+              34.961299999999994,
+              32.349999999999994,
+              34.34679999999997,
+              31.75659999999999,
+              34.002200000000016
             ]
           },
-          "runtimePeakRssBytes": 58626048,
-          "peakRssBytes": 58626048,
+          "runtimePeakRssBytes": 58503168,
+          "peakRssBytes": 58503168,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -447,24 +711,24 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 4000,
+          "operationsPerSample": 40000000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 0.051199999999997914,
-            "operationsPerSecond": 976562500,
+            "medianMs": 26.113699999999994,
+            "operationsPerSecond": 1531763021,
             "samplesMs": [
-              0.05249999999999844,
-              0.051199999999997914,
-              0.050799999999998846,
-              0.051600000000000534,
-              0.05100000000000193,
-              0.05109999999999815,
-              0.08429999999999893
+              25.980800000000002,
+              26.22019999999999,
+              25.603700000000003,
+              27.236400000000003,
+              26.7209,
+              26.113699999999994,
+              21.68470000000002
             ]
           },
-          "runtimePeakRssBytes": 58761216,
-          "peakRssBytes": 58761216,
+          "runtimePeakRssBytes": 59469824,
+          "peakRssBytes": 59469824,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -475,24 +739,136 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 20000,
+          "operationsPerSample": 40000000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.23290000000000077,
-            "operationsPerSecond": 42936883,
+            "medianMs": 27.280600000000007,
+            "operationsPerSecond": 1466243411,
             "samplesMs": [
-              0.41589999999999705,
-              0.6155000000000008,
-              0.1919000000000004,
-              0.3724999999999987,
-              0.10730000000000217,
-              0.23290000000000077,
-              0.10379999999999967
+              27.280600000000007,
+              27.274,
+              25.19070000000002,
+              28.89519999999999,
+              26.449400000000026,
+              28.55030000000002,
+              29.176600000000008
             ]
           },
-          "runtimePeakRssBytes": 60674048,
-          "peakRssBytes": 60674048,
+          "runtimePeakRssBytes": 61747200,
+          "peakRssBytes": 61747200,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 3000,
+          "operationsPerSample": 6000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 2.4717999999999734,
+            "operationsPerSecond": 2427380856,
+            "samplesMs": [
+              29.051299999999998,
+              12.886899999999983,
+              2.3526999999999987,
+              2.4717999999999734,
+              2.382300000000015,
+              2.495900000000006,
+              2.3623999999999796
+            ]
+          },
+          "runtimePeakRssBytes": 59195392,
+          "peakRssBytes": 59195392,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 3000,
+          "operationsPerSample": 6000000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 25.709399999999988,
+            "operationsPerSecond": 233377675,
+            "samplesMs": [
+              26.304000000000002,
+              25.596099999999993,
+              24.839799999999997,
+              24.852199999999982,
+              26.10300000000001,
+              25.709399999999988,
+              26.4923
+            ]
+          },
+          "runtimePeakRssBytes": 60796928,
+          "peakRssBytes": 60796928,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 2100,
+          "operationsPerSample": 4200000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 27.538600000000002,
+            "operationsPerSecond": 152513200,
+            "samplesMs": [
+              26.866299999999995,
+              28.196299999999994,
+              27.538600000000002,
+              26.65010000000001,
+              28.872600000000006,
+              24.768999999999977,
+              28.176300000000026
+            ]
+          },
+          "runtimePeakRssBytes": 61546496,
+          "peakRssBytes": 61546496,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 6000,
+          "operationsPerSample": 12000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 23.937999999999988,
+            "operationsPerSecond": 501295012,
+            "samplesMs": [
+              23.377399999999994,
+              23.3519,
+              24.005899999999997,
+              23.937999999999988,
+              25.3596,
+              24.430300000000017,
+              23.399399999999986
+            ]
+          },
+          "runtimePeakRssBytes": 60837888,
+          "peakRssBytes": 60837888,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -503,24 +879,24 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 3000,
+          "operationsPerSample": 30000000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 0.08859999999999957,
-            "operationsPerSecond": 564334086,
+            "medianMs": 28.733599999999967,
+            "operationsPerSecond": 1044073837,
             "samplesMs": [
-              0.33699999999999974,
-              0.3725000000000023,
-              0.08520000000000039,
-              0.08859999999999957,
-              0.09100000000000108,
-              0.08689999999999998,
-              0.08040000000000092
+              28.39649999999999,
+              30.039599999999993,
+              28.467600000000004,
+              28.7363,
+              30.047799999999995,
+              28.733599999999967,
+              27.92810000000003
             ]
           },
-          "runtimePeakRssBytes": 58748928,
-          "peakRssBytes": 58748928,
+          "runtimePeakRssBytes": 58609664,
+          "peakRssBytes": 58609664,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -528,19 +904,19 @@
         }
       ],
       "startup": {
-        "medianMs": 59.826200000000426,
+        "medianMs": 52.020799999999326,
         "samplesMs": [
-          57.74649999999997,
-          61.761200000000144,
-          64.86199999999985,
-          62.955700000000206,
-          59.826200000000426,
-          53.845800000000054,
-          56.35829999999987
+          54.63010000000031,
+          50.950299999999515,
+          52.020799999999326,
+          52.94509999999991,
+          49.840000000000146,
+          54.84740000000056,
+          50.07380000000012
         ],
-        "peakRssBytes": 58441728
+        "peakRssBytes": 58294272
       },
-      "peakRssBytes": 60755968
+      "peakRssBytes": 61747200
     },
     {
       "id": "naidevm-machine",
@@ -552,20 +928,20 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 36000,
+          "operationsPerSample": 3600000000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 0.11599999999999966,
-            "operationsPerSecond": 4310344828,
+            "medianMs": 37.837500000000034,
+            "operationsPerSecond": 95143706640,
             "samplesMs": [
-              0.16540000000000532,
-              0.11599999999999966,
-              0.09210000000000207,
-              0.11260000000000048,
-              0.07609999999999673,
-              0.1414000000000044,
-              0.11909999999998888
+              38.53750000000002,
+              37.58110000000002,
+              37.90920000000003,
+              37.837500000000034,
+              34.7285,
+              35.49430000000001,
+              37.95790000000005
             ]
           },
           "nativeMachineCodeStats": {
@@ -577,19 +953,19 @@
             "inlinedCalls": 0,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 3.267399999999995,
+            "compilationTimeMs": 3.3504999999999967,
             "generatedCodeBytes": 114,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 40,
+            "nativeCalls": 352111,
             "tieringWarmupCalls": 0,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71241728,
-          "peakRssBytes": 71241728,
+          "runtimePeakRssBytes": 78585856,
+          "peakRssBytes": 78585856,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -600,20 +976,20 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 28000,
+          "operationsPerSample": 2800000000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 1.8447999999999922,
-            "operationsPerSecond": 271032090,
+            "medianMs": 32.454800000000034,
+            "operationsPerSecond": 86273833146,
             "samplesMs": [
-              2.355800000000002,
-              1.731800000000007,
-              1.6753000000000071,
-              1.8447999999999922,
-              1.772599999999997,
-              3.023600000000002,
-              2.715199999999996
+              34.2937,
+              37.865700000000004,
+              31.419500000000028,
+              32.454800000000034,
+              33.639999999999986,
+              29.977800000000002,
+              30.79570000000001
             ]
           },
           "nativeMachineCodeStats": {
@@ -625,19 +1001,19 @@
             "inlinedCalls": 0,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 3.4069000000000074,
-            "generatedCodeBytes": 653,
+            "compilationTimeMs": 3.6373999999999995,
+            "generatedCodeBytes": 153,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 40,
+            "nativeCalls": 274111,
             "tieringWarmupCalls": 0,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71577600,
-          "peakRssBytes": 71577600,
+          "runtimePeakRssBytes": 82403328,
+          "peakRssBytes": 82403328,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -648,20 +1024,20 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 32000,
+          "operationsPerSample": 320000000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 0.09829999999999472,
-            "operationsPerSecond": 508646999,
+            "medianMs": 30.590400000000017,
+            "operationsPerSecond": 10460798159,
             "samplesMs": [
-              0.1495000000000033,
-              0.09329999999999927,
-              0.07500000000000284,
-              0.09530000000000882,
-              0.09829999999999472,
-              0.1711999999999989,
-              0.14040000000001385
+              30.385099999999994,
+              30.590400000000017,
+              33.45799999999997,
+              30.354700000000037,
+              31.59960000000001,
+              29.705600000000004,
+              32.1189
             ]
           },
           "nativeMachineCodeStats": {
@@ -673,19 +1049,19 @@
             "inlinedCalls": 1,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 3.922399999999996,
+            "compilationTimeMs": 4.488900000000001,
             "generatedCodeBytes": 124,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 40,
+            "nativeCalls": 313111,
             "tieringWarmupCalls": 0,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71274496,
-          "peakRssBytes": 71274496,
+          "runtimePeakRssBytes": 80371712,
+          "peakRssBytes": 80371712,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -696,20 +1072,68 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 100000,
+          "operationsPerSample": 200000000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.20889999999999986,
-            "operationsPerSecond": 47869794,
+            "medianMs": 20.736699999999985,
+            "operationsPerSecond": 9644736144,
             "samplesMs": [
-              0.45409999999999684,
-              0.8800999999999988,
-              0.24280000000000257,
-              0.14200000000001012,
-              0.1963000000000079,
-              0.125,
-              0.20889999999999986
+              19.573999999999984,
+              22.78140000000002,
+              20.736699999999985,
+              20.064300000000003,
+              18.9812,
+              21.720699999999994,
+              20.886000000000024
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.07210000000000605,
+            "generatedCodeBytes": 35,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 79327232,
+          "peakRssBytes": 79327232,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 100000,
+          "operationsPerSample": 200000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 27.324099999999987,
+            "operationsPerSecond": 7319545749,
+            "samplesMs": [
+              33.83250000000001,
+              26.95859999999999,
+              27.324099999999987,
+              27.116899999999987,
+              24.610600000000034,
+              29.781299999999987,
+              29.5967
             ]
           },
           "nativeMachineCodeStats": {
@@ -721,7 +1145,7 @@
             "inlinedCalls": 0,
             "unsupportedFunctions": 1,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 0.875700000000009,
+            "compilationTimeMs": 0.8832000000000022,
             "generatedCodeBytes": 0,
             "allocatedNativeValues": 0,
             "spilledNativeValues": 0,
@@ -732,8 +1156,152 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 78606336,
-          "peakRssBytes": 78606336,
+          "runtimePeakRssBytes": 79216640,
+          "peakRssBytes": 79216640,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 10000,
+          "operationsPerSample": 20000000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 31.921600000000012,
+            "operationsPerSecond": 626535011,
+            "samplesMs": [
+              30.919700000000006,
+              32.912800000000004,
+              34.21260000000004,
+              30.529300000000035,
+              32.86439999999999,
+              28.7491,
+              31.921600000000012
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 1,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.7172999999999945,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 73359360,
+          "peakRssBytes": 73359360,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 4000,
+          "operationsPerSample": 8000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 49.19330000000002,
+            "operationsPerSecond": 162623772,
+            "samplesMs": [
+              48.195899999999995,
+              50.01310000000001,
+              45.044100000000014,
+              52.94009999999997,
+              53.19459999999998,
+              49.19330000000002,
+              47.2192
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 1,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.9481999999999999,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 91631616,
+          "peakRssBytes": 91631616,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 10000,
+          "operationsPerSample": 20000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 36.8768,
+            "operationsPerSecond": 542346407,
+            "samplesMs": [
+              36.64689999999999,
+              37.60680000000002,
+              34.26099999999997,
+              36.8768,
+              38.804700000000025,
+              38.19799999999998,
+              34.47239999999999
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 0,
+            "compilationAttempts": 1,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 1,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.7319999999999993,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 78983168,
+          "peakRssBytes": 78983168,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -744,20 +1312,20 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 18000,
+          "operationsPerSample": 180000000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 0.28840000000001,
-            "operationsPerSecond": 173370319,
+            "medianMs": 22.42580000000001,
+            "operationsPerSecond": 8026469513,
             "samplesMs": [
-              0.35029999999999006,
-              0.3044000000000011,
-              0.32209999999999184,
-              0.28840000000001,
-              0.2640999999999991,
-              0.2746000000000066,
-              0.2506000000000057
+              22.310399999999987,
+              21.9084,
+              25.085399999999993,
+              22.42580000000001,
+              22.807299999999998,
+              21.10390000000001,
+              25.420100000000048
             ]
           },
           "nativeMachineCodeStats": {
@@ -769,19 +1337,19 @@
             "inlinedCalls": 1,
             "unsupportedFunctions": 1,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 4.065799999999982,
-            "generatedCodeBytes": 880,
+            "compilationTimeMs": 4.200000000000003,
+            "generatedCodeBytes": 355,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 40,
+            "nativeCalls": 169111,
             "tieringWarmupCalls": 0,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71577600,
-          "peakRssBytes": 71577600,
+          "runtimePeakRssBytes": 81076224,
+          "peakRssBytes": 81076224,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -789,19 +1357,19 @@
         }
       ],
       "startup": {
-        "medianMs": 106.96160000000009,
+        "medianMs": 108.71209999999974,
         "samplesMs": [
-          106.96160000000009,
-          113.19160000000011,
-          105.96320000000014,
-          103.6286,
-          105.98610000000008,
-          123.85399999999981,
-          108.03940000000011
+          108.71209999999974,
+          104.94840000000113,
+          123.94170000000122,
+          112.63460000000123,
+          104.02319999999963,
+          107.02450000000135,
+          113.03229999999894
         ],
-        "peakRssBytes": 70721536
+        "peakRssBytes": 70561792
       },
-      "peakRssBytes": 78606336
+      "peakRssBytes": 91631616
     },
     {
       "id": "naidevm-tiered",
@@ -813,20 +1381,20 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 25200,
+          "operationsPerSample": 2520000000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 0.08899999999999864,
-            "operationsPerSecond": 5617977528,
+            "medianMs": 24.566399999999987,
+            "operationsPerSecond": 102579132474,
             "samplesMs": [
-              0.21510000000000673,
-              0.12510000000000332,
-              0.07200000000000273,
-              0.10869999999999891,
-              0.08899999999999864,
-              0.08289999999999509,
-              0.07160000000000366
+              22.70580000000001,
+              26.955899999999986,
+              24.566399999999987,
+              26.428699999999992,
+              24.503900000000044,
+              23.55219999999997,
+              27.20270000000005
             ]
           },
           "nativeMachineCodeStats": {
@@ -838,19 +1406,19 @@
             "inlinedCalls": 0,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 3.6555999999999926,
+            "compilationTimeMs": 3.4843999999999937,
             "generatedCodeBytes": 114,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 36,
+            "nativeCalls": 241735,
             "tieringWarmupCalls": 4,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 73068544,
-          "peakRssBytes": 73068544,
+          "runtimePeakRssBytes": 79888384,
+          "peakRssBytes": 79888384,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -861,20 +1429,20 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 43200,
+          "operationsPerSample": 4320000000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 1.7775000000000034,
-            "operationsPerSecond": 281293952,
+            "medianMs": 50.76920000000001,
+            "operationsPerSecond": 85090960661,
             "samplesMs": [
-              1.8648000000000025,
-              2.4938999999999965,
-              1.7775000000000034,
-              1.793999999999997,
-              1.6913999999999874,
-              1.7168000000000063,
-              1.6813000000000073
+              57.161399999999986,
+              48.51220000000001,
+              52.142300000000034,
+              50.76920000000001,
+              47.73169999999999,
+              47.80880000000002,
+              51.224500000000035
             ]
           },
           "nativeMachineCodeStats": {
@@ -886,19 +1454,19 @@
             "inlinedCalls": 0,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 0,
-            "compilationTimeMs": 3.8800999999999988,
-            "generatedCodeBytes": 653,
+            "compilationTimeMs": 3.8601000000000028,
+            "generatedCodeBytes": 153,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 36,
+            "nativeCalls": 425202,
             "tieringWarmupCalls": 4,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71757824,
-          "peakRssBytes": 71757824,
+          "runtimePeakRssBytes": 82497536,
+          "peakRssBytes": 82497536,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -909,20 +1477,20 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 32000,
+          "operationsPerSample": 320000000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 0.12460000000000093,
-            "operationsPerSecond": 401284109,
+            "medianMs": 31.074100000000044,
+            "operationsPerSecond": 10297965186,
             "samplesMs": [
-              0.23699999999999477,
-              0.1238999999999919,
-              0.07620000000000005,
-              0.12460000000000093,
-              0.18210000000000548,
-              0.12930000000000064,
-              0.09539999999999793
+              36.9383,
+              29.2782,
+              31.301999999999992,
+              29.82280000000003,
+              31.074100000000044,
+              33.32329999999996,
+              29.612300000000005
             ]
           },
           "nativeMachineCodeStats": {
@@ -934,19 +1502,19 @@
             "inlinedCalls": 1,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 1,
-            "compilationTimeMs": 3.4446000000000083,
+            "compilationTimeMs": 4.680899999999994,
             "generatedCodeBytes": 56,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 36,
+            "nativeCalls": 308447,
             "tieringWarmupCalls": 4,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71958528,
-          "peakRssBytes": 71958528,
+          "runtimePeakRssBytes": 79810560,
+          "peakRssBytes": 79810560,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -957,20 +1525,68 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 100000,
+          "operationsPerSample": 200000000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.09439999999999316,
-            "operationsPerSecond": 105932203,
+            "medianMs": 23.265999999999963,
+            "operationsPerSecond": 8596234849,
             "samplesMs": [
-              0.4744000000000028,
-              0.3044000000000011,
-              0.08419999999999561,
-              0.09439999999999316,
-              0.11549999999999727,
-              0.0782999999999987,
-              0.07880000000000109
+              21.460200000000015,
+              23.7303,
+              21.181600000000003,
+              19.609999999999985,
+              25.97229999999999,
+              26.295799999999986,
+              23.265999999999963
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 1,
+            "compiledFunctions": 1,
+            "tieredFunctions": 1,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 0,
+            "compilationTimeMs": 0.10139999999999816,
+            "generatedCodeBytes": 35,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 4,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 79085568,
+          "peakRssBytes": 79085568,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 100000,
+          "operationsPerSample": 200000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 26.147500000000036,
+            "operationsPerSecond": 7648914810,
+            "samplesMs": [
+              27.018599999999992,
+              27.382799999999975,
+              27.16470000000001,
+              23.84310000000002,
+              24.79480000000001,
+              26.147500000000036,
+              25.839099999999974
             ]
           },
           "nativeMachineCodeStats": {
@@ -993,8 +1609,152 @@
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 80408576,
-          "peakRssBytes": 80408576,
+          "runtimePeakRssBytes": 79327232,
+          "peakRssBytes": 79327232,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 10000,
+          "operationsPerSample": 20000000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 29.72380000000001,
+            "operationsPerSecond": 672861478,
+            "samplesMs": [
+              29.901700000000005,
+              29.528699999999986,
+              29.72380000000001,
+              33.38349999999997,
+              28.808899999999994,
+              30.203900000000033,
+              29.586400000000026
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 77910016,
+          "peakRssBytes": 77910016,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 2000,
+          "operationsPerSample": 4000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 25.796599999999984,
+            "operationsPerSecond": 155059194,
+            "samplesMs": [
+              26.413099999999986,
+              24.2517,
+              25.796599999999984,
+              25.132900000000006,
+              24.672500000000014,
+              29.3544,
+              27.735900000000015
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 91369472,
+          "peakRssBytes": 91369472,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 10000,
+          "operationsPerSample": 20000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 36.982500000000016,
+            "operationsPerSecond": 540796323,
+            "samplesMs": [
+              39.38130000000001,
+              36.982500000000016,
+              36.460199999999986,
+              39.59099999999995,
+              35.62670000000003,
+              37.046400000000006,
+              35.60850000000005
+            ]
+          },
+          "nativeMachineCodeStats": {
+            "enabled": true,
+            "threshold": 5,
+            "compilationAttempts": 0,
+            "compiledFunctions": 0,
+            "tieredFunctions": 0,
+            "inlinedCalls": 0,
+            "unsupportedFunctions": 0,
+            "skippedLowBenefitFunctions": 1,
+            "compilationTimeMs": 0,
+            "generatedCodeBytes": 0,
+            "allocatedNativeValues": 0,
+            "spilledNativeValues": 0,
+            "peakLiveNativeValues": 0,
+            "nativeCalls": 0,
+            "tieringWarmupCalls": 0,
+            "guardFallbacks": 0,
+            "stepBudgetFallbacks": 0,
+            "callDepthFallbacks": 0
+          },
+          "runtimePeakRssBytes": 79228928,
+          "peakRssBytes": 79228928,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -1005,20 +1765,20 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 24000,
+          "operationsPerSample": 240000000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 0.285499999999999,
-            "operationsPerSecond": 175131349,
+            "medianMs": 30.91579999999999,
+            "operationsPerSecond": 7763020850,
             "samplesMs": [
-              0.35089999999999577,
-              0.3160999999999916,
-              0.3025999999999982,
-              0.285499999999999,
-              0.2640999999999991,
-              0.25489999999999213,
-              0.2533999999999992
+              29.40960000000001,
+              30.18640000000002,
+              31.8956,
+              30.91579999999999,
+              31.344900000000052,
+              31.193499999999972,
+              30.85540000000003
             ]
           },
           "nativeMachineCodeStats": {
@@ -1030,19 +1790,19 @@
             "inlinedCalls": 1,
             "unsupportedFunctions": 0,
             "skippedLowBenefitFunctions": 1,
-            "compilationTimeMs": 4.588000000000008,
-            "generatedCodeBytes": 880,
+            "compilationTimeMs": 4.339799999999997,
+            "generatedCodeBytes": 355,
             "allocatedNativeValues": 3,
             "spilledNativeValues": 0,
             "peakLiveNativeValues": 3,
-            "nativeCalls": 36,
+            "nativeCalls": 232447,
             "tieringWarmupCalls": 4,
             "guardFallbacks": 0,
             "stepBudgetFallbacks": 0,
             "callDepthFallbacks": 0
           },
-          "runtimePeakRssBytes": 71794688,
-          "peakRssBytes": 71794688,
+          "runtimePeakRssBytes": 80891904,
+          "peakRssBytes": 80891904,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -1050,19 +1810,19 @@
         }
       ],
       "startup": {
-        "medianMs": 101.16940000000068,
+        "medianMs": 105.8068000000003,
         "samplesMs": [
-          101.44770000000017,
-          100.77619999999979,
-          98.72009999999955,
-          105.03829999999925,
-          109.80609999999979,
-          101.16940000000068,
-          99.22080000000005
+          108.15629999999874,
+          115.82769999999982,
+          105.24989999999889,
+          107.44390000000021,
+          102.86910000000171,
+          105.8068000000003,
+          101.61360000000059
         ],
-        "peakRssBytes": 70406144
+        "peakRssBytes": 70553600
       },
-      "peakRssBytes": 80408576
+      "peakRssBytes": 91369472
     },
     {
       "id": "bun",
@@ -1074,24 +1834,24 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 800,
+          "operationsPerSample": 80000000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 0.43720000000000425,
-            "operationsPerSecond": 1143641354,
+            "medianMs": 41.48059999999998,
+            "operationsPerSecond": 1928612412,
             "samplesMs": [
-              1.2550999999999988,
-              0.9372000000000043,
-              0.43720000000000425,
-              0.4363000000000028,
-              0.4245000000000019,
-              0.4332999999999956,
-              0.4375
+              43.168499999999995,
+              44.02350000000001,
+              41.48059999999998,
+              41.37960000000004,
+              39.92180000000002,
+              41.95839999999998,
+              40.37059999999997
             ]
           },
-          "runtimePeakRssBytes": 141119488,
-          "peakRssBytes": 141119488,
+          "runtimePeakRssBytes": 141672448,
+          "peakRssBytes": 141672448,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -1102,24 +1862,24 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 400,
+          "operationsPerSample": 40000000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 0.505199999999995,
-            "operationsPerSecond": 989707047,
+            "medianMs": 32.9015,
+            "operationsPerSecond": 1215750042,
             "samplesMs": [
-              1.0459999999999994,
-              1.3314000000000021,
-              0.5878000000000014,
-              0.40039999999999765,
-              0.3978000000000037,
-              0.3978000000000037,
-              0.505199999999995
+              32.1516,
+              30.547799999999995,
+              33.70949999999999,
+              31.601500000000016,
+              36.57239999999999,
+              33.02860000000004,
+              32.9015
             ]
           },
-          "runtimePeakRssBytes": 141082624,
-          "peakRssBytes": 141082624,
+          "runtimePeakRssBytes": 141508608,
+          "peakRssBytes": 141508608,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -1130,24 +1890,24 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 12000,
+          "operationsPerSample": 120000000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 0.06320000000000192,
-            "operationsPerSecond": 791139241,
+            "medianMs": 48.197900000000004,
+            "operationsPerSecond": 2489735030,
             "samplesMs": [
-              0.1894999999999989,
-              0.06070000000000064,
-              0.0677999999999983,
-              0.06259999999999977,
-              0.06320000000000192,
-              0.06609999999999872,
-              0.0622000000000007
+              53.29740000000001,
+              45.53370000000001,
+              48.197900000000004,
+              48.42590000000001,
+              47.37919999999997,
+              52.62050000000005,
+              48.05790000000002
             ]
           },
-          "runtimePeakRssBytes": 144318464,
-          "peakRssBytes": 144318464,
+          "runtimePeakRssBytes": 151957504,
+          "peakRssBytes": 151957504,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -1158,24 +1918,136 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 16000,
+          "operationsPerSample": 32000000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.07529999999999859,
-            "operationsPerSecond": 132802125,
+            "medianMs": 34.53370000000001,
+            "operationsPerSecond": 926631088,
             "samplesMs": [
-              0.08830000000000027,
-              0.07209999999999894,
-              0.07280000000000086,
-              0.08020000000000138,
-              0.07529999999999859,
-              0.07870000000000132,
-              0.06370000000000076
+              33.00080000000001,
+              34.442499999999995,
+              34.53370000000001,
+              35.714200000000005,
+              35.502200000000016,
+              34.96170000000001,
+              33.03570000000002
             ]
           },
-          "runtimePeakRssBytes": 144678912,
-          "peakRssBytes": 144678912,
+          "runtimePeakRssBytes": 148799488,
+          "peakRssBytes": 148799488,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 18000,
+          "operationsPerSample": 36000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 27.945100000000025,
+            "operationsPerSecond": 1288240157,
+            "samplesMs": [
+              26.362700000000004,
+              29.555799999999977,
+              27.73139999999998,
+              31.98750000000001,
+              29.32740000000001,
+              27.945100000000025,
+              27.82420000000002
+            ]
+          },
+          "runtimePeakRssBytes": 161062912,
+          "peakRssBytes": 161062912,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 1800,
+          "operationsPerSample": 3600000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 23.735100000000003,
+            "operationsPerSecond": 151674103,
+            "samplesMs": [
+              23.735100000000003,
+              23.060299999999998,
+              25.956000000000017,
+              23.67410000000001,
+              26.772500000000008,
+              24.535200000000003,
+              22.82050000000001
+            ]
+          },
+          "runtimePeakRssBytes": 184537088,
+          "peakRssBytes": 184537088,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 3600,
+          "operationsPerSample": 7200000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 41.93449999999996,
+            "operationsPerSecond": 171696336,
+            "samplesMs": [
+              43.01689999999999,
+              41.35980000000001,
+              40.281499999999994,
+              41.93449999999996,
+              41.3356,
+              42.00959999999998,
+              44.16700000000003
+            ]
+          },
+          "runtimePeakRssBytes": 196665344,
+          "peakRssBytes": 196665344,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 12000,
+          "operationsPerSample": 24000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 47.52370000000002,
+            "operationsPerSecond": 505011184,
+            "samplesMs": [
+              47.966999999999985,
+              50.684,
+              43.79630000000003,
+              50.59220000000005,
+              45.07040000000001,
+              47.52370000000002,
+              44.8245
+            ]
+          },
+          "runtimePeakRssBytes": 167260160,
+          "peakRssBytes": 167260160,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -1186,24 +2058,24 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 3000,
+          "operationsPerSample": 30000000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 0.11629999999999896,
-            "operationsPerSecond": 429922614,
+            "medianMs": 27.566699999999997,
+            "operationsPerSecond": 1088269543,
             "samplesMs": [
-              0.2986000000000004,
-              0.11720000000000041,
-              0.11629999999999896,
-              0.11319999999999908,
-              0.11759999999999948,
-              0.11329999999999885,
-              0.10619999999999763
+              27.393100000000004,
+              32.88319999999999,
+              27.89410000000001,
+              26.7081,
+              27.040700000000015,
+              27.566699999999997,
+              28.0034
             ]
           },
-          "runtimePeakRssBytes": 145895424,
-          "peakRssBytes": 145895424,
+          "runtimePeakRssBytes": 151797760,
+          "peakRssBytes": 151797760,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -1211,19 +2083,19 @@
         }
       ],
       "startup": {
-        "medianMs": 73.3172999999997,
+        "medianMs": 75.84929999999804,
         "samplesMs": [
-          71.05199999999968,
-          69.82049999999981,
-          70.37800000000061,
-          77.85680000000048,
-          76.92180000000008,
-          73.3172999999997,
-          79.86130000000048
+          76.94810000000143,
+          75.84929999999804,
+          81.95910000000003,
+          77.88099999999758,
+          71.4493999999977,
+          72.27549999999974,
+          73.24820000000182
         ],
-        "peakRssBytes": 136925184
+        "peakRssBytes": 136908800
       },
-      "peakRssBytes": 145895424
+      "peakRssBytes": 196665344
     },
     {
       "id": "python",
@@ -1235,24 +2107,24 @@
           "name": "Integer range sum",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 10,
+          "operationsPerSample": 1000000,
           "expected": 4999950000,
           "throughput": {
-            "medianMs": 14.2951,
-            "operationsPerSecond": 34977020,
+            "medianMs": 26.4911,
+            "operationsPerSecond": 37748527,
             "samplesMs": [
-              12.9318,
-              16.7523,
-              14.2951,
-              15.6484,
-              13.8872,
-              12.9438,
-              14.7481
+              26.1327,
+              24.8899,
+              27.9294,
+              24.749,
+              27.1128,
+              27.4451,
+              26.4911
             ]
           },
-          "runtimePeakRssBytes": 19804160,
-          "peakRssBytes": 19804160,
+          "runtimePeakRssBytes": 19910656,
+          "peakRssBytes": 19910656,
           "correctness": {
             "actual": 4999950000,
             "passed": true
@@ -1263,24 +2135,24 @@
           "name": "Branch-heavy loop",
           "units": "loop iterations",
           "iterations": 100000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 500000,
+          "sampleRepetitions": 14,
+          "operationsPerSample": 1400000,
           "expected": 33334,
           "throughput": {
-            "medianMs": 17.4679,
-            "operationsPerSecond": 28623933,
+            "medianMs": 47.7967,
+            "operationsPerSecond": 29290725,
             "samplesMs": [
-              17.7597,
-              20.5974,
-              17.4679,
-              16.3789,
-              16.9796,
-              16.9358,
-              18.5334
+              47.9068,
+              46.7359,
+              48.1134,
+              48.42,
+              46.1498,
+              45.847,
+              47.7967
             ]
           },
-          "runtimePeakRssBytes": 20000768,
-          "peakRssBytes": 20000768,
+          "runtimePeakRssBytes": 19697664,
+          "peakRssBytes": 19697664,
           "correctness": {
             "actual": 33334,
             "passed": true
@@ -1291,24 +2163,24 @@
           "name": "Function-call loop",
           "units": "function calls",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 70,
+          "operationsPerSample": 700000,
           "expected": 10000,
           "throughput": {
-            "medianMs": 1.9974,
-            "operationsPerSecond": 25032542,
+            "medianMs": 30.1625,
+            "operationsPerSecond": 23207625,
             "samplesMs": [
-              1.9974,
-              1.925,
-              2.0005,
-              2.0544,
-              2.1213,
-              1.9675,
-              1.9916
+              34.0971,
+              34.5251,
+              34.8849,
+              29.9402,
+              27.3713,
+              30.1625,
+              28.4945
             ]
           },
-          "runtimePeakRssBytes": 19701760,
-          "peakRssBytes": 19701760,
+          "runtimePeakRssBytes": 19800064,
+          "peakRssBytes": 19800064,
           "correctness": {
             "actual": 10000,
             "passed": true
@@ -1319,24 +2191,136 @@
           "name": "Collection iteration",
           "units": "collection elements",
           "iterations": 2000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 10000,
+          "sampleRepetitions": 800,
+          "operationsPerSample": 1600000,
           "expected": 1999000,
           "throughput": {
-            "medianMs": 0.1513,
-            "operationsPerSecond": 66093853,
+            "medianMs": 29.3667,
+            "operationsPerSecond": 54483480,
             "samplesMs": [
-              0.1555,
-              0.1534,
-              0.1502,
-              0.1495,
-              0.1783,
-              0.1456,
-              0.1513
+              27.1768,
+              29.3667,
+              31.4273,
+              29.2885,
+              29.3994,
+              29.9768,
+              27.2969
             ]
           },
-          "runtimePeakRssBytes": 19886080,
-          "peakRssBytes": 19886080,
+          "runtimePeakRssBytes": 19992576,
+          "peakRssBytes": 19992576,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "collection-helper-sum",
+          "name": "Collection helper sum",
+          "units": "collection elements",
+          "iterations": 2000,
+          "sampleRepetitions": 8000,
+          "operationsPerSample": 16000000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 43.7747,
+            "operationsPerSecond": 365507930,
+            "samplesMs": [
+              44.5843,
+              43.7747,
+              43.367,
+              45.4597,
+              41.8783,
+              41.6927,
+              46.3909
+            ]
+          },
+          "runtimePeakRssBytes": 20013056,
+          "peakRssBytes": 20013056,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "string-iteration",
+          "name": "String code-point iteration",
+          "units": "string code points",
+          "iterations": 2000,
+          "sampleRepetitions": 1000,
+          "operationsPerSample": 2000000,
+          "expected": 2000,
+          "throughput": {
+            "medianMs": 39.1292,
+            "operationsPerSecond": 51112724,
+            "samplesMs": [
+              39.5877,
+              38.8558,
+              41.9938,
+              36.9289,
+              39.1292,
+              37.4016,
+              39.3326
+            ]
+          },
+          "runtimePeakRssBytes": 19939328,
+          "peakRssBytes": 19939328,
+          "correctness": {
+            "actual": 2000,
+            "passed": true
+          }
+        },
+        {
+          "id": "map-iteration",
+          "name": "Map entry iteration",
+          "units": "Map entries",
+          "iterations": 2000,
+          "sampleRepetitions": 800,
+          "operationsPerSample": 1600000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 31.6117,
+            "operationsPerSecond": 50614171,
+            "samplesMs": [
+              31.6117,
+              33.6063,
+              33.1698,
+              31.7838,
+              30.7325,
+              27.8802,
+              30.7028
+            ]
+          },
+          "runtimePeakRssBytes": 20090880,
+          "peakRssBytes": 20090880,
+          "correctness": {
+            "actual": 1999000,
+            "passed": true
+          }
+        },
+        {
+          "id": "set-iteration",
+          "name": "Set value iteration",
+          "units": "Set values",
+          "iterations": 2000,
+          "sampleRepetitions": 700,
+          "operationsPerSample": 1400000,
+          "expected": 1999000,
+          "throughput": {
+            "medianMs": 29.4303,
+            "operationsPerSecond": 47570021,
+            "samplesMs": [
+              29.5329,
+              28.3927,
+              30.4412,
+              27.8794,
+              29.3129,
+              29.4303,
+              30.822
+            ]
+          },
+          "runtimePeakRssBytes": 20193280,
+          "peakRssBytes": 20193280,
           "correctness": {
             "actual": 1999000,
             "passed": true
@@ -1347,24 +2331,24 @@
           "name": "Mixed arithmetic, branch, and calls",
           "units": "loop iterations",
           "iterations": 10000,
-          "sampleRepetitions": 5,
-          "operationsPerSample": 50000,
+          "sampleRepetitions": 60,
+          "operationsPerSample": 600000,
           "expected": 49995000,
           "throughput": {
-            "medianMs": 3.2149,
-            "operationsPerSecond": 15552583,
+            "medianMs": 40.1833,
+            "operationsPerSecond": 14931576,
             "samplesMs": [
-              3.4996,
-              3.2149,
-              3.2069,
-              3.1187,
-              3.0576,
-              3.3812,
-              4.5466
+              38.0121,
+              41.6106,
+              40.3139,
+              37.6879,
+              38.8832,
+              43.0194,
+              40.1833
             ]
           },
-          "runtimePeakRssBytes": 19804160,
-          "peakRssBytes": 19804160,
+          "runtimePeakRssBytes": 19922944,
+          "peakRssBytes": 19922944,
           "correctness": {
             "actual": 49995000,
             "passed": true
@@ -1372,19 +2356,19 @@
         }
       ],
       "startup": {
-        "medianMs": 81.67199999999957,
+        "medianMs": 79.6730000000025,
         "samplesMs": [
-          81.67199999999957,
-          74.13940000000002,
-          73.00470000000041,
-          73.38460000000032,
-          82.68040000000019,
-          84.09449999999924,
-          81.88949999999932
+          82.32240000000093,
+          79.6730000000025,
+          76.73819999999978,
+          77.36249999999927,
+          84.91960000000108,
+          84.63060000000041,
+          78.14520000000266
         ],
-        "peakRssBytes": 19849216
+        "peakRssBytes": 20017152
       },
-      "peakRssBytes": 20000768
+      "peakRssBytes": 20193280
     }
   ]
 }

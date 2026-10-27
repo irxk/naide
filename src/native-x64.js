@@ -19,6 +19,82 @@ const COMPARISONS = new Map([
 ]);
 const METERING_STACK_SLOTS = 4;
 const MAX_EXACT_TRIANGULAR_BOUND = 94_906_265;
+const MAX_EXACT_MODULO_COUNT_BOUND = 4_503_599_627_370_495;
+
+export function recognizeNativeModuloCountReduction(ir) {
+  if (ir?.body?.length !== 3) return null;
+  const [initializer, loop, result] = ir.body;
+  if (initializer.op !== 'local.init'
+    || initializer.value.op !== 'const'
+    || initializer.value.value !== 0
+    || loop.op !== 'range.for'
+    || loop.start.op !== 'const'
+    || loop.start.value !== 0
+    || loop.body.length !== 1
+    || loop.body[0].op !== 'if'
+    || loop.body[0].otherwise.length !== 0
+    || loop.body[0].then.length !== 1
+    || result.op !== 'return'
+    || result.value.op !== 'local.get'
+    || result.value.localId !== initializer.localId) return null;
+
+  const accumulator = ir.locals.find(item => item.id === initializer.localId);
+  if (!accumulator?.mutable) return null;
+  const increment = loop.body[0].then[0];
+  if (increment.op !== 'local.set' || increment.localId !== initializer.localId
+    || !isIncrementByOne(increment.value, initializer.localId)) return null;
+
+  const condition = loop.body[0].condition;
+  if (condition.op !== 'binary' || !['==', '==='].includes(condition.operator)) return null;
+  let remainder;
+  let zero;
+  if (condition.left?.op === 'binary' && condition.left.operator === '%') {
+    remainder = condition.left;
+    zero = condition.right;
+  } else if (condition.right?.op === 'binary' && condition.right.operator === '%') {
+    remainder = condition.right;
+    zero = condition.left;
+  } else {
+    return null;
+  }
+  if (!isLocal(remainder.left, loop.localId)
+    || remainder.right?.op !== 'const'
+    || !Number.isSafeInteger(remainder.right.value)
+    || remainder.right.value === 0
+    || zero?.op !== 'const'
+    || zero.value !== 0) return null;
+
+  const bound = loop.end;
+  const parameter = bound.op === 'local.get'
+    ? ir.params.find(item => item.localId === bound.localId)
+    : null;
+  if (bound.op !== 'const' && !parameter) return null;
+  if (bound.op === 'const' && !Number.isSafeInteger(bound.value)) return null;
+
+  return {
+    statement: loop,
+    kind: 'modulo-count',
+    divisor: Math.abs(remainder.right.value),
+    boundArgumentIndex: parameter?.index ?? null,
+    constantBound: bound.op === 'const' ? bound.value : null,
+    minimumBound: Number.MIN_SAFE_INTEGER,
+    maxBound: MAX_EXACT_MODULO_COUNT_BOUND,
+  };
+}
+
+export function emitWindowsX64ArraySum() {
+  return Uint8Array.from([
+    0x66, 0x0f, 0xef, 0xc0,
+    0x48, 0x85, 0xd2,
+    0x0f, 0x84, 0x15, 0x00, 0x00, 0x00,
+    0xf2, 0x0f, 0x10, 0x09,
+    0xf2, 0x0f, 0x58, 0xc1,
+    0x48, 0x83, 0xc1, 0x08,
+    0x48, 0xff, 0xca,
+    0x0f, 0x85, 0xeb, 0xff, 0xff, 0xff,
+    0xc3,
+  ]);
+}
 
 export function emitWindowsX64(ir, { metered = true, registerAllocation = true } = {}) {
   if (ir?.kind !== 'function' || ir.version !== 1
@@ -52,13 +128,18 @@ export function emitWindowsX64(ir, { metered = true, registerAllocation = true }
   for (const statement of allRangeSlots.keys()) {
     if (!allocation.rangeRegisters.has(statement)) rangeSlots.set(statement, nextStackSlot++);
   }
-  const rangeReduction = recognizeRangeReduction(ir);
+  const rangeReduction = recognizeNativeModuloCountReduction(ir) ?? recognizeRangeReduction(ir);
   const safeIntegerRangeArgumentIndices = collectModuloRangeArguments(ir.body, ir.params);
   if (!safeIntegerRangeArgumentIndices) return null;
   if (rangeReduction?.boundArgumentIndex !== null
     && rangeReduction?.boundArgumentIndex !== undefined) {
     safeIntegerRangeArgumentIndices.push(rangeReduction.boundArgumentIndex);
-    safeIntegerRangeArgumentIndices.sort((left, right) => left - right);
+    const uniqueIndices = [...new Set(safeIntegerRangeArgumentIndices)];
+    safeIntegerRangeArgumentIndices.splice(
+      0,
+      safeIntegerRangeArgumentIndices.length,
+      ...uniqueIndices.sort((left, right) => left - right),
+    );
   }
   const localRegisters = allocation.localRegisters;
   const rangeRegisters = allocation.rangeRegisters;
@@ -116,10 +197,11 @@ export function emitWindowsX64(ir, { metered = true, registerAllocation = true }
     rangeReduction: rangeReduction
       ? {
         kind: rangeReduction.kind,
+        ...(rangeReduction.divisor === undefined ? {} : { divisor: rangeReduction.divisor }),
         boundArgumentIndex: rangeReduction.boundArgumentIndex,
         constantBound: rangeReduction.constantBound,
         minimumBound: rangeReduction.minimumBound,
-        maxBound: MAX_EXACT_TRIANGULAR_BOUND,
+        maxBound: rangeReduction.maxBound ?? MAX_EXACT_TRIANGULAR_BOUND,
       }
       : null,
   };
@@ -159,6 +241,12 @@ function recognizeRangeReduction(ir) {
   } else if (isLocal(reduction.right, initializer.localId)
     && isOne(reduction.left)) {
     kind = 'unit-increment';
+  } else if (isLocal(reduction.left, initializer.localId)
+    && isParityAdjustedLoopDelta(reduction.right, loop.localId)) {
+    kind = 'parity-adjusted-sum';
+  } else if (isLocal(reduction.right, initializer.localId)
+    && isParityAdjustedLoopDelta(reduction.left, loop.localId)) {
+    kind = 'parity-adjusted-sum';
   } else {
     return null;
   }
@@ -191,8 +279,63 @@ function isLocal(expression, localId) {
   return expression?.op === 'local.get' && expression.localId === localId;
 }
 
+function isParityAdjustedLoopDelta(expression, rangeLocalId) {
+  if (expression?.op !== 'conditional') return false;
+  if (!moduloZeroConditionForLocal(expression.condition, rangeLocalId, 2)) return false;
+  const evenPath = expression.consequent;
+  const oddPath = expression.alternate;
+  return (
+    (isLocalPlusConstant(evenPath, rangeLocalId, 1) && isLocalMinusConstant(oddPath, rangeLocalId, 1))
+    || (isLocalMinusConstant(evenPath, rangeLocalId, 1) && isLocalPlusConstant(oddPath, rangeLocalId, 1))
+  );
+}
+
+function moduloZeroConditionForLocal(expression, localId, divisor) {
+  if (expression?.op !== 'binary' || !['==', '==='].includes(expression.operator)) return false;
+  let left = expression.left;
+  let right = expression.right;
+  if (left?.op === 'binary' && left.operator === '%') {
+    const remainder = left;
+    left = remainder.left;
+    right = remainder.right;
+    if (remainder.left?.op !== 'local.get' || remainder.left.localId !== localId) return false;
+    if (!isConst(remainder.right, divisor)) return false;
+    return isConst(expression.right, 0);
+  }
+  if (right?.op === 'binary' && right.operator === '%') {
+    const remainder = right;
+    left = remainder.left;
+    right = remainder.right;
+    if (remainder.left?.op !== 'local.get' || remainder.left.localId !== localId) return false;
+    if (!isConst(remainder.right, divisor)) return false;
+    return isConst(expression.left, 0);
+  }
+  return false;
+}
+
+function isConst(expression, value) {
+  return expression?.op === 'const' && expression.value === value;
+}
+
+function isLocalPlusConstant(expression, localId, value) {
+  if (expression?.op !== 'binary' || expression.operator !== '+') return false;
+  return (isLocal(expression.left, localId) && isConst(expression.right, value))
+    || (isLocal(expression.right, localId) && isConst(expression.left, value));
+}
+
+function isLocalMinusConstant(expression, localId, value) {
+  if (expression?.op !== 'binary' || expression.operator !== '-') return false;
+  return isLocal(expression.left, localId) && isConst(expression.right, value);
+}
+
 function isOne(expression) {
   return expression?.op === 'const' && expression.value === 1;
+}
+
+function isIncrementByOne(expression, localId) {
+  return expression?.op === 'binary' && expression.operator === '+'
+    && ((isLocal(expression.left, localId) && isOne(expression.right))
+      || (isLocal(expression.right, localId) && isOne(expression.left)));
 }
 
 function collectModuloRangeArguments(statements, params) {
@@ -368,12 +511,91 @@ function emitRangeLoop(writer, statement, state) {
 }
 
 function emitRangeReduction(writer, reduction, state) {
-  const accumulatorId = state.rangeReduction.statement.body[0].localId;
+  const accumulatorStatement = reduction.kind === 'modulo-count'
+    ? state.rangeReduction.statement.body[0].then[0]
+    : state.rangeReduction.statement.body[0];
+  const accumulatorId = accumulatorStatement.localId;
   if (!state.localSlots.has(accumulatorId) && !state.localRegisters.has(accumulatorId)) return false;
-  if (reduction.kind === 'unit-increment') {
+  if (reduction.kind === 'modulo-count') {
     const bound = state.rangeReduction.statement.end;
     if (bound.op === 'const') emitLoadConstant(writer, bound.value);
     else emitLoadLocal(writer, 0, bound.localId, state);
+    emitLoadConstantToXmm(writer, 0, 1);
+    writer.emit(0x66, 0x0f, 0x2e, 0xc1);
+    const empty = state.nextLabel++;
+    const done = state.nextLabel++;
+    writer.branch(0x86, empty);
+    emitLoadConstantToXmm(writer, 1, 1);
+    writer.emit(...BINARY_INSTRUCTIONS.get('-'));
+    emitLoadConstantToXmm(writer, reduction.divisor, 1);
+    writer.emit(...BINARY_INSTRUCTIONS.get('/'));
+    writer.emit(0x48, 0xf2, 0x0f, 0x2c, 0xc0, 0x48, 0x83, 0xc0, 0x01);
+    writer.emit(0xf2, 0x48, 0x0f, 0x2a, 0xc0);
+    writer.jump(done);
+    writer.mark(empty);
+    emitLoadConstant(writer, 0);
+    writer.mark(done);
+  } else if (reduction.kind === 'unit-increment') {
+    const bound = state.rangeReduction.statement.end;
+    if (bound.op === 'const') emitLoadConstant(writer, bound.value);
+    else emitLoadLocal(writer, 0, bound.localId, state);
+  } else if (reduction.kind === 'parity-adjusted-sum') {
+    const bound = state.rangeReduction.statement.end;
+    const boundExpression = bound.op === 'const'
+      ? { op: 'const', type: 'number', value: bound.value, source: { line: 0 } }
+      : { op: 'local.get', type: 'number', localId: bound.localId, source: { line: 0 } };
+    const offset = {
+      op: 'conditional',
+      type: 'number',
+      condition: {
+        op: 'binary',
+        type: 'boolean',
+        operator: '===',
+        left: {
+          op: 'binary',
+          type: 'number',
+          operator: '%',
+          left: boundExpression,
+          right: { op: 'const', type: 'number', value: 2, source: { line: 0 } },
+          source: { line: 0 },
+        },
+        right: { op: 'const', type: 'number', value: 0, source: { line: 0 } },
+        source: { line: 0 },
+      },
+      consequent: { op: 'const', type: 'number', value: 0, source: { line: 0 } },
+      alternate: { op: 'const', type: 'number', value: 1, source: { line: 0 } },
+      source: { line: 0 },
+    };
+    const triangle = {
+      op: 'binary',
+      type: 'number',
+      operator: '/',
+      left: {
+        op: 'binary',
+        type: 'number',
+        operator: '*',
+        left: {
+          op: 'binary',
+          type: 'number',
+          operator: '-',
+          left: boundExpression,
+          right: { op: 'const', type: 'number', value: 1, source: { line: 0 } },
+          source: { line: 0 },
+        },
+        right: boundExpression,
+        source: { line: 0 },
+      },
+      right: { op: 'const', type: 'number', value: 2, source: { line: 0 } },
+      source: { line: 0 },
+    };
+    emitExpression(writer, {
+      op: 'binary',
+      type: 'number',
+      operator: '+',
+      left: triangle,
+      right: offset,
+      source: { line: 0 },
+    }, state);
   } else {
     const bound = state.rangeReduction.statement.end;
     if (bound.op === 'const') emitLoadConstant(writer, bound.value);
@@ -389,7 +611,7 @@ function emitRangeReduction(writer, reduction, state) {
     writer.emit(...BINARY_INSTRUCTIONS.get('/'));
     state.scratchDepth--;
   }
-  emitStoreLocal(writer, 0, state.rangeReduction.statement.body[0].localId, state);
+  emitStoreLocal(writer, 0, accumulatorId, state);
   return true;
 }
 

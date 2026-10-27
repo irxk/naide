@@ -151,6 +151,11 @@ function registerTickBatch(context, nodes) {
   return index;
 }
 
+function numericLiteralValue(node) {
+  const value = Number(String(node.value).replaceAll('_', ''));
+  return Number.isFinite(value) ? String(value) : null;
+}
+
 function tickExpression(context, node) {
   return `${tick(context, node).slice(0, -1)}, `;
 }
@@ -186,9 +191,29 @@ function containsBreak(statements) {
   return false;
 }
 
-function compileArrayReduction(node, context) {
+function compileIteratorReduction(node, context, loopVariableCode) {
   if (node.body.length !== 1) return null;
   const statement = node.body[0];
+  if (statement.type === 'CompoundAssign' && statement.op === '+='
+    && statement.target.type === 'Identifier') {
+    const local = resolveLocal(context, statement.target.name);
+    if (!local?.mutable) return null;
+    let valueCode;
+    let usesLoopValue = false;
+    let constant = null;
+    if (statement.value.type === 'Identifier' && statement.value.name === node.varName) {
+      valueCode = loopVariableCode;
+      usesLoopValue = true;
+    } else if (statement.value.type === 'Number') {
+      constant = Number(String(statement.value.value).replaceAll('_', ''));
+      if (!Number.isFinite(constant)) return null;
+      valueCode = String(constant);
+    } else {
+      return null;
+    }
+    const batchIndex = registerTickBatch(context, [node, statement, statement.value]);
+    return { local: local.code, batchIndex, valueCode, usesLoopValue, constant };
+  }
   if (statement.type !== 'Assignment' || statement.target.type !== 'Identifier'
     || statement.value.type !== 'Binary' || statement.value.op !== '+'
     || statement.value.left.type !== 'Identifier'
@@ -204,7 +229,13 @@ function compileArrayReduction(node, context) {
     statement.value.left,
     statement.value.right,
   ]);
-  return { local: local.code, batchIndex };
+  return {
+    local: local.code,
+    batchIndex,
+    valueCode: loopVariableCode,
+    usesLoopValue: true,
+    constant: null,
+  };
 }
 
 function compileStatement(node, context) {
@@ -214,6 +245,12 @@ function compileStatement(node, context) {
       if (!node.value) return null;
       const index = declareLocal(context, node.name, node.isMut);
       if (index === null) return null;
+      if (node.value.type === 'Number') {
+        const value = numericLiteralValue(node.value);
+        if (value === null) return null;
+        const batchIndex = registerTickBatch(context, [node, node.value]);
+        return `__engine.tickBatch(__batches[${batchIndex}]);let __local${index} = ${value};`;
+      }
       const value = compileExpression(node.value, context);
       if (value === null) return null;
       return `${statementTick}let __local${index} = ${value};`;
@@ -237,6 +274,13 @@ function compileStatement(node, context) {
     }
     case 'Return': {
       if (!node.value) return `${statementTick}return undefined;`;
+      if (node.value.type === 'Identifier') {
+        const local = resolveLocal(context, node.value.name);
+        if (local) {
+          const batchIndex = registerTickBatch(context, [node, node.value]);
+          return `__engine.tickBatch(__batches[${batchIndex}]);return ${local.code};`;
+        }
+      }
       const value = compileExpression(node.value, context);
       if (value === null) return null;
       return `${statementTick}return ${value};`;
@@ -290,8 +334,17 @@ function compileStatement(node, context) {
     }
     case 'ForEach': {
       if (node.isAsync) return null;
-      const iterable = compileExpression(node.iterable, context);
+      let iterable = compileExpression(node.iterable, context);
       if (iterable === null) return null;
+      let iterationStatementTick = statementTick;
+      if (node.iteration !== 'in' && node.iterable.type === 'Identifier') {
+        const local = resolveLocal(context, node.iterable.name);
+        if (local) {
+          const batchIndex = registerTickBatch(context, [node, node.iterable]);
+          iterationStatementTick = '';
+          iterable = `(__engine.tickBatch(__batches[${batchIndex}]), ${local.code})`;
+        }
+      }
       context.scopes.push(new Map());
       const index = declareLocal(context, node.varName, false);
       if (index === null) {
@@ -307,19 +360,129 @@ function compileStatement(node, context) {
       const entries = node.iteration === 'in'
         ? `Object.keys(__iterable${index})`
         : `__engine.iterable(__iterable${index})`;
-      const arrayReduction = node.iteration !== 'in' && !containsBreak(node.body)
-        ? compileArrayReduction(node, context)
+      const iteratorReduction = node.iteration !== 'in' && !containsBreak(node.body)
+        ? compileIteratorReduction(node, context, `__local${index}`)
         : null;
+      const setReductionPath = iteratorReduction
+        ? ` else if (typeof ${iteratorReduction.local} === 'number'
+          && (__setSize${index} = __engine.getFastNativeSetSizeForReduction(__iterable${index})) !== null) {
+          const __setStepCount${index} =
+            __setSize${index} * (__batches[${iteratorReduction.batchIndex}].length + 1) + 1;
+          if (__setStepCount${index} <= __engine.maxSteps - __engine.steps) {
+            ${iteratorReduction.usesLoopValue
+              ? `let __setRangeApplied${index} = false;
+            if (__setSize${index} >= 128
+              && __setSize${index} <= 134217728
+              && ${iteratorReduction.local} === 0
+              && __engine.isFastNativeZeroBasedSet(__iterable${index}, __setSize${index})) {
+              __engine.steps += __setStepCount${index};
+              ${iteratorReduction.local} =
+                (__setSize${index} * (__setSize${index} - 1)) / 2;
+              __setRangeApplied${index} = true;
+            }
+            if (!__setRangeApplied${index}) {
+              let __setTotal${index} = ${iteratorReduction.local};
+              let __setIsNumeric${index} = true;
+              for (const __setValue${index} of __iterable${index}) {
+                if (typeof __setValue${index} !== 'number') {
+                  __setIsNumeric${index} = false;
+                  continue;
+                }
+                __setTotal${index} += __setValue${index};
+              }
+              if (__setIsNumeric${index}) {
+                __engine.steps += __setStepCount${index};
+                ${iteratorReduction.local} = __setTotal${index};
+              } else {
+                for (const __local${index} of __iterable${index}) {
+                  __engine.tick();
+                  __engine.tickBatch(__batches[${iteratorReduction.batchIndex}]);
+                  ${iteratorReduction.local} =
+                    ${iteratorReduction.local} + ${iteratorReduction.valueCode};
+                }
+                __engine.tick();
+              }
+            }`
+              : `__engine.steps += __setStepCount${index};
+            for (let __setIndex${index} = 0; __setIndex${index} < __iterable${index}.size; __setIndex${index}++) {
+              ${iteratorReduction.local} =
+                ${iteratorReduction.local} + ${iteratorReduction.constant};
+            }`}
+          } else {
+            for (const __local${index} of __iterable${index}) {
+              __engine.tick();
+              __engine.tickBatch(__batches[${iteratorReduction.batchIndex}]);
+              ${iteratorReduction.local} =
+                ${iteratorReduction.local} + ${iteratorReduction.valueCode};
+            }
+            __engine.tick();
+          }
+        }`
+        : '';
+      const stringReductionPath = iteratorReduction?.constant === 1
+        ? ` else if (__engine.isFastNativeString(__iterable${index})
+          && typeof ${iteratorReduction.local} === 'number') {
+          const __stringValue${index} = __iterable${index};
+          const __stringLength${index} = __stringValue${index}.length;
+          let __stringCodePointCount${index} = 0;
+          let __stringTotal${index} = ${iteratorReduction.local};
+          for (let __stringIndex${index} = 0;
+            __stringIndex${index} < __stringLength${index};
+            __stringIndex${index}++) {
+            const __stringCodeUnit${index} =
+              __stringValue${index}.charCodeAt(__stringIndex${index});
+            if (__stringCodeUnit${index} >= 0xD800
+              && __stringCodeUnit${index} <= 0xDBFF
+              && __stringIndex${index} + 1 < __stringLength${index}) {
+              const __stringNextCodeUnit${index} =
+                __stringValue${index}.charCodeAt(__stringIndex${index} + 1);
+              if (__stringNextCodeUnit${index} >= 0xDC00
+                && __stringNextCodeUnit${index} <= 0xDFFF) {
+                __stringIndex${index}++;
+              }
+            }
+            __stringCodePointCount${index}++;
+            __stringTotal${index} = __stringTotal${index} + 1;
+          }
+          const __stringStepCount${index} =
+            __stringCodePointCount${index} * (__batches[${iteratorReduction.batchIndex}].length + 1) + 1;
+          if (__stringStepCount${index} <= __engine.maxSteps - __engine.steps) {
+            __engine.steps += __stringStepCount${index};
+            ${iteratorReduction.local} = __stringTotal${index};
+          } else {
+            for (const __local${index} of __iterable${index}) {
+              __engine.tick();
+              __engine.tickBatch(__batches[${iteratorReduction.batchIndex}]);
+              ${iteratorReduction.local} =
+                ${iteratorReduction.local} + ${iteratorReduction.valueCode};
+            }
+            __engine.tick();
+          }
+        }`
+        : '';
       if (node.iteration !== 'in' && !containsBreak(node.body)) {
-        return `${statementTick}{
+        return `${iterationStatementTick}{
           const __iterable${index} = ${iterable};
           if (__iterable${index} == null) throw new TypeError('Cannot iterate over null or undefined.');
+          ${iteratorReduction ? `let __setSize${index};` : ''}
           if (__engine.isFastNativeArray(__iterable${index})) {
             for (let __arrayIndex${index} = 0; __arrayIndex${index} < __iterable${index}.length; __arrayIndex${index}++) {
               __engine.tick();
               const __local${index} = __iterable${index}[__arrayIndex${index}];
-              ${arrayReduction
-                ? `__engine.tickBatch(__batches[${arrayReduction.batchIndex}]);\n              ${arrayReduction.local} = ${arrayReduction.local} + __local${index};`
+              ${iteratorReduction
+                ? `__engine.tickBatch(__batches[${iteratorReduction.batchIndex}]);\n              ${iteratorReduction.local} = ${iteratorReduction.local} + ${iteratorReduction.valueCode};`
+                : `${loopTick}\n              ${body}`}
+            }
+            __engine.tick();
+          }${setReductionPath}${stringReductionPath} else if (__engine.isFastNativeString(__iterable${index})
+            || __engine.isFastNativeSet(__iterable${index})) {
+            if (typeof __iterable${index}[Symbol.iterator] !== 'function') {
+              throw new TypeError('Value is not synchronously iterable.');
+            }
+            for (const __local${index} of __iterable${index}) {
+              __engine.tick();
+              ${iteratorReduction
+                ? `__engine.tickBatch(__batches[${iteratorReduction.batchIndex}]);\n              ${iteratorReduction.local} = ${iteratorReduction.local} + ${iteratorReduction.valueCode};`
                 : `${loopTick}\n              ${body}`}
             }
             __engine.tick();
@@ -331,7 +494,7 @@ function compileStatement(node, context) {
           }
         }`;
       }
-      return `${statementTick}{
+      return `${iterationStatementTick}{
         const __iterable${index} = ${iterable};
         if (__iterable${index} == null) throw new TypeError('Cannot iterate over null or undefined.');
         for (const __local${index} of ${entries}) {
@@ -411,12 +574,21 @@ function compileExpression(node, context) {
         if (binding) break;
         environment = environment.parent;
       }
-      if (!binding || !isCompiledNativeFunction(binding.value)) return null;
+      if (!binding) return null;
       const capture = resolveCapture(context, node.callee.name);
       if (capture === null) return null;
       const calleeTick = tickExpression(context, node.callee);
       const args = node.args.map(argument => compileExpression(argument, context));
       if (args.some(argument => argument === null)) return null;
+      if (node.callee.name === 'sum' && args.length === 1
+        && binding === context.engine.builtins.bindings.get('sum')
+        && binding.value === context.engine.nativeSumFunction) {
+        return `(${expressionTick}__engine.callNativeSum(
+          (${calleeTick}__captureBindings[${capture}].value),
+          ${args[0]}
+        ))`;
+      }
+      if (!isCompiledNativeFunction(binding.value)) return null;
       return `(${expressionTick}(${calleeTick}(0, __captureBindings[${capture}].value))(${args.join(', ')}))`;
     }
     default:

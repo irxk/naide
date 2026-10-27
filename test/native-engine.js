@@ -233,12 +233,13 @@ test('native JIT matches interpreter results and step accounting for numeric fun
 
 test('native JIT array iteration preserves interpreter results and step accounting', () => {
   const source = [
-    'fn sumValues(list values) -> int:',
+    'list values = [1, 2, 3, 4]',
+    'fn sumValues() -> int:',
     '  mut int total = 0',
     '  for value of values:',
     '    total += value',
     '  ret total',
-    'fn sumUntilThree(list values) -> int:',
+    'fn sumUntilThree() -> int:',
     '  mut int total = 0',
     '  for value of values:',
     '    if value == 3:',
@@ -251,14 +252,15 @@ test('native JIT array iteration preserves interpreter results and step accounti
   const fastAst = fastEngine.parse(source);
   fastEngine.execute(fastAst);
   const fastSum = fastEngine.global.get('sumValues');
+  assert.equal(fastEngine.isFastNativeArray(fastEngine.global.get('values')), true);
   assert.ok(isCompiledNativeFunction(fastSum));
   const fastStepsBeforeCall = fastEngine.steps;
-  assert.equal(fastSum([1, 2, 3, 4]), 10);
+  assert.equal(fastSum(), 10);
   const fastSumSteps = fastEngine.steps - fastStepsBeforeCall;
   const fastUntil = fastEngine.global.get('sumUntilThree');
   assert.ok(isCompiledNativeFunction(fastUntil));
   const fastUntilStepsBeforeCall = fastEngine.steps;
-  assert.equal(fastUntil([1, 2, 3, 4]), 3);
+  assert.equal(fastUntil(), 3);
   const fastUntilSteps = fastEngine.steps - fastUntilStepsBeforeCall;
 
   const interpreterEngine = new NaideVM();
@@ -268,15 +270,335 @@ test('native JIT array iteration preserves interpreter results and step accounti
     interpreterEngine.global.bindings.get(node.name).value =
       (...args) => interpreterEngine.invokeFunction(node, interpreterEngine.global, args);
   }
+  const interpreterValues = interpreterEngine.global.get('values');
+  Object.defineProperty(interpreterValues, Symbol.iterator, {
+    value: Array.prototype[Symbol.iterator],
+  });
+  assert.equal(interpreterEngine.isFastNativeArray(interpreterValues), false);
   const interpreterStepsBeforeCall = interpreterEngine.steps;
-  assert.equal(interpreterEngine.global.get('sumValues')([1, 2, 3, 4]), 10);
+  assert.equal(interpreterEngine.global.get('sumValues')(), 10);
   assert.equal(fastSumSteps, interpreterEngine.steps - interpreterStepsBeforeCall);
   const interpreterUntilStepsBeforeCall = interpreterEngine.steps;
-  assert.equal(interpreterEngine.global.get('sumUntilThree')([1, 2, 3, 4]), 3);
+  assert.equal(interpreterEngine.global.get('sumUntilThree')(), 3);
   assert.equal(fastUntilSteps, interpreterEngine.steps - interpreterUntilStepsBeforeCall);
   fastEngine.maxSteps = fastEngine.steps + fastSumSteps - 1;
   assert.throws(() => fastSum([1, 2, 3, 4]), /Native engine step limit/);
   assert.equal(fastEngine.steps, fastEngine.maxSteps + 1);
+});
+
+test('native JIT string and Set iteration preserve results and step accounting', () => {
+  const source = [
+    'fn countString(str values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += 1',
+    '  ret total',
+    'fn sumSet(any values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  const fastAst = fastEngine.parse(source);
+  fastEngine.execute(fastAst);
+  const fastCountString = fastEngine.global.get('countString');
+  const fastSumSet = fastEngine.global.get('sumSet');
+  assert.ok(isCompiledNativeFunction(fastCountString));
+  assert.ok(isCompiledNativeFunction(fastSumSet));
+  assert.equal(fastEngine.isFastNativeString('A🙂B'), true);
+  assert.equal(fastEngine.isFastNativeSet(new Set()), true);
+
+  const interpreterEngine = new NaideVM();
+  const interpreterAst = interpreterEngine.parse(source);
+  interpreterEngine.execute(interpreterAst);
+  for (const node of interpreterAst.body.filter(statement => statement.type === 'Function')) {
+    interpreterEngine.global.bindings.get(node.name).value =
+      (...args) => interpreterEngine.invokeFunction(node, interpreterEngine.global, args);
+  }
+
+  let stringStepCount = 0;
+  let setStepCount = 0;
+  for (const [fastFunction, interpreterFunction, values, expected] of [
+    [fastCountString, interpreterEngine.global.get('countString'), 'A🙂B', 3],
+    [fastCountString, interpreterEngine.global.get('countString'), 'A🙂B\uD800x', 5],
+    [fastSumSet, interpreterEngine.global.get('sumSet'), new Set([2, 3, 5]), 10],
+  ]) {
+    const fastStepsBeforeCall = fastEngine.steps;
+    assert.equal(fastFunction(values), expected);
+    const fastSteps = fastEngine.steps - fastStepsBeforeCall;
+    const interpreterStepsBeforeCall = interpreterEngine.steps;
+    assert.equal(interpreterFunction(values), expected);
+    assert.equal(fastSteps, interpreterEngine.steps - interpreterStepsBeforeCall);
+    if (fastFunction === fastCountString) stringStepCount = fastSteps;
+    else setStepCount = fastSteps;
+  }
+  const customIteratorSet = new Set([1, 2]);
+  customIteratorSet[Symbol.iterator] = function* iterateCustomSet() {
+    yield 7;
+    yield 8;
+  };
+  assert.equal(fastEngine.isFastNativeSet(customIteratorSet), false);
+  assert.equal(fastSumSet(customIteratorSet), 15);
+
+  fastEngine.maxSteps = fastEngine.steps + stringStepCount - 1;
+  assert.throws(() => fastCountString('A🙂B\uD800x'), /Native engine step limit/);
+  assert.equal(fastEngine.steps, fastEngine.maxSteps + 1);
+  fastEngine.maxSteps = fastEngine.steps + setStepCount - 1;
+  assert.throws(() => fastSumSet(new Set([2, 3, 5])), /Native engine step limit/);
+  assert.equal(fastEngine.steps, fastEngine.maxSteps + 1);
+});
+
+test('native JIT specializes the built-in sum helper and preserves live rebinding', () => {
+  const source = [
+    'fn sumValues(list values) -> int:',
+    '  ret sum(values)',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  const referenceEngine = new NaideVM();
+  fastEngine.execute(source);
+  referenceEngine.execute(source);
+  const sumValues = fastEngine.global.get('sumValues');
+  const referenceNode = referenceEngine.parse(source).body[0];
+  referenceEngine.global.bindings.get('sumValues').value =
+    (...args) => referenceEngine.invokeFunction(referenceNode, referenceEngine.global, args);
+  assert.ok(isCompiledNativeFunction(sumValues));
+
+  const values = fastEngine.createNativeArray([1, 2, 3, 4]);
+  const referenceValues = referenceEngine.createNativeArray([1, 2, 3, 4]);
+  const fastStepsBeforeCall = fastEngine.steps;
+  assert.equal(sumValues(values), 10);
+  const fastSteps = fastEngine.steps - fastStepsBeforeCall;
+  const referenceStepsBeforeCall = referenceEngine.steps;
+  assert.equal(referenceEngine.global.get('sumValues')(referenceValues), 10);
+  assert.equal(fastSteps, referenceEngine.steps - referenceStepsBeforeCall);
+
+  const sumBinding = fastEngine.builtins.bindings.get('sum');
+  const originalSum = sumBinding.value;
+  sumBinding.value = items => items.length * 10;
+  try {
+    assert.equal(sumValues(values), 40);
+  } finally {
+    sumBinding.value = originalSum;
+  }
+});
+
+test('native JIT Set reduction preserves dynamic coercion, mutation, and step counts', () => {
+  const source = [
+    'fn sumValues(any values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const engine = new NaideVM();
+  engine.execute(source);
+  const sumValues = engine.global.get('sumValues');
+  assert.ok(isCompiledNativeFunction(sumValues));
+
+  const referenceEngine = new NaideVM();
+  const referenceAst = referenceEngine.parse(source);
+  referenceEngine.execute(referenceAst);
+  const referenceNode = referenceAst.body[0];
+  referenceEngine.global.bindings.get('sumValues').value =
+    (...args) => referenceEngine.invokeFunction(referenceNode, referenceEngine.global, args);
+
+  let coercions = 0;
+  let referenceCoercions = 0;
+  const makeValues = onCoercion => {
+    const values = new Set([2]);
+    values.add({
+      valueOf() {
+        onCoercion();
+        values.add(7);
+        return 3;
+      },
+    });
+    return values;
+  };
+  const values = makeValues(() => coercions++);
+  const referenceValues = makeValues(() => referenceCoercions++);
+
+  const stepsBeforeCall = engine.steps;
+  assert.equal(sumValues(values), 12);
+  const fastSteps = engine.steps - stepsBeforeCall;
+  const referenceStepsBeforeCall = referenceEngine.steps;
+  assert.equal(referenceEngine.global.get('sumValues')(referenceValues), 12);
+  assert.equal(fastSteps, referenceEngine.steps - referenceStepsBeforeCall);
+  assert.equal(coercions, 1);
+  assert.equal(referenceCoercions, 1);
+});
+
+test('native JIT Set range reduction preserves ordered floating-point sums and dynamic fallback', () => {
+  const source = [
+    'fn sumValues(any values) -> num:',
+    '  mut num total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const engine = new NaideVM();
+  engine.execute(source);
+  const sumValues = engine.global.get('sumValues');
+  assert.ok(isCompiledNativeFunction(sumValues));
+
+  const referenceEngine = new NaideVM();
+  const referenceAst = referenceEngine.parse(source);
+  referenceEngine.execute(referenceAst);
+  const referenceNode = referenceAst.body[0];
+  referenceEngine.global.bindings.get('sumValues').value =
+    (...args) => referenceEngine.invokeFunction(referenceNode, referenceEngine.global, args);
+
+  const range = size => new Set(Array.from({ length: size }, (_, index) => index));
+  const fastRange = range(128);
+  const referenceRange = range(128);
+  const fastStepsBefore = engine.steps;
+  const referenceStepsBefore = referenceEngine.steps;
+  assert.equal(sumValues(fastRange), 8128);
+  assert.equal(referenceEngine.global.get('sumValues')(referenceRange), 8128);
+  assert.equal(engine.steps - fastStepsBefore, referenceEngine.steps - referenceStepsBefore);
+
+  const fastNonRange = new Set(Array.from({ length: 128 }, (_, index) => index + 1));
+  const referenceNonRange = new Set(fastNonRange);
+  const fastNonRangeStepsBefore = engine.steps;
+  const referenceNonRangeStepsBefore = referenceEngine.steps;
+  assert.equal(sumValues(fastNonRange), 8256);
+  assert.equal(referenceEngine.global.get('sumValues')(referenceNonRange), 8256);
+  assert.equal(
+    engine.steps - fastNonRangeStepsBefore,
+    referenceEngine.steps - referenceNonRangeStepsBefore,
+  );
+
+  const makeDynamicRange = () => {
+    const values = new Set(Array.from({ length: 127 }, (_, index) => index));
+    values.add({
+      valueOf() {
+        values.add(127);
+        return 127;
+      },
+    });
+    return values;
+  };
+  let fastCoercions = 0;
+  let referenceCoercions = 0;
+  const fastDynamicRange = makeDynamicRange();
+  const referenceDynamicRange = makeDynamicRange();
+  const fastDynamicEntry = [...fastDynamicRange][127];
+  const referenceDynamicEntry = [...referenceDynamicRange][127];
+  fastDynamicEntry.valueOf = () => {
+    fastCoercions++;
+    fastDynamicRange.add(128);
+    return 127;
+  };
+  referenceDynamicEntry.valueOf = () => {
+    referenceCoercions++;
+    referenceDynamicRange.add(128);
+    return 127;
+  };
+  assert.equal(sumValues(fastDynamicRange), 8256);
+  assert.equal(referenceEngine.global.get('sumValues')(referenceDynamicRange), 8256);
+  assert.equal(fastCoercions, 1);
+  assert.equal(referenceCoercions, 1);
+});
+
+test('native Map reduction precharges exact steps and preserves dynamic-value fallback', () => {
+  const source = [
+    'fn sumValues(any values) -> int:',
+    '  mut int total = 0',
+    '  each key, value in values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  fastEngine.execute(source);
+  const referenceEngine = new NaideVM();
+  referenceEngine.execute(source);
+  referenceEngine.isFastNativeMap = () => false;
+  const fastSum = fastEngine.global.get('sumValues');
+  const referenceSum = referenceEngine.global.get('sumValues');
+  const numericMap = new Map([[1, 2], [2, 3], [3, 5]]);
+  const fastStepsBeforeCall = fastEngine.steps;
+  assert.equal(fastSum(numericMap), 10);
+  const fastSteps = fastEngine.steps - fastStepsBeforeCall;
+  const referenceStepsBeforeCall = referenceEngine.steps;
+  assert.equal(referenceSum(numericMap), 10);
+  assert.equal(fastSteps, referenceEngine.steps - referenceStepsBeforeCall);
+
+  const dynamicMap = new Map([[1, 2]]);
+  let coercions = 0;
+  dynamicMap.set(2, {
+    valueOf() {
+      coercions++;
+      dynamicMap.set(3, 7);
+      return 3;
+    },
+  });
+  assert.equal(fastSum(dynamicMap), 12);
+  assert.equal(coercions, 1);
+});
+
+test('native Set fast-path detection does not trigger proxy prototype traps', () => {
+  const values = new Proxy({
+    [Symbol.iterator]() {
+      return [2, 3, 5][Symbol.iterator]();
+    },
+  }, {
+    getPrototypeOf() {
+      throw new Error('prototype trap must not run');
+    },
+  });
+  const { globals } = runNative([
+    'fn sumValues() -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n'), { globals: { values } });
+
+  assert.equal(globals.get('sumValues')(), 10);
+});
+
+test('native array iteration preserves dynamic length, sparse reads, and generic fallback', () => {
+  const source = [
+    'list values = [1, 2, 3]',
+    'fn sumWhileAppending() -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '    if value == 2:',
+    '      values.push(4)',
+    '  ret total',
+    'fn sumValues() -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    '',
+  ].join('\n');
+  const fastEngine = new NaideVM();
+  const referenceEngine = new NaideVM();
+  fastEngine.execute(source);
+  referenceEngine.execute(source);
+  const referenceValues = referenceEngine.global.get('values');
+  Object.defineProperty(referenceValues, Symbol.iterator, {
+    value: Array.prototype[Symbol.iterator],
+  });
+
+  assert.equal(fastEngine.global.get('sumWhileAppending')(), 10);
+  assert.equal(referenceEngine.global.get('sumWhileAppending')(), 10);
+  assert.equal(fastEngine.global.get('values').length, 4);
+  assert.equal(referenceValues.length, 4);
+
+  delete fastEngine.global.get('values')[1];
+  delete referenceValues[1];
+  assert.ok(Number.isNaN(fastEngine.global.get('sumValues')()));
+  assert.ok(Number.isNaN(referenceEngine.global.get('sumValues')()));
 });
 
 test('native JIT uses live captured bindings and falls back for shadowed function calls', () => {
@@ -813,6 +1135,129 @@ test('native engine loops consistently over built-in iterable collections', () =
   const { globals } = runNative(source);
 
   assert.equal(globals.get('total'), 17);
+});
+
+test('native engine fast accumulators preserve string, Set, and Map iteration results', () => {
+  const source = [
+    'mut int codePoints = 0',
+    'for value of "A🙂B":',
+    '  codePoints += 1',
+    'mut int setTotal = 0',
+    'for value of values:',
+    '  setTotal += value',
+    'mut int mapTotal = 0',
+    'each key, value in mapping:',
+    '  mapTotal += value',
+    '',
+  ].join('\n');
+  const { globals } = runNative(source, {
+    globals: {
+      values: new Set([2, 3, 5]),
+      mapping: new Map([['a', 7], ['b', 11]]),
+    },
+  });
+
+  assert.equal(globals.get('codePoints'), 3);
+  assert.equal(globals.get('setTotal'), 10);
+  assert.equal(globals.get('mapTotal'), 18);
+});
+
+test('native Map accumulator closes its iterator on step-limit errors', () => {
+  const iteratorPrototype = Object.getPrototypeOf(new Map().entries());
+  const originalReturn = Object.getOwnPropertyDescriptor(iteratorPrototype, 'return');
+  let closed = 0;
+  Object.defineProperty(iteratorPrototype, 'return', {
+    configurable: true,
+    value() {
+      closed++;
+      return { done: true };
+    },
+  });
+  try {
+    const engine = new NativeEngine({ globals: { values: new Map([['a', 1]]) } });
+    engine.execute('mut int total = 0\n');
+    engine.maxSteps = engine.steps + 2;
+    assert.throws(
+      () => engine.execute('each key, value in values:\n  total += value\n'),
+      /step limit/,
+    );
+  } finally {
+    if (originalReturn) Object.defineProperty(iteratorPrototype, 'return', originalReturn);
+    else delete iteratorPrototype.return;
+  }
+  assert.equal(closed, 1);
+});
+
+test('synchronous loop fast path preserves custom iterator acquisition, completion, and close', () => {
+  const output = captureOutput();
+  const trace = [];
+  let iteratorAccesses = 0;
+  const values = Object.defineProperty({}, Symbol.iterator, {
+    get() {
+      iteratorAccesses++;
+      trace.push(`iterator:${iteratorAccesses}`);
+      return function createIterator() {
+        trace.push('acquire');
+        let finished = false;
+        return {
+          next() {
+            trace.push('next');
+            if (!finished) {
+              finished = true;
+              return { value: 7, done: false };
+            }
+            return {
+              get done() {
+                trace.push('done');
+                return true;
+              },
+              get value() {
+                trace.push('terminal-value');
+                return undefined;
+              },
+            };
+          },
+          return() {
+            trace.push('return');
+            return { done: true };
+          },
+        };
+      };
+    },
+  });
+
+  runNative('for value of values:\n  log value\n', {
+    globals: { values },
+    output,
+  });
+  assert.equal(iteratorAccesses, 2);
+  assert.deepEqual(output.lines, ['7']);
+  assert.deepEqual(trace, [
+    'iterator:1',
+    'iterator:2',
+    'acquire',
+    'next',
+    'next',
+    'done',
+    'terminal-value',
+  ]);
+
+  trace.length = 0;
+  const breakingValues = {
+    [Symbol.iterator]() {
+      return {
+        next: () => ({ value: 9, done: false }),
+        return() {
+          trace.push('return');
+          return { done: true };
+        },
+      };
+    },
+  };
+  runNative('for value of values:\n  break\n', {
+    globals: { values: breakingValues },
+  });
+  assert.deepEqual(trace, ['return']);
 });
 
 test('native async collection helpers bound concurrency, preserve order, and reduce sequentially', async () => {

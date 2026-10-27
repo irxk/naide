@@ -1,9 +1,17 @@
 import { inferNativeFunction } from './native-type-inference.js';
 import { lowerNativeFunction } from './native-ir.js';
-import { emitWindowsX64 } from './native-x64.js';
+import {
+  emitWindowsX64,
+  emitWindowsX64ArraySum,
+  recognizeNativeModuloCountReduction,
+} from './native-x64.js';
 import { performance } from 'node:perf_hooks';
 import {
+  nativeArraySumMachineCodeAvailable,
   compileNativeMachineCode,
+  getNativeNumericArrayExactIntegerSum,
+  hasNativeNumericArrayData,
+  invokeNativeArraySumMachineCode,
   invokeNativeMachineCode,
 } from './native-machine-bridge.js';
 
@@ -22,7 +30,7 @@ export function createTieredNativeMachineFunction(
   threshold,
   fallbackFunction,
 ) {
-  if (!containsRangeLoop(node.body)) {
+  if (!containsRangeLoop(node.body) && !nativeArraySumStepsPerElement(node)) {
     if (engine.nativeMachineCodeDiagnostics) {
       engine.nativeMachineCodeStats.skippedLowBenefitFunctions++;
     }
@@ -71,6 +79,9 @@ function containsRangeLoop(statements) {
 }
 
 export function compileNativeMachineFunction(node, closure, engine) {
+  const arraySumFunction = compileNativeArraySumFunction(node, closure, engine);
+  if (arraySumFunction) return arraySumFunction;
+
   const diagnostics = engine.nativeMachineCodeDiagnostics;
   const stats = engine.nativeMachineCodeStats;
   const startedAt = diagnostics ? performance.now() : 0;
@@ -93,7 +104,12 @@ export function compileNativeMachineFunction(node, closure, engine) {
     recordCompilationTime();
     return null;
   }
-  const stepPreflightSafe = supportsStepPreflight(ir.body);
+  const moduloCountReduction = recognizeNativeModuloCountReduction(ir);
+  const stepPreflightSafe = supportsStepPreflight(
+    ir.body,
+    false,
+    moduloCountReduction?.statement ?? null,
+  );
   const generated = emitWindowsX64(ir, { metered: !stepPreflightSafe });
   if (!generated) {
     if (diagnostics) stats.unsupportedFunctions++;
@@ -146,7 +162,7 @@ export function compileNativeMachineFunction(node, closure, engine) {
     }
     const remainingSteps = engine.maxSteps - engine.steps;
     const preflightSteps = stepPreflightSafe
-      ? countNativeSteps(ir, nativeArgs, remainingSteps)
+      ? countNativeSteps(ir, nativeArgs, remainingSteps, moduloCountReduction)
       : null;
     if (stepPreflightSafe && preflightSteps === null) {
       if (diagnostics) stats.stepBudgetFallbacks++;
@@ -184,6 +200,129 @@ export function compileNativeMachineFunction(node, closure, engine) {
         }
       }
       return result.value;
+    } catch (error) {
+      engine.addErrorFrame(error, frame);
+      throw error;
+    } finally {
+      engine.callDepth--;
+    }
+  };
+  machineFunctions.add(machineFunction);
+  return machineFunction;
+}
+
+function nativeArraySumStepsPerElement(node) {
+  if (node?.type !== 'Function' || node.isAsync || node.isGenerator
+    || node.params?.length !== 1
+    || node.params[0].type?.toLowerCase() !== 'list'
+    || node.params[0].defaultValue
+    || node.params[0].spread
+    || node.body?.length !== 3) return 0;
+  const [initializer, loop, result] = node.body;
+  if (initializer.type !== 'TypedVar'
+    || !initializer.isMut
+    || !['int', 'float', 'num'].includes(initializer.varType?.toLowerCase())
+    || initializer.value?.type !== 'Number'
+    || Number(initializer.value.value) !== 0
+    || loop.type !== 'ForEach'
+    || loop.isAsync
+    || loop.iteration !== 'of'
+    || loop.iterable?.type !== 'Identifier'
+    || loop.iterable.name !== node.params[0].name
+    || loop.body?.length !== 1
+    || result.type !== 'Return'
+    || result.value?.type !== 'Identifier'
+    || result.value.name !== initializer.name) return 0;
+
+  const increment = loop.body[0];
+  if (increment.type === 'CompoundAssign'
+    && increment.op === '+='
+    && increment.target?.type === 'Identifier'
+    && increment.target.name === initializer.name
+    && increment.value?.type === 'Identifier'
+    && increment.value.name === loop.varName
+    && loop.varName !== initializer.name) return 4;
+  if (increment.type === 'Assignment'
+    && increment.target?.type === 'Identifier'
+    && increment.target.name === initializer.name
+    && increment.value?.type === 'Binary'
+    && increment.value.op === '+'
+    && increment.value.left?.type === 'Identifier'
+    && increment.value.left.name === initializer.name
+    && increment.value.right?.type === 'Identifier'
+    && increment.value.right.name === loop.varName
+    && loop.varName !== initializer.name) return 6;
+  return 0;
+}
+
+function compileNativeArraySumFunction(node, closure, engine) {
+  const stepsPerElement = nativeArraySumStepsPerElement(node);
+  if (!nativeArraySumMachineCodeAvailable || !stepsPerElement) return null;
+  const diagnostics = engine.nativeMachineCodeDiagnostics;
+  const stats = engine.nativeMachineCodeStats;
+  const startedAt = diagnostics ? performance.now() : 0;
+  if (diagnostics) stats.compilationAttempts++;
+  const generatedCode = emitWindowsX64ArraySum();
+  const code = compileNativeMachineCode(generatedCode);
+  if (diagnostics) {
+    stats.compiledFunctions++;
+    stats.generatedCodeBytes += generatedCode.byteLength;
+    stats.compilationTimeMs += performance.now() - startedAt;
+  }
+
+  const frame = {
+    file: engine.findModulePath(closure),
+    line: node._line,
+    functionName: node.name,
+  };
+
+  const machineFunction = function naideArraySumMachineFunction(...args) {
+    if (this !== undefined) {
+      if (diagnostics) stats.guardFallbacks++;
+      return engine.invokeFunction(node, closure, args, this);
+    }
+    if (args.length !== 1) {
+      if (diagnostics) stats.guardFallbacks++;
+      return engine.invokeFunction(node, closure, args);
+    }
+
+    if (!engine.isFastNativeArray(args[0]) || !hasNativeNumericArrayData(args[0])) {
+      if (diagnostics) stats.guardFallbacks++;
+      return engine.invokeFunction(node, closure, args);
+    }
+    const values = args[0];
+    const stepCount = values.length * stepsPerElement + 7;
+    if (!Number.isSafeInteger(stepCount)) {
+      if (diagnostics) stats.stepBudgetFallbacks++;
+      return engine.invokeFunction(node, closure, args);
+    }
+    const remainingSteps = engine.maxSteps - engine.steps;
+    if (stepCount > remainingSteps) {
+      if (diagnostics) stats.stepBudgetFallbacks++;
+      return engine.invokeFunction(node, closure, args);
+    }
+    if (engine.callDepth + 1 > engine.maxCallDepth) {
+      if (diagnostics) stats.callDepthFallbacks++;
+      return engine.invokeFunction(node, closure, args);
+    }
+
+    const exactIntegerSum = getNativeNumericArrayExactIntegerSum(values);
+    if (exactIntegerSum !== null) {
+      engine.callDepth++;
+      try {
+        engine.steps += stepCount;
+        return exactIntegerSum;
+      } finally {
+        engine.callDepth--;
+      }
+    }
+
+    if (diagnostics) stats.nativeCalls++;
+    engine.callDepth++;
+    try {
+      const result = invokeNativeArraySumMachineCode(code, values);
+      engine.steps += stepCount;
+      return result;
     } catch (error) {
       engine.addErrorFrame(error, frame);
       throw error;
@@ -416,22 +555,39 @@ function collectShadowedNames(value, names) {
   }
 }
 
-function supportsStepPreflight(statements, insideLoop = false) {
+function supportsStepPreflight(
+  statements,
+  insideLoop = false,
+  moduloCountLoop = null,
+  activeRangeLocalId = null,
+) {
   for (const statement of statements) {
     switch (statement.op) {
       case 'local.init':
       case 'local.set':
-        if (!supportsPreflightExpression(statement.value)) return false;
+        if (!supportsPreflightExpression(statement.value, activeRangeLocalId)) return false;
         break;
       case 'return':
-        if (insideLoop || !supportsPreflightExpression(statement.value)) return false;
+        if (!supportsPreflightExpression(statement.value, activeRangeLocalId)) return false;
         break;
       case 'range.for':
         if (insideLoop
           || !supportsPreflightExpression(statement.start)
           || !supportsPreflightExpression(statement.end)
           || writesLocal(statement.body, statement.localId)
-          || !supportsStepPreflight(statement.body, true)) return false;
+          || !supportsStepPreflight(
+            statement.body,
+            true,
+            moduloCountLoop === statement,
+            statement.start.op === 'const' && statement.start.value === 0
+              ? statement.localId
+              : activeRangeLocalId,
+          )) return false;
+        break;
+      case 'if':
+        if (!supportsPreflightExpression(statement.condition, activeRangeLocalId)
+          || !supportsStepPreflight(statement.then, true, moduloCountLoop, activeRangeLocalId)
+          || !supportsStepPreflight(statement.otherwise, true, moduloCountLoop, activeRangeLocalId)) return false;
         break;
       default:
         return false;
@@ -440,19 +596,47 @@ function supportsStepPreflight(statements, insideLoop = false) {
   return true;
 }
 
-function supportsPreflightExpression(expression) {
-  switch (expression?.op) {
+function supportsPreflightExpression(expression, activeRangeLocalId = null) {
+  if (!expression || typeof expression !== 'object') return false;
+  switch (expression.op) {
     case 'const':
     case 'local.get':
       return true;
     case 'binary':
-      return supportsPreflightExpression(expression.left)
-        && supportsPreflightExpression(expression.right);
+      if (!['+','-','*','/','%','==','===','!=','!==','<','<=','>','>='].includes(expression.operator)) {
+        return false;
+      }
+      return supportsPreflightExpression(expression.left, activeRangeLocalId)
+        && supportsPreflightExpression(expression.right, activeRangeLocalId);
     case 'unary':
-      return supportsPreflightExpression(expression.value);
+      return ['+','-'].includes(expression.operator)
+        && supportsPreflightExpression(expression.value, activeRangeLocalId);
+    case 'conditional':
+      return supportsPreflightExpression(expression.condition, activeRangeLocalId)
+        && supportsPreflightExpression(expression.consequent, activeRangeLocalId)
+        && supportsPreflightExpression(expression.alternate, activeRangeLocalId);
     default:
       return false;
   }
+}
+
+function moduloPredicateDivisor(condition, rangeLocalId) {
+  if (condition?.op !== 'binary' || !['==', '==='].includes(condition.operator)) return null;
+  let remainder;
+  let zero;
+  if (condition.left?.op === 'binary' && condition.left.operator === '%') {
+    remainder = condition.left;
+    zero = condition.right;
+  } else if (condition.right?.op === 'binary' && condition.right.operator === '%') {
+    remainder = condition.right;
+    zero = condition.left;
+  } else {
+    return null;
+  }
+  if (remainder.left?.op !== 'local.get' || remainder.left.localId !== rangeLocalId
+    || remainder.right?.op !== 'const' || !Number.isSafeInteger(remainder.right.value)
+    || remainder.right.value === 0 || zero?.op !== 'const' || zero.value !== 0) return null;
+  return Math.abs(remainder.right.value);
 }
 
 function writesLocal(statements, localId) {
@@ -461,7 +645,7 @@ function writesLocal(statements, localId) {
       && statement.localId === localId);
 }
 
-function countNativeSteps(ir, args, remainingSteps) {
+function countNativeSteps(ir, args, remainingSteps, moduloCountReduction = null) {
   const parameterIndices = new Map(ir.params.map(parameter => [parameter.localId, parameter.index]));
   let steps = 0;
 
@@ -500,18 +684,119 @@ function countNativeSteps(ir, args, remainingSteps) {
       if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null;
       const iterations = Math.max(0, end - start);
       if (!Number.isSafeInteger(iterations)) return null;
-      const bodySteps = 1 + countNativeStepsForStatements(
-        statement.body, countExpression,
-      );
+      if (moduloCountReduction?.statement === statement) {
+        const conditional = statement.body[0];
+        const thenSteps = countNativeStepsForStatements(
+          conditional.then,
+          countExpression,
+        );
+        if (!Number.isSafeInteger(thenSteps)) return null;
+        const iterationSteps = 2 + countExpression(conditional.condition);
+        const hits = countModuloMultiples(end, moduloCountReduction.divisor);
+        const remaining = remainingSteps - steps;
+        const fixedSteps = BigInt(iterations) * BigInt(iterationSteps);
+        const conditionalSteps = hits * BigInt(thenSteps);
+        const total = fixedSteps + conditionalSteps;
+        if (thenSteps < 0 || total > BigInt(remaining)) return null;
+        steps += Number(total);
+        continue;
+      }
       const remaining = remainingSteps - steps;
-      if (bodySteps <= 0 || iterations > Math.floor(remaining / bodySteps)) return null;
-      steps += iterations * bodySteps;
+      const body = countNativeStepsForRangeBody(statement.body, statement.localId);
+      if (!body) return null;
+      const hits = body.divisor === null
+        ? 0n
+        : countModuloMultiples(end, body.divisor);
+      const total = hits * BigInt(body.matchSteps)
+        + (BigInt(iterations) - hits) * BigInt(body.otherSteps);
+      if (body.matchSteps <= 0 || body.otherSteps <= 0 || total > BigInt(remaining)) return null;
+      steps += Number(total);
     } else {
       return null;
     }
     if (!Number.isSafeInteger(steps) || steps > remainingSteps) return null;
   }
   return Number.isSafeInteger(steps) && steps <= remainingSteps ? steps : null;
+}
+
+function countNativeStepsForRangeBody(statements, rangeLocalId) {
+  let matchSteps = 1;
+  let otherSteps = 1;
+  let divisor = null;
+  for (const statement of statements) {
+    if (statement.op !== 'local.init' && statement.op !== 'local.set') return null;
+    const variants = countExpressionVariants(statement.value, rangeLocalId);
+    if (!variants || (divisor !== null && variants.divisor !== null
+      && divisor !== variants.divisor)) return null;
+    if (variants.divisor !== null) divisor = variants.divisor;
+    matchSteps += 1 + variants.baseSteps + variants.matchSteps;
+    otherSteps += 1 + variants.baseSteps + variants.otherSteps;
+  }
+  return { divisor, matchSteps, otherSteps };
+}
+
+function countExpressionVariants(expression, rangeLocalId) {
+  const ownSteps = (expression.metered === false ? 0 : 1)
+    + (expression.inlineStepPrefix?.length || 0)
+    + (expression.inlineStepSources?.length || 0);
+  if (expression.op === 'conditional') {
+    const divisor = moduloPredicateDivisor(expression.condition, rangeLocalId);
+    const conditionSteps = countPreflightExpression(expression.condition);
+    const matchSteps = countPreflightExpression(expression.consequent);
+    const otherSteps = countPreflightExpression(expression.alternate);
+    if (divisor === null || conditionSteps === null || matchSteps === null || otherSteps === null) {
+      return null;
+    }
+    return {
+      baseSteps: ownSteps + conditionSteps,
+      matchSteps,
+      otherSteps,
+      divisor,
+    };
+  }
+
+  const children = expression.op === 'binary'
+    ? [expression.left, expression.right]
+    : expression.op === 'unary'
+      ? [expression.value]
+      : [];
+  let baseSteps = ownSteps;
+  let matchSteps = 0;
+  let otherSteps = 0;
+  let divisor = null;
+  for (const child of children) {
+    const variants = countExpressionVariants(child, rangeLocalId);
+    if (!variants || (divisor !== null && variants.divisor !== null
+      && divisor !== variants.divisor)) return null;
+    baseSteps += variants.baseSteps;
+    matchSteps += variants.matchSteps;
+    otherSteps += variants.otherSteps;
+    if (variants.divisor !== null) divisor = variants.divisor;
+  }
+  return { baseSteps, matchSteps, otherSteps, divisor };
+}
+
+function countPreflightExpression(expression) {
+  const children = expression.op === 'binary'
+    ? [expression.left, expression.right]
+    : expression.op === 'unary'
+      ? [expression.value]
+      : [];
+  let steps = (expression.metered === false ? 0 : 1)
+    + (expression.inlineStepPrefix?.length || 0)
+    + (expression.inlineStepSources?.length || 0);
+  for (const child of children) {
+    const childSteps = countPreflightExpression(child);
+    if (childSteps === null) return null;
+    steps += childSteps;
+  }
+  return Number.isSafeInteger(steps) ? steps : null;
+}
+
+function countModuloMultiples(end, divisor) {
+  const upper = BigInt(end);
+  const magnitude = BigInt(divisor);
+  return upper > 0n ? ((upper - 1n) / magnitude) + 1n : 0n;
 }
 
 function countNativeStepsForStatements(statements, countExpression) {

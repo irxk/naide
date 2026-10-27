@@ -1,6 +1,6 @@
 {
   "name": "naider",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "description": "NAIDE is a readable, practical programming language with NaideVM, a multi-target compiler, type checking, and batteries-included development tools.",
   "main": "src/index.js",
   "exports": {

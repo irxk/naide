@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { nativeMachineCodeAvailable } from '../src/native-machine-bridge.js';
+import {
+  nativeArraySumMachineCodeAvailable,
+  nativeMachineCodeAvailable,
+} from '../src/native-machine-bridge.js';
 import { isNativeMachineFunction } from '../src/native-machine-compiler.js';
 import { NaideVM } from '../src/native-engine.js';
 
@@ -62,6 +65,227 @@ test('Windows x64 machine JIT matches the interpreter, meters steps, and enforce
   assert.equal(machine.steps - stepsBefore, reference.steps - referenceStepsBefore);
 });
 
+test('machine JIT sums guarded numeric arrays and preserves fallback and step semantics', {
+  skip: nativeArraySumMachineCodeAvailable
+    ? false
+    : `typed-array machine bridge is unavailable for ${process.platform}-${process.arch}`
+}, () => {
+  const source = [
+    'fn sum(list values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total = total + value',
+    '  ret total',
+    'fn sumCompound(list values) -> int:',
+    '  mut int total = 0',
+    '  for value of values:',
+    '    total += value',
+    '  ret total',
+    'list values = [1, 2, 3, 4]',
+    'list moreValues = [2, 4, 6]',
+    'list pushValues = [1, 2, 3]',
+    'list propertyValues = [1, 2, 3]',
+    'list holeValues = [1, 2, 3]',
+    'list lengthValues = [1, 2, 3]',
+    'list iteratorValues = [1, 2, 3]',
+    '',
+  ].join('\n');
+  const machine = new NaideVM({ nativeMachineCode: true, nativeMachineCodeDiagnostics: true });
+  const reference = new NaideVM();
+  machine.execute(source);
+  reference.execute(source);
+  const sum = machine.global.get('sum');
+  const sumCompound = machine.global.get('sumCompound');
+  const referenceSum = reference.global.get('sum');
+  const referenceSumCompound = reference.global.get('sumCompound');
+  const values = machine.global.get('values');
+  const referenceValues = reference.global.get('values');
+  assert.ok(isNativeMachineFunction(sum));
+  assert.ok(isNativeMachineFunction(sumCompound));
+  assert.ok(machine.isFastNativeArray(values));
+
+  const machineStepsBefore = machine.steps;
+  const referenceStepsBefore = reference.steps;
+  assert.equal(sum(values), referenceSum(referenceValues));
+  const stepsSpent = machine.steps - machineStepsBefore;
+  assert.equal(stepsSpent, reference.steps - referenceStepsBefore);
+  const compoundMachineStepsBefore = machine.steps;
+  const compoundReferenceStepsBefore = reference.steps;
+  assert.equal(sumCompound(values), referenceSumCompound(referenceValues));
+  assert.equal(
+    machine.steps - compoundMachineStepsBefore,
+    reference.steps - compoundReferenceStepsBefore,
+  );
+
+  values[1] = 20;
+  referenceValues[1] = 20;
+  assert.ok(machine.isFastNativeArray(values));
+  const guardFallbacks = machine.getNativeMachineCodeStats().guardFallbacks;
+  assert.equal(sum(values), referenceSum(referenceValues));
+  assert.equal(machine.getNativeMachineCodeStats().guardFallbacks, guardFallbacks + 1);
+
+  for (const [name, mutate] of [
+    ['pushValues', array => array.push(4)],
+    ['propertyValues', array => Reflect.defineProperty(array, '0', {
+      value: 9,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    })],
+    ['holeValues', array => { delete array[1]; }],
+    ['lengthValues', array => { array.length = 2; }],
+    ['iteratorValues', array => {
+      array[Symbol.iterator] = function* iterateCustomValues() { yield 7; yield 8; };
+    }],
+  ]) {
+    const mutableValues = machine.global.get(name);
+    const referenceMutableValues = reference.global.get(name);
+    mutate(mutableValues);
+    mutate(referenceMutableValues);
+    const fallbacksBefore = machine.getNativeMachineCodeStats().guardFallbacks;
+    assert.equal(sum(mutableValues), referenceSum(referenceMutableValues));
+    assert.equal(machine.getNativeMachineCodeStats().guardFallbacks, fallbacksBefore + 1);
+  }
+
+  const newValues = machine.global.get('moreValues');
+  const newReferenceValues = reference.global.get('moreValues');
+  machine.maxSteps = machine.steps + 1;
+  reference.maxSteps = reference.steps + 1;
+  let machineError;
+  let referenceError;
+  try {
+    sum(newValues);
+  } catch (error) {
+    machineError = error;
+  }
+  try {
+    referenceSum(newReferenceValues);
+  } catch (error) {
+    referenceError = error;
+  }
+  assert.match(machineError.message, /step limit/);
+  assert.match(referenceError.message, /step limit/);
+  assert.equal(machineError.message.replace(/ \(NAIDE line \d+\)$/, ''), referenceError.message);
+  assert.equal(machine.getNativeMachineCodeStats().stepBudgetFallbacks, 1);
+  assert.equal(machine.steps, reference.steps);
+});
+
+test('native sum helper preserves numeric-array semantics and budget fallback', {
+  skip: nativeArraySumMachineCodeAvailable
+    ? false
+    : `typed-array machine bridge is unavailable for ${process.platform}-${process.arch}`
+}, () => {
+  const machine = new NaideVM({ nativeMachineCode: true, nativeMachineCodeDiagnostics: true });
+  const reference = new NaideVM();
+  const sum = machine.global.get('sum');
+  const referenceSum = reference.global.get('sum');
+  const values = machine.createNativeArray([1, 2, 3, 4]);
+  const referenceValues = reference.createNativeArray([1, 2, 3, 4]);
+  const machineStepsBefore = machine.steps;
+  const referenceStepsBefore = reference.steps;
+  assert.equal(sum(values), referenceSum(referenceValues));
+  assert.equal(machine.steps - machineStepsBefore, values.length + 1);
+  assert.equal(machine.steps - machineStepsBefore, reference.steps - referenceStepsBefore);
+  assert.equal(machine.getNativeMachineCodeStats().nativeCalls, 0);
+
+  const largeValues = machine.createNativeArray(
+    Array.from({ length: 5_000 }, (_, index) => index + 0.25),
+  );
+  const largeReferenceValues = reference.createNativeArray(
+    Array.from({ length: 5_000 }, (_, index) => index + 0.25),
+  );
+  const largeMachineStepsBefore = machine.steps;
+  const largeReferenceStepsBefore = reference.steps;
+  assert.equal(sum(largeValues), referenceSum(largeReferenceValues));
+  assert.equal(machine.steps - largeMachineStepsBefore, largeValues.length + 1);
+  assert.equal(
+    machine.steps - largeMachineStepsBefore,
+    reference.steps - largeReferenceStepsBefore,
+  );
+  assert.equal(machine.getNativeMachineCodeStats().nativeCalls, 1);
+
+  const orderedValues = machine.createNativeArray([1e16, 1, -1e16, 1, 2]);
+  const orderedReferenceValues = reference.createNativeArray([1e16, 1, -1e16, 1, 2]);
+  assert.equal(sum(orderedValues), 3);
+  assert.equal(referenceSum(orderedReferenceValues), 3);
+
+  const overflowValues = machine.createNativeArray([Number.MAX_SAFE_INTEGER, 1]);
+  const overflowReferenceValues = reference.createNativeArray([Number.MAX_SAFE_INTEGER, 1]);
+  assert.equal(sum(overflowValues), referenceSum(overflowReferenceValues));
+
+  assert.ok(Object.is(sum(machine.createNativeArray([-0])), -0));
+  assert.ok(Object.is(referenceSum(reference.createNativeArray([-0])), -0));
+  assert.equal(sum(machine.createNativeArray([])), 0);
+  const nativeCallsBeforeMutation = machine.getNativeMachineCodeStats().nativeCalls;
+
+  const mutableValues = machine.createNativeArray([1, 2, 3]);
+  const mutableReferenceValues = reference.createNativeArray([1, 2, 3]);
+  mutableValues.push(4);
+  mutableReferenceValues.push(4);
+  assert.equal(sum(mutableValues), referenceSum(mutableReferenceValues));
+  assert.equal(machine.getNativeMachineCodeStats().nativeCalls, nativeCallsBeforeMutation);
+
+  let machineGetterReads = 0;
+  let referenceGetterReads = 0;
+  const accessorValues = machine.createNativeArray([1, 2]);
+  const accessorReferenceValues = reference.createNativeArray([1, 2]);
+  Object.defineProperty(accessorValues, '0', {
+    configurable: true,
+    get() {
+      machineGetterReads++;
+      return 1;
+    },
+  });
+  Object.defineProperty(accessorReferenceValues, '0', {
+    configurable: true,
+    get() {
+      referenceGetterReads++;
+      return 1;
+    },
+  });
+  assert.equal(sum(accessorValues), referenceSum(accessorReferenceValues));
+  assert.equal(machineGetterReads, referenceGetterReads);
+
+  const changingValues = machine.createNativeArray([1, 2, 3]);
+  let changingGetterReads = 0;
+  Object.defineProperty(changingValues, '0', {
+    configurable: true,
+    get() {
+      changingGetterReads++;
+      changingValues[1] = 4;
+      return 1;
+    },
+  });
+  assert.equal(sum(changingValues), 8);
+  assert.equal(changingGetterReads, 1);
+
+  const sparseValues = machine.createNativeArray([1, 2, 3]);
+  delete sparseValues[1];
+  assert.ok(Number.isNaN(sum(sparseValues)));
+
+  const budgetValues = machine.createNativeArray([1, 2, 3]);
+  const budgetReferenceValues = reference.createNativeArray([1, 2, 3]);
+  const machineBudgetStart = machine.steps;
+  const referenceBudgetStart = reference.steps;
+  machine.maxSteps = machine.steps + 1;
+  reference.maxSteps = reference.steps + 1;
+  let machineError;
+  let referenceError;
+  try {
+    sum(budgetValues);
+  } catch (error) {
+    machineError = error;
+  }
+  try {
+    referenceSum(budgetReferenceValues);
+  } catch (error) {
+    referenceError = error;
+  }
+  assert.match(machineError.message, /step limit/);
+  assert.match(referenceError.message, /step limit/);
+  assert.equal(machine.steps - machineBudgetStart, reference.steps - referenceBudgetStart);
+});
+
 test('machine JIT reports the same failing step and source line at the execution limit', {
   skip: nativeMachineCodeAvailable ? false : `native bridge is not built for ${process.platform}-${process.arch}`
 }, () => {
@@ -116,7 +340,7 @@ test('machine JIT executes integer range remainder and falls back for fractional
   const reference = new NaideVM();
   const source = [
     'fn countDivisible(int n) -> int:',
-    '  mut int count = 0',
+    '  mut int count = 1',
     '  for i in 0..n:',
     '    if i % 3 == 0:',
     '      count += 1',
@@ -137,6 +361,59 @@ test('machine JIT executes integer range remainder and falls back for fractional
   }
   assert.equal(countDivisible(10.5), referenceFunction(10.5));
   assert.equal(machine.getNativeMachineCodeStats().guardFallbacks, 1);
+});
+
+test('machine JIT reduces range-multiple counts and preserves exact step and limit behavior', {
+  skip: nativeMachineCodeAvailable ? false : `native bridge is not built for ${process.platform}-${process.arch}`
+}, () => {
+  const source = [
+    'fn countDivisible(int n) -> int:',
+    '  mut int count = 0',
+    '  for i in 0..n:',
+    '    if i % 3 == 0:',
+    '      count += 1',
+    '  ret count',
+    '',
+  ].join('\n');
+  const machine = new NaideVM({ nativeMachineCode: true, nativeMachineCodeDiagnostics: true });
+  const reference = new NaideVM();
+  machine.execute(source);
+  reference.execute(source);
+  const countDivisible = machine.global.get('countDivisible');
+  const referenceFunction = reference.global.get('countDivisible');
+  assert.ok(isNativeMachineFunction(countDivisible));
+
+  for (const bound of [-100, -1, 0, 1, 2, 3, 4, 10, 100, ...seededIntegers(101, 24, -100, 1_000)]) {
+    const machineStepsBefore = machine.steps;
+    const referenceStepsBefore = reference.steps;
+    assert.equal(countDivisible(bound), referenceFunction(bound));
+    assert.equal(machine.steps - machineStepsBefore, reference.steps - referenceStepsBefore);
+  }
+
+  const fractionalStepsBefore = machine.steps;
+  const referenceFractionalStepsBefore = reference.steps;
+  assert.equal(countDivisible(10.5), referenceFunction(10.5));
+  assert.equal(machine.steps - fractionalStepsBefore,
+    reference.steps - referenceFractionalStepsBefore);
+
+  machine.maxSteps = machine.steps + 15;
+  reference.maxSteps = reference.steps + 15;
+  let machineError;
+  let referenceError;
+  try {
+    countDivisible(100);
+  } catch (error) {
+    machineError = error;
+  }
+  try {
+    referenceFunction(100);
+  } catch (error) {
+    referenceError = error;
+  }
+  assert.match(machineError.message, /step limit.*line 4/);
+  assert.match(referenceError.message, /step limit.*line 4/);
+  assert.equal(machine.steps, reference.steps);
+  assert.ok(machine.getNativeMachineCodeStats().stepBudgetFallbacks > 0);
 });
 
 test('machine JIT inlines immutable pure numeric calls with exact step and call-depth guards', {
@@ -273,7 +550,8 @@ test('machine JIT inlines pure conditional numeric helpers with exact branch sem
     referenceError = error;
   }
   assert.match(machineError.message, /step limit/);
-  assert.equal(machineError.message, referenceError.message);
+  assert.match(machineError.message, /line 2/);
+  assert.match(referenceError.message, /line 2/);
   assert.equal(machine.steps, reference.steps);
 
   const shallow = new NaideVM({ nativeMachineCode: true, maxCallDepth: 1 });

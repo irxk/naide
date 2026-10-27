@@ -284,6 +284,70 @@ napi_value Invoke(napi_env env, napi_callback_info info) {
   return output;
 }
 
+napi_value InvokeArraySum(napi_env env, napi_callback_info info) {
+  size_t argc = 0;
+  napi_status status = napi_get_cb_info(env, info, &argc, nullptr, nullptr, nullptr);
+  if (status != napi_ok) {
+    ThrowStatus(env, status, "Could not read native array invocation arguments.");
+    return nullptr;
+  }
+  if (argc != 2) {
+    napi_throw_type_error(env, nullptr, "invokeArraySum expects a handle and a Float64Array.");
+    return nullptr;
+  }
+
+  napi_value args[2];
+  argc = 2;
+  status = napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
+  if (status != napi_ok) {
+    ThrowStatus(env, status, "Could not read native array invocation arguments.");
+    return nullptr;
+  }
+
+  ExecutableCode* code = GetCodeHandle(env, args[0]);
+  if (code == nullptr) return nullptr;
+  if (code->address == nullptr) {
+    napi_throw_error(env, nullptr, "Native code handle has been released.");
+    return nullptr;
+  }
+
+  bool is_typed_array = false;
+  status = napi_is_typedarray(env, args[1], &is_typed_array);
+  if (status != napi_ok) {
+    ThrowStatus(env, status, "Could not validate native numeric array.");
+    return nullptr;
+  }
+  if (!is_typed_array) {
+    napi_throw_type_error(env, nullptr, "Native array summation requires a Float64Array.");
+    return nullptr;
+  }
+
+  napi_typedarray_type array_type;
+  void* data = nullptr;
+  size_t length = 0;
+  status = napi_get_typedarray_info(
+      env, args[1], &array_type, &length, &data, nullptr, nullptr);
+  if (status != napi_ok) {
+    ThrowStatus(env, status, "Could not read native numeric array.");
+    return nullptr;
+  }
+  if (array_type != napi_float64_array) {
+    napi_throw_type_error(env, nullptr, "Native array summation requires a Float64Array.");
+    return nullptr;
+  }
+
+  using ArraySumFunction = double (*)(const double*, uint64_t);
+  const double result = reinterpret_cast<ArraySumFunction>(code->address)(
+      static_cast<const double*>(data), static_cast<uint64_t>(length));
+  napi_value output = nullptr;
+  status = napi_create_double(env, result, &output);
+  if (status != napi_ok) {
+    ThrowStatus(env, status, "Could not create native array result.");
+    return nullptr;
+  }
+  return output;
+}
+
 napi_value Release(napi_env env, napi_callback_info info) {
   size_t argc = 0;
   napi_status status = napi_get_cb_info(env, info, &argc, nullptr, nullptr, nullptr);
@@ -333,9 +397,10 @@ NAPI_MODULE_INIT() {
   napi_property_descriptor properties[] = {
       {"compile", nullptr, Compile, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"invoke", nullptr, Invoke, nullptr, nullptr, nullptr, napi_default, nullptr},
+      {"invokeArraySum", nullptr, InvokeArraySum, nullptr, nullptr, nullptr, napi_default, nullptr},
       {"release", nullptr, Release, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
-  napi_status status = napi_define_properties(env, exports, 3, properties);
+  napi_status status = napi_define_properties(env, exports, 4, properties);
   if (status != napi_ok) {
     ThrowStatus(env, status, "Could not initialize the native bridge.");
     return nullptr;

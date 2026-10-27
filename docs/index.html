@@ -21,7 +21,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <a href="index.html">NAIDE</a>
-      <span class="version">v2.0.9</span>
+      <span class="version">v2.0.10</span>
     </div>
     <nav>
       <a href="index.html" class="active">Home</a>
@@ -85,6 +85,10 @@
         <div class="feature-card">
           <h3>MCP Server</h3>
           <p>Built-in <code>naide-mcp</code> stdio server using the stateless MCP 2026-07-28 protocol, with per-request metadata and server discovery.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Experimental Native JIT</h3>
+          <p>Opt-in Windows x64 machine-code tiers accelerate selected guarded hot paths. In a reproducible nine-workload benchmark, both native tiers beat V8 on all nine fixtures; collection and Set results remain close to parity and are not general application-performance guarantees. <a href="naidevm.html">See benchmark details</a>.</p>
         </div>
         <div class="feature-card">
           <h3>Modern Syntax Sugar</h3>

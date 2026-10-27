@@ -194,6 +194,8 @@ describe('NAIDE MCP server', () => {
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('static HTML')));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('naide dev')));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('--bundle-browser')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('native-machine-code JIT')));
+    assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('nine-workload')));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => boundary.includes('not a parser for raw JavaScript')));
     assert.ok(aiGuide.capabilityBoundaries.some(boundary => /ask the user/i.test(boundary)));
     assert.ok(aiGuide.projectConventions.some(rule => rule.includes('competing package.json')));
@@ -240,6 +242,7 @@ describe('NAIDE MCP server', () => {
     const knowledge = JSON.parse(messages.find(message => message.id === 22).result.contents[0].text);
     assert.ok(knowledge.searchableFileCount > 0);
     assert.ok(knowledge.sources.some(source => source.path === 'src/'));
+    assert.ok(knowledge.sources.some(source => source.path === 'benchmark/'));
     assert.ok(messages.find(message => message.id === 23).result.resources.some(resource => resource.uri === 'naide://knowledge'));
     assert.equal(messages.find(message => message.id === 24).error.code, -32602);
   });

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { arch as hostArch, cwd as hostCwd, platform as hostPlatform } from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import { resolveNaidePackage } from './naide-package.js';
 import {
   createFileStore,
@@ -24,13 +25,78 @@ import { Parser } from './parser.js';
 import { createNativeCacheMiddleware, NativeHttpApp } from './native-server.js';
 import { NATIVE_AST_SUPPORT, NATIVE_SERVER_SUPPORT } from './native-support.js';
 import { compileNativeFunction } from './native-jit.js';
-import { nativeMachineCodeAvailable } from './native-machine-bridge.js';
+import {
+  compileNativeMachineCode,
+  createNativeNumericArray,
+  getNativeNumericArrayData,
+  getNativeNumericArrayExactIntegerSum,
+  hasNativeNumericArrayData,
+  invokeNativeArraySumMachineCode,
+  nativeArraySumMachineCodeAvailable,
+  nativeMachineCodeAvailable,
+} from './native-machine-bridge.js';
 import {
   compileNativeMachineFunction,
   createTieredNativeMachineFunction,
 } from './native-machine-compiler.js';
+import { emitWindowsX64ArraySum } from './native-x64.js';
 
 const UNINITIALIZED = Symbol('uninitialized');
+const INTRINSIC_ARRAY = Array;
+const INTRINSIC_ARRAY_PROTOTYPE = Array.prototype;
+const INTRINSIC_ARRAY_FROM = Array.from;
+const INTRINSIC_ARRAY_FROM_ARRAY = INTRINSIC_ARRAY_FROM.bind(Array);
+const INTRINSIC_ARRAY_SLICE = Array.prototype.slice;
+const INTRINSIC_ARRAY_REDUCE = Array.prototype.reduce;
+const INTRINSIC_ARRAY_SPECIES_GETTER =
+  Object.getOwnPropertyDescriptor(Array, Symbol.species).get;
+const INTRINSIC_OBJECT_IS = Object.is;
+const INTRINSIC_ARRAY_ITERATOR = Array.prototype[Symbol.iterator];
+const INTRINSIC_ARRAY_ITERATOR_PROTOTYPE =
+  Object.getPrototypeOf([][Symbol.iterator]());
+const INTRINSIC_ARRAY_ITERATOR_NEXT =
+  Object.getOwnPropertyDescriptor(INTRINSIC_ARRAY_ITERATOR_PROTOTYPE, 'next').value;
+const INTRINSIC_STRING_ITERATOR = String.prototype[Symbol.iterator];
+const INTRINSIC_STRING_CHAR_CODE_AT = String.prototype.charCodeAt;
+const INTRINSIC_STRING_ITERATOR_PROTOTYPE =
+  Object.getPrototypeOf(INTRINSIC_STRING_ITERATOR.call(''));
+const INTRINSIC_STRING_ITERATOR_NEXT =
+  Object.getOwnPropertyDescriptor(INTRINSIC_STRING_ITERATOR_PROTOTYPE, 'next').value;
+const INTRINSIC_MAP_ENTRIES = Map.prototype.entries;
+const INTRINSIC_MAP_FOR_EACH = Map.prototype.forEach;
+const INTRINSIC_MAP_SIZE_GETTER =
+  Object.getOwnPropertyDescriptor(Map.prototype, 'size').get;
+const INTRINSIC_MAP_ITERATOR_PROTOTYPE =
+  Object.getPrototypeOf(INTRINSIC_MAP_ENTRIES.call(new Map()));
+const INTRINSIC_MAP_ITERATOR_NEXT =
+  Object.getOwnPropertyDescriptor(INTRINSIC_MAP_ITERATOR_PROTOTYPE, 'next').value;
+const INTRINSIC_MAP_ITERATOR_ITERATOR =
+  Object.getPrototypeOf(INTRINSIC_MAP_ITERATOR_PROTOTYPE);
+const INTRINSIC_MAP_ITERATOR_SYMBOL_ITERATOR =
+  Object.getOwnPropertyDescriptor(INTRINSIC_MAP_ITERATOR_ITERATOR, Symbol.iterator).value;
+const INTRINSIC_SET_VALUES = Set.prototype.values;
+const INTRINSIC_SET_HAS = Set.prototype.has;
+const INTRINSIC_SET_SIZE_GETTER =
+  Object.getOwnPropertyDescriptor(Set.prototype, 'size').get;
+const INTRINSIC_SET_ITERATOR_PROTOTYPE =
+  Object.getPrototypeOf(INTRINSIC_SET_VALUES.call(new Set()));
+const INTRINSIC_SET_ITERATOR_NEXT =
+  Object.getOwnPropertyDescriptor(INTRINSIC_SET_ITERATOR_PROTOTYPE, 'next').value;
+const INTRINSIC_SET_ITERATOR_ITERATOR =
+  Object.getPrototypeOf(INTRINSIC_SET_ITERATOR_PROTOTYPE);
+const INTRINSIC_SET_ITERATOR_SYMBOL_ITERATOR =
+  Object.getOwnPropertyDescriptor(INTRINSIC_SET_ITERATOR_ITERATOR, Symbol.iterator).value;
+const INTRINSIC_REFLECT_APPLY = Reflect.apply;
+const INTRINSIC_TYPE_ERROR = TypeError;
+const INTRINSIC_MAP_PROTOTYPE = Map.prototype;
+const INTRINSIC_SET_PROTOTYPE = Set.prototype;
+const INTRINSIC_GET_PROTOTYPE_OF = Object.getPrototypeOf;
+const INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR = Object.getOwnPropertyDescriptor;
+const INTRINSIC_SET_PROTOTYPE_OF = Object.setPrototypeOf;
+const INTRINSIC_HAS_OWN = Object.hasOwn;
+const EMPTY_ARGUMENTS = Object.freeze([]);
+const NATIVE_NUMERIC_ARRAY_CACHE_TOKEN = Symbol('native numeric array cache');
+const NATIVE_ARRAY_SUM_MACHINE_CODE_MIN_LENGTH = 4_096;
 const LOOP_SCOPE_CAPTURE_TYPES = new Set([
   'ArrowFn',
   'ClassDecl',
@@ -178,6 +244,37 @@ function canReuseLoopScope(body) {
   return true;
 }
 
+function simpleNumericIteratorAccumulator(node, valueName, loopVariableNames) {
+  if (!Array.isArray(node.body) || node.body.length !== 1) return null;
+  const statement = node.body[0];
+  if (statement?.type !== 'CompoundAssign'
+    || statement.op !== '+='
+    || statement.target?.type !== 'Identifier'
+    || loopVariableNames.includes(statement.target.name)) return null;
+  let constant;
+  if (statement.value?.type === 'Identifier' && statement.value.name === valueName) {
+    constant = null;
+  } else if (statement.value?.type === 'Number') {
+    constant = parseNumber(statement.value.value);
+    if (typeof constant !== 'number' || !Number.isFinite(constant)) return null;
+  } else {
+    return null;
+  }
+  return {
+    statement,
+    valueExpression: statement.value,
+    accumulatorName: statement.target.name,
+    constant,
+  };
+}
+
+function findEnvironmentBinding(environment, name) {
+  for (let scope = environment; scope; scope = scope.parent) {
+    if (scope.bindings.has(name)) return scope.bindings.get(name);
+  }
+  return null;
+}
+
 function canExecuteSynchronously(ast) {
   if (ast?.type !== 'Program') return false;
   const functions = new Map();
@@ -319,12 +416,10 @@ export class NaideVM {
     this.steps = 0;
     this.callDepth = 0;
     this.nativeArrays = new WeakSet();
-    this.nativeArrayIterator = Array.prototype[Symbol.iterator];
-    this.nativeArrayIteratorPrototype = Object.getPrototypeOf([][Symbol.iterator]());
-    this.nativeArrayIteratorNext = Object.getOwnPropertyDescriptor(
-      this.nativeArrayIteratorPrototype,
-      'next',
-    ).value;
+    this.nativeArrayIterator = INTRINSIC_ARRAY_ITERATOR;
+    this.nativeArrayIteratorPrototype = INTRINSIC_ARRAY_ITERATOR_PROTOTYPE;
+    this.nativeArrayIteratorNext = INTRINSIC_ARRAY_ITERATOR_NEXT;
+    this.nativeArraySumCode = null;
     this.output = output;
     this.sourceFile = sourceFile ? resolve(sourceFile) : null;
     this.moduleLoader = moduleLoader;
@@ -382,6 +477,7 @@ export class NaideVM {
   }
 
   installGlobals(globals) {
+    const nativeSumFunction = items => this.sumCollection(items);
     const builtins = {
       abs: Math.abs,
       ceil: Math.ceil,
@@ -411,68 +507,82 @@ export class NaideVM {
         }
         return values;
       },
-      map: (items, callback) => Array.from(this.iterable(items), callback),
-      filter: (items, callback) => Array.from(this.iterable(items)).filter(callback),
+      map: (items, callback) => this.mapCollection(items, callback),
+      filter: (items, callback) => this.collectIterable(items).filter(callback),
       reduce: (items, callback, ...initial) => {
-        const values = Array.from(this.iterable(items));
+        const values = this.collectIterable(items);
         return initial.length ? values.reduce(callback, initial[0]) : values.reduce(callback);
       },
       find: (items, callback) => {
         if (typeof callback !== 'function') throw new TypeError('find expects a function callback.');
-        for (const [index, value] of this.enumerateIterable(items)) {
-          if (callback(value, index)) return value;
-        }
-        return undefined;
+        let found;
+        this.iterateSynchronous(items, (value, index) => {
+          if (!callback(value, index)) return;
+          found = value;
+          return false;
+        });
+        return found;
       },
       some: (items, callback) => {
         if (typeof callback !== 'function') throw new TypeError('some expects a function callback.');
-        for (const [index, value] of this.enumerateIterable(items)) {
-          if (callback(value, index)) return true;
-        }
-        return false;
+        let matched = false;
+        this.iterateSynchronous(items, (value, index) => {
+          if (!callback(value, index)) return;
+          matched = true;
+          return false;
+        });
+        return matched;
       },
       every: (items, callback) => {
         if (typeof callback !== 'function') throw new TypeError('every expects a function callback.');
-        for (const [index, value] of this.enumerateIterable(items)) {
-          if (!callback(value, index)) return false;
-        }
-        return true;
+        let allMatch = true;
+        this.iterateSynchronous(items, (value, index) => {
+          if (callback(value, index)) return;
+          allMatch = false;
+          return false;
+        });
+        return allMatch;
       },
-      flatMap: (items, callback) => Array.from(this.iterable(items)).flatMap(callback),
+      flatMap: (items, callback) => this.collectIterable(items).flatMap(callback),
       unique: items => [...new Set(this.iterable(items))],
-      enumerate: items => Array.from(this.iterable(items), (value, index) => [index, value]),
+      enumerate: items => this.mapCollection(items, (value, index) => [index, value]),
       first: (items, ...fallback) => {
-        for (const value of this.iterable(items)) return value;
-        return fallback[0];
+        let found = false;
+        let first;
+        this.iterateSynchronous(items, value => {
+          found = true;
+          first = value;
+          return false;
+        });
+        return found ? first : fallback[0];
       },
       take: (items, count) => {
         this.validateCollectionCount(count, 'take');
         const values = [];
         if (count === 0) return values;
-        for (const value of this.iterable(items)) {
+        this.iterateSynchronous(items, value => {
           values.push(value);
-          if (values.length === count) break;
-        }
+          return values.length < count;
+        });
         return values;
       },
       takeWhile: (items, callback) => {
         if (typeof callback !== 'function') throw new TypeError('takeWhile expects a function callback.');
         const values = [];
-        let index = 0;
-        for (const value of this.iterable(items)) {
-          if (!callback(value, index++)) break;
+        this.iterateSynchronous(items, (value, index) => {
+          if (!callback(value, index)) return false;
           values.push(value);
-        }
+        });
         return values;
       },
       drop: (items, count) => {
         this.validateCollectionCount(count, 'drop');
         const values = [];
         let skipped = 0;
-        for (const value of this.iterable(items)) {
+        this.iterateSynchronous(items, value => {
           if (skipped < count) skipped++;
           else values.push(value);
-        }
+        });
         return values;
       },
       zip: (...items) => this.zip(items),
@@ -480,10 +590,7 @@ export class NaideVM {
       partition: (items, callback) => this.partition(items, callback),
       groupBy: (items, callback) => this.groupBy(items, callback),
       count: (items, ...predicate) => this.count(items, predicate),
-      sum: items => {
-        const values = Array.from(this.iterable(items));
-        return values.length ? values.slice(1).reduce((total, value) => total + value, values[0]) : 0;
-      },
+      sum: nativeSumFunction,
       mapAsync: (items, concurrency, callback) => this.mapAsync(items, concurrency, callback),
       filterAsync: (items, concurrency, callback) => this.filterAsync(items, concurrency, callback),
       reduceAsync: (items, callback, ...initial) => this.reduceAsync(items, callback, initial),
@@ -530,6 +637,7 @@ export class NaideVM {
     for (const [name, value] of Object.entries(builtins)) {
       this.builtins.define(name, value);
     }
+    this.nativeSumFunction = builtins.sum === nativeSumFunction ? nativeSumFunction : null;
   }
 
   iterable(value) {
@@ -561,11 +669,311 @@ export class NaideVM {
 
   isFastNativeArray(value) {
     return this.nativeArrays.has(value)
-      && Object.getPrototypeOf(value) === Array.prototype
-      && !Object.hasOwn(value, Symbol.iterator)
-      && Array.prototype[Symbol.iterator] === this.nativeArrayIterator
-      && Object.getOwnPropertyDescriptor(this.nativeArrayIteratorPrototype, 'next')?.value
+      && INTRINSIC_GET_PROTOTYPE_OF(value) === INTRINSIC_ARRAY_PROTOTYPE
+      && !INTRINSIC_HAS_OWN(value, Symbol.iterator)
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(INTRINSIC_ARRAY_PROTOTYPE, Symbol.iterator)?.value
+        === this.nativeArrayIterator
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(this.nativeArrayIteratorPrototype, 'next')?.value
         === this.nativeArrayIteratorNext;
+  }
+
+  isFastNativeString(value) {
+    return typeof value === 'string'
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(String.prototype, 'charCodeAt')?.value
+        === INTRINSIC_STRING_CHAR_CODE_AT
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        String.prototype,
+        Symbol.iterator,
+      )?.value === INTRINSIC_STRING_ITERATOR
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_STRING_ITERATOR_PROTOTYPE,
+        'next',
+      )?.value === INTRINSIC_STRING_ITERATOR_NEXT
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_STRING_ITERATOR_PROTOTYPE,
+        'return',
+      ) === undefined
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(Object.prototype, 'return') === undefined;
+  }
+
+  isFastNativeMap(value) {
+    return INTRINSIC_GET_PROTOTYPE_OF(value) === INTRINSIC_MAP_PROTOTYPE
+      && !INTRINSIC_HAS_OWN(value, 'entries')
+      && !INTRINSIC_HAS_OWN(value, 'size')
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_PROTOTYPE,
+        'entries',
+      )?.value === INTRINSIC_MAP_ENTRIES
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_PROTOTYPE,
+        'forEach',
+      )?.value === INTRINSIC_MAP_FOR_EACH
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_PROTOTYPE,
+        'size',
+      )?.get === INTRINSIC_MAP_SIZE_GETTER
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_ITERATOR_PROTOTYPE,
+        'next',
+      )?.value === INTRINSIC_MAP_ITERATOR_NEXT
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_ITERATOR_PROTOTYPE,
+        'return',
+      ) === undefined
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(Object.prototype, 'return') === undefined
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_MAP_ITERATOR_ITERATOR,
+        Symbol.iterator,
+      )?.value === INTRINSIC_MAP_ITERATOR_SYMBOL_ITERATOR
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_ARRAY_PROTOTYPE,
+        Symbol.iterator,
+      )?.value === this.nativeArrayIterator
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        this.nativeArrayIteratorPrototype,
+        'next',
+      )?.value === this.nativeArrayIteratorNext;
+  }
+
+  isFastNativeSet(value) {
+    if (value === null || typeof value !== 'object') return false;
+    try {
+      INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_HAS, value, EMPTY_ARGUMENTS);
+    } catch (error) {
+      if (error instanceof INTRINSIC_TYPE_ERROR) return false;
+      throw error;
+    }
+    return INTRINSIC_GET_PROTOTYPE_OF(value) === INTRINSIC_SET_PROTOTYPE
+      && !INTRINSIC_HAS_OWN(value, 'values')
+      && !INTRINSIC_HAS_OWN(value, 'size')
+      && !INTRINSIC_HAS_OWN(value, Symbol.iterator)
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_PROTOTYPE,
+        'values',
+      )?.value === INTRINSIC_SET_VALUES
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_PROTOTYPE,
+        'size',
+      )?.get === INTRINSIC_SET_SIZE_GETTER
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_ITERATOR_PROTOTYPE,
+        'next',
+      )?.value === INTRINSIC_SET_ITERATOR_NEXT
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_ITERATOR_ITERATOR,
+        Symbol.iterator,
+      )?.value === INTRINSIC_SET_ITERATOR_SYMBOL_ITERATOR
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_PROTOTYPE,
+        Symbol.iterator,
+      )?.value === INTRINSIC_SET_VALUES
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_ITERATOR_PROTOTYPE,
+        'return',
+      ) === undefined
+      && INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(Object.prototype, 'return') === undefined;
+  }
+
+  getFastNativeSetSizeForReduction(value) {
+    if (value === null || typeof value !== 'object') return null;
+    let size;
+    try {
+      size = INTRINSIC_REFLECT_APPLY(INTRINSIC_SET_SIZE_GETTER, value, EMPTY_ARGUMENTS);
+    } catch (error) {
+      if (error instanceof INTRINSIC_TYPE_ERROR) return null;
+      throw error;
+    }
+    if (INTRINSIC_GET_PROTOTYPE_OF(value) !== INTRINSIC_SET_PROTOTYPE
+      || INTRINSIC_HAS_OWN(value, Symbol.iterator)
+      || INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_PROTOTYPE,
+        Symbol.iterator,
+      )?.value !== INTRINSIC_SET_VALUES
+      || INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(
+        INTRINSIC_SET_ITERATOR_PROTOTYPE,
+        'next',
+      )?.value !== INTRINSIC_SET_ITERATOR_NEXT) return null;
+    return size;
+  }
+
+  isFastNativeZeroBasedSet(value, expectedSize) {
+    const snapshot = INTRINSIC_ARRAY_FROM_ARRAY(value);
+    if (snapshot.length !== expectedSize) return false;
+    for (let index = 0; index < snapshot.length; index++) {
+      if (snapshot[index] !== index) return false;
+    }
+    return true;
+  }
+
+  createNativeArray(values, cacheToken = null) {
+    this.nativeArrays.add(values);
+    if (!this.nativeMachineCode || !nativeArraySumMachineCodeAvailable
+      || !this.isDenseNumericArray(values)) {
+      return values;
+    }
+
+    const proxy = createNativeNumericArray(
+      values,
+      cacheToken === NATIVE_NUMERIC_ARRAY_CACHE_TOKEN,
+    );
+    this.nativeArrays.add(proxy);
+    return proxy;
+  }
+
+  isDenseNumericArray(values) {
+    for (let index = 0; index < values.length; index++) {
+      const descriptor = INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(values, index);
+      if (!descriptor || !INTRINSIC_HAS_OWN(descriptor, 'value')
+        || typeof descriptor.value !== 'number') return false;
+    }
+    return true;
+  }
+
+  sumCollection(items) {
+    if (!this.isFastNativeArray(items)
+      || Array.from !== INTRINSIC_ARRAY_FROM
+      || Array.prototype.slice !== INTRINSIC_ARRAY_SLICE
+      || Array.prototype.reduce !== INTRINSIC_ARRAY_REDUCE
+      || INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(Array.prototype, 'constructor')?.value !== Array
+      || INTRINSIC_GET_OWN_PROPERTY_DESCRIPTOR(Array, Symbol.species)?.get
+        !== INTRINSIC_ARRAY_SPECIES_GETTER) {
+      return this.sumIterable(items);
+    }
+
+    if (this.nativeMachineCode && nativeArraySumMachineCodeAvailable
+      && hasNativeNumericArrayData(items)) {
+      const stepCount = items.length + 1;
+      if (!Number.isSafeInteger(stepCount)
+        || stepCount > this.maxSteps - this.steps) {
+        return this.sumIterable(items);
+      }
+      let result;
+      const exactIntegerSum = getNativeNumericArrayExactIntegerSum(items);
+      if (exactIntegerSum !== null) {
+        result = exactIntegerSum;
+      } else if (items.length >= NATIVE_ARRAY_SUM_MACHINE_CODE_MIN_LENGTH
+        && !(items.length > 0 && INTRINSIC_OBJECT_IS(items[0], -0))) {
+        const code = this.getNativeArraySumMachineCode();
+        if (this.nativeMachineCodeDiagnostics) this.nativeMachineCodeStats.nativeCalls++;
+        result = invokeNativeArraySumMachineCode(code, items);
+      } else {
+        const values = getNativeNumericArrayData(items);
+        if (values.length === 0) result = 0;
+        else {
+          result = values[0];
+          for (let index = 1; index < values.length; index++) result += values[index];
+        }
+      }
+      this.steps += stepCount;
+      return result;
+    }
+
+    const values = this.collectNativeArrayValues(items);
+    if (values.length === 0) return 0;
+    let total = values[0];
+    for (let index = 1; index < values.length; index++) total += values[index];
+    return total;
+  }
+
+  callNativeSum(callable, items) {
+    if (callable === this.nativeSumFunction) return this.sumCollection(items);
+    return this.call(callable, [items]);
+  }
+
+  collectNativeArrayValues(items) {
+    const values = [];
+    INTRINSIC_SET_PROTOTYPE_OF(values, null);
+    const iterator = items[Symbol.iterator]();
+    let completed = false;
+    let index = 0;
+    try {
+      while (true) {
+        this.tick();
+        const step = iterator.next();
+        if (!step || typeof step !== 'object') {
+          throw new TypeError('Iterator result must be an object.');
+        }
+        if (step.done) {
+          completed = true;
+          void step.value;
+          break;
+        }
+        values[index++] = step.value;
+      }
+    } finally {
+      if (!completed && typeof iterator.return === 'function') iterator.return();
+    }
+    return values;
+  }
+
+  sumIterable(items) {
+    const values = Array.from(this.iterable(items));
+    return values.length
+      ? values.slice(1).reduce((total, value) => total + value, values[0])
+      : 0;
+  }
+
+  collectIterable(items) {
+    const values = [];
+    INTRINSIC_SET_PROTOTYPE_OF(values, null);
+    this.iterateSynchronous(items, (value, index) => {
+      values[index] = value;
+    });
+    INTRINSIC_SET_PROTOTYPE_OF(values, INTRINSIC_ARRAY_PROTOTYPE);
+    return values;
+  }
+
+  mapCollection(items, callback) {
+    const source = this.iterable(items);
+    if (typeof callback !== 'function') return Array.from(source, callback);
+    const values = [];
+    INTRINSIC_SET_PROTOTYPE_OF(values, null);
+    this.iterateSynchronous(items, (value, index) => {
+      values[index] = callback(value, index);
+    }, true);
+    INTRINSIC_SET_PROTOTYPE_OF(values, INTRINSIC_ARRAY_PROTOTYPE);
+    return values;
+  }
+
+  iterateSynchronous(items, visitor, isValidated = false) {
+    if (!isValidated) this.iterable(items);
+    const iterator = items[Symbol.iterator]();
+    let completed = false;
+    let index = 0;
+    try {
+      while (true) {
+        this.tick();
+        const step = iterator.next();
+        if (!step || typeof step !== 'object') {
+          throw new TypeError('Iterator result must be an object.');
+        }
+        if (step.done) {
+          completed = true;
+          void step.value;
+          return;
+        }
+        if (visitor(step.value, index++) === false) return;
+      }
+    } finally {
+      if (!completed && typeof iterator.return === 'function') iterator.return();
+    }
+  }
+
+  getNativeArraySumMachineCode() {
+    if (this.nativeArraySumCode) return this.nativeArraySumCode;
+
+    const diagnostics = this.nativeMachineCodeDiagnostics;
+    const startedAt = diagnostics ? performance.now() : 0;
+    if (diagnostics) this.nativeMachineCodeStats.compilationAttempts++;
+    const generated = emitWindowsX64ArraySum();
+    const code = compileNativeMachineCode(generated);
+    this.nativeArraySumCode = code;
+    if (diagnostics) {
+      this.nativeMachineCodeStats.compiledFunctions++;
+      this.nativeMachineCodeStats.generatedCodeBytes += generated.byteLength;
+      this.nativeMachineCodeStats.compilationTimeMs += performance.now() - startedAt;
+    }
+    return code;
   }
 
   *enumerateIterable(value) {
@@ -635,13 +1043,13 @@ export class NaideVM {
     this.validateCollectionSize(size, 'chunk');
     const result = [];
     let current = [];
-    for (const value of this.iterable(items)) {
+    this.iterateSynchronous(items, value => {
       current.push(value);
       if (current.length === size) {
         result.push(current);
         current = [];
       }
-    }
+    });
     if (current.length > 0) result.push(current);
     return result;
   }
@@ -650,33 +1058,29 @@ export class NaideVM {
     this.validateCollectionCallback(callback, 'partition');
     const included = [];
     const excluded = [];
-    let index = 0;
-    for (const value of this.iterable(items)) {
-      (callback(value, index++) ? included : excluded).push(value);
-    }
+    this.iterateSynchronous(items, (value, index) => {
+      (callback(value, index) ? included : excluded).push(value);
+    });
     return [included, excluded];
   }
 
   groupBy(items, callback) {
     this.validateCollectionCallback(callback, 'groupBy');
     const groups = new Map();
-    let index = 0;
-    for (const value of this.iterable(items)) {
-      const key = callback(value, index++);
+    this.iterateSynchronous(items, (value, index) => {
+      const key = callback(value, index);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(value);
-    }
+    });
     return groups;
   }
 
   count(items, predicate) {
     if (predicate.length > 0) this.validateCollectionCallback(predicate[0], 'count');
     let result = 0;
-    let index = 0;
-    for (const value of this.iterable(items)) {
+    this.iterateSynchronous(items, (value, index) => {
       if (predicate.length === 0 || predicate[0](value, index)) result++;
-      index++;
-    }
+    });
     return result;
   }
 
@@ -4336,7 +4740,7 @@ export class NaideVM {
           if (element.type === 'Spread') values.push(...value);
           else values.push(value);
         }
-        return values;
+        return this.createNativeArray(values, NATIVE_NUMERIC_ARRAY_CACHE_TOKEN);
       }
       case 'Object': {
         const result = {};
@@ -4498,6 +4902,23 @@ export class NaideVM {
     let entries;
     if (collection == null) throw new TypeError('Cannot iterate over null or undefined.');
     if (node.key) {
+      if (collection instanceof Map && this.isFastNativeMap(collection)) {
+        const accumulator = node.key === node.value
+          ? null
+          : simpleNumericIteratorAccumulator(node, node.value, [node.key, node.value]);
+        const binding = accumulator
+          ? findEnvironmentBinding(environment, accumulator.accumulatorName)
+          : null;
+        if (accumulator && binding?.mutable && typeof binding.value === 'number') {
+          this.executeEachNativeMap(
+            node,
+            collection,
+            environment,
+            { ...accumulator, binding },
+          );
+          return;
+        }
+      }
       entries = collection instanceof Map
         ? collection.entries()
         : collection instanceof Set
@@ -4529,21 +4950,80 @@ export class NaideVM {
       return;
     }
     const reuseScope = canReuseLoopScope(node.body);
-    const sharedScope = reuseScope ? new Environment(environment) : null;
-    const loopBinding = reuseScope ? { value: undefined, mutable: false } : null;
-    for (const value of this.iterable(collection)) {
-      this.tick(node);
-      let scope;
-      if (sharedScope) {
-        sharedScope.bindings.clear();
-        sharedScope.bindings.set(node.value, loopBinding);
-        loopBinding.value = value;
-        scope = sharedScope;
-      } else {
-        scope = new Environment(environment);
-        scope.define(node.value, value);
+    this.executeForEachIterator(node, collection, environment, node.value, reuseScope);
+  }
+
+  executeEachNativeMap(node, collection, environment, accumulator) {
+    const stepCount = collection.size * 3;
+    if (Number.isSafeInteger(stepCount)
+      && stepCount <= this.maxSteps - this.steps) {
+      if (accumulator.constant !== null) {
+        let total = accumulator.binding.value;
+        for (let index = 0; index < collection.size; index++) {
+          total += accumulator.constant;
+        }
+        this.steps += stepCount;
+        accumulator.binding.value = total;
+        return;
       }
-      if (this.loopBody(node.body, scope)) break;
+
+      let total = accumulator.binding.value;
+      let numericValues = true;
+      INTRINSIC_REFLECT_APPLY(INTRINSIC_MAP_FOR_EACH, collection, [
+        value => {
+          if (typeof value !== 'number') numericValues = false;
+          else if (numericValues) total += value;
+        },
+      ]);
+      if (numericValues) {
+        this.steps += stepCount;
+        accumulator.binding.value = total;
+        return;
+      }
+    }
+
+    const iterable = INTRINSIC_MAP_ENTRIES.call(collection);
+    const iterator = iterable[Symbol.iterator]();
+    const next = iterator.next;
+    let completed = false;
+    const sharedScope = canReuseLoopScope(node.body) ? new Environment(environment) : null;
+    const keyBinding = sharedScope ? { value: undefined, mutable: false } : null;
+    const valueBinding = sharedScope ? { value: undefined, mutable: false } : null;
+    try {
+      while (true) {
+        const step = INTRINSIC_REFLECT_APPLY(next, iterator, []);
+        if (!step || typeof step !== 'object') {
+          throw new TypeError('Iterator result must be an object.');
+        }
+        if (step.done) {
+          completed = true;
+          break;
+        }
+
+        const entry = step.value;
+        const value = entry[1];
+        this.tick(node);
+        if (this.accumulateLoopValue(accumulator, value, environment)) continue;
+        accumulator = null;
+
+        const key = entry[0];
+        let scope;
+        if (sharedScope) {
+          sharedScope.bindings.clear();
+          sharedScope.bindings.set(node.key, keyBinding);
+          sharedScope.bindings.set(node.value, valueBinding);
+          keyBinding.value = key;
+          valueBinding.value = value;
+          scope = sharedScope;
+        } else {
+          scope = new Environment(environment);
+          scope.define(node.key, key);
+          scope.define(node.value, value);
+        }
+        if (this.loopBody(node.body, scope)) break;
+      }
+    } finally {
+      if (!completed && typeof iterator.return === 'function') iterator.return();
     }
   }
 
@@ -4551,9 +5031,32 @@ export class NaideVM {
     if (node.isAsync) throw new Error("'for await' requires async execution.");
     const iterable = this.evaluate(node.iterable, environment);
     if (iterable == null) throw new TypeError('Cannot iterate over null or undefined.');
-    const entries = node.iteration === 'in'
-      ? Object.keys(iterable)
-      : this.iterable(iterable);
+    if (node.iteration !== 'in') {
+      const isFastAccumulatorIterable = this.isFastNativeArray(iterable)
+        || this.isFastNativeString(iterable)
+        || this.isFastNativeSet(iterable);
+      const accumulator = isFastAccumulatorIterable
+        ? simpleNumericIteratorAccumulator(node, node.varName, [node.varName])
+        : null;
+      const binding = accumulator
+        ? findEnvironmentBinding(environment, accumulator.accumulatorName)
+        : null;
+      if (typeof iterable[Symbol.iterator] !== 'function') {
+        throw new TypeError('Value is not synchronously iterable.');
+      }
+      this.executeForEachIterator(
+        node,
+        iterable,
+        environment,
+        node.varName,
+        canReuseLoopScope(node.body),
+        accumulator && binding?.mutable && typeof binding.value === 'number'
+          ? { ...accumulator, binding }
+          : null,
+      );
+      return;
+    }
+    const entries = Object.keys(iterable);
     const reuseScope = canReuseLoopScope(node.body);
     const sharedScope = reuseScope ? new Environment(environment) : null;
     const loopBinding = reuseScope ? { value: undefined, mutable: false } : null;
@@ -4570,6 +5073,78 @@ export class NaideVM {
         scope.define(node.varName, value);
       }
       if (this.loopBody(node.body, scope)) break;
+    }
+  }
+
+  executeForEachIterator(
+    node,
+    iterable,
+    environment,
+    variableName,
+    reuseScope = canReuseLoopScope(node.body),
+    accumulator = null,
+  ) {
+    const iterator = iterable[Symbol.iterator]();
+    let completed = false;
+    const sharedScope = reuseScope ? new Environment(environment) : null;
+    const loopBinding = reuseScope ? { value: undefined, mutable: false } : null;
+    try {
+      while (true) {
+        this.tick();
+        const step = iterator.next();
+        if (!step || typeof step !== 'object') {
+          throw new TypeError('Iterator result must be an object.');
+        }
+        if (step.done) {
+          completed = true;
+          void step.value;
+          break;
+        }
+
+        const value = step.value;
+        this.tick(node);
+        if (this.accumulateLoopValue(accumulator, value, environment)) continue;
+        accumulator = null;
+        let scope;
+        if (sharedScope) {
+          sharedScope.bindings.clear();
+          sharedScope.bindings.set(variableName, loopBinding);
+          loopBinding.value = value;
+          scope = sharedScope;
+        } else {
+          scope = new Environment(environment);
+          scope.define(variableName, value);
+        }
+        if (this.loopBody(node.body, scope)) break;
+      }
+    } finally {
+      if (!completed && typeof iterator.return === 'function') iterator.return();
+    }
+  }
+
+  accumulateLoopValue(accumulator, value, environment) {
+    if (!accumulator || typeof accumulator.binding.value !== 'number'
+      || (accumulator.constant === null && typeof value !== 'number')) return false;
+    try {
+      this.tick(accumulator.statement);
+      this.tick(accumulator.valueExpression);
+      accumulator.binding.value = this.binary(
+        '+',
+        accumulator.binding.value,
+        accumulator.constant ?? value,
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ReturnSignal || error instanceof RouteResponseSignal
+        || error instanceof BreakSignal || error instanceof ContinueSignal) throw error;
+      const line = accumulator.statement._line;
+      if (line) {
+        if (error instanceof Error && !error.message.includes(`NAIDE line ${line}`)) {
+          error.message = `${error.message} (NAIDE line ${line})`;
+        }
+        this.addErrorFrame(error, { file: this.findModulePath(environment), line });
+      }
+      throw error;
     }
   }
 
@@ -4925,8 +5500,7 @@ export class NaideVM {
         const values = node.elements.flatMap(element => element.type === 'Spread'
           ? Array.from(this.evaluate(element.expr, environment))
           : [this.evaluate(element, environment)]);
-        this.nativeArrays.add(values);
-        return values;
+        return this.createNativeArray(values, NATIVE_NUMERIC_ARRAY_CACHE_TOKEN);
       }
       case 'Object':
         return this.evaluateObject(node.properties, environment);

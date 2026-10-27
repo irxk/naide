@@ -11,7 +11,8 @@ import { nativeMachineCodeAvailable } from '../src/native-machine-bridge.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_ITERATIONS = 100_000;
 const DEFAULT_SAMPLES = 7;
-const SAMPLE_REPETITIONS = 5;
+const TARGET_SAMPLE_DURATION_MS = 25;
+const MAX_SAMPLE_REPETITIONS = 100_000;
 const ENGINE_NAMES = {
   naidevm: 'NaideVM',
   'naidevm-machine': 'NaideVM direct x64 JIT',
@@ -144,6 +145,7 @@ result = 0
     id: 'collection-sum',
     name: 'Collection iteration',
     units: 'collection elements',
+    argumentName: 'values',
     iterations: () => 2_000,
     expected: n => n * (n - 1) / 2,
     naide: n => `
@@ -175,6 +177,150 @@ def benchmark(values):
 
 result = 0
 `,
+    invocation: 'result = benchmark(values)',
+  },
+  {
+    id: 'collection-helper-sum',
+    name: 'Collection helper sum',
+    units: 'collection elements',
+    argumentName: 'values',
+    iterations: () => 2_000,
+    expected: n => n * (n - 1) / 2,
+    naide: n => `
+      list values = [${Array.from({ length: n }, (_, index) => index).join(', ')}]
+      fn benchmark(list values) -> int:
+        ret sum(values)
+      mut int result = 0
+    `,
+    javascript: n => `
+      const values = Array.from({ length: ${n} }, (_, index) => index);
+      function benchmark(values) {
+        return values.reduce((total, value) => total + value, 0);
+      }
+      let result = 0;
+    `,
+    python: n => `
+values = list(range(${n}))
+
+def benchmark(values):
+    return sum(values)
+
+result = 0
+    `,
+    invocation: 'result = benchmark(values)',
+  },
+  {
+    id: 'string-iteration',
+    name: 'String code-point iteration',
+    units: 'string code points',
+    argumentName: 'values',
+    iterations: () => 2_000,
+    expected: n => n,
+    naide: n => `
+      str values = "${'x'.repeat(n)}"
+      fn benchmark(str values) -> int:
+        mut int count = 0
+        for value of values:
+          count += 1
+        ret count
+      mut int result = 0
+    `,
+    javascript: n => `
+      const values = "x".repeat(${n});
+      function benchmark(values) {
+        let count = 0;
+        for (const value of values) count++;
+        return count;
+      }
+      let result = 0;
+    `,
+    python: n => `
+values = "x" * ${n}
+
+def benchmark(values):
+    count = 0
+    for value in values:
+        count += 1
+    return count
+
+result = 0
+    `,
+    invocation: 'result = benchmark(values)',
+  },
+  {
+    id: 'map-iteration',
+    name: 'Map entry iteration',
+    units: 'Map entries',
+    argumentName: 'values',
+    iterations: () => 2_000,
+    expected: n => n * (n - 1) / 2,
+    naide: n => `
+      any values = new Map([${Array.from({ length: n }, (_, index) => `[${index}, ${index}]`).join(', ')}])
+      fn benchmark(any values) -> int:
+        mut int total = 0
+        each key, value in values:
+          total += value
+        ret total
+      mut int result = 0
+    `,
+    javascript: n => `
+      const values = new Map(Array.from({ length: ${n} }, (_, index) => [index, index]));
+      function benchmark(values) {
+        let total = 0;
+        for (const [, value] of values) total += value;
+        return total;
+      }
+      let result = 0;
+    `,
+    python: n => `
+values = {index: index for index in range(${n})}
+
+def benchmark(values):
+    total = 0
+    for value in values.values():
+        total += value
+    return total
+
+result = 0
+    `,
+    invocation: 'result = benchmark(values)',
+  },
+  {
+    id: 'set-iteration',
+    name: 'Set value iteration',
+    units: 'Set values',
+    argumentName: 'values',
+    iterations: () => 2_000,
+    expected: n => n * (n - 1) / 2,
+    naide: n => `
+      any values = new Set([${Array.from({ length: n }, (_, index) => index).join(', ')}])
+      fn benchmark(any values) -> int:
+        mut int total = 0
+        for value of values:
+          total += value
+        ret total
+      mut int result = 0
+    `,
+    javascript: n => `
+      const values = new Set(Array.from({ length: ${n} }, (_, index) => index));
+      function benchmark(values) {
+        let total = 0;
+        for (const value of values) total += value;
+        return total;
+      }
+      let result = 0;
+    `,
+    python: n => `
+values = set(range(${n}))
+
+def benchmark(values):
+    total = 0
+    for value in values:
+        total += value
+    return total
+
+result = 0
+    `,
     invocation: 'result = benchmark(values)',
   },
   {
@@ -262,7 +408,6 @@ function parseOptions(args) {
 function runtimeSource(engine, workload, iterations, samples, mode) {
   const n = mode === 'startup' ? Math.min(iterations, 1_000) : workload.iterations(iterations);
   const invocation = workload.invocation;
-  const repetitions = mode === 'startup' ? 1 : SAMPLE_REPETITIONS;
   if (engine.startsWith('naidevm')) {
     const moduleUrl = pathToFileURL(resolve(ROOT, 'src', 'native-engine.js')).href;
     const source = dedent(workload.naide(n));
@@ -273,21 +418,41 @@ function runtimeSource(engine, workload, iterations, samples, mode) {
       const output = { log() {}, error() {} };
       const engine = new NaideVM({
         output,
-        maxSteps: 1000000000,
+        maxSteps: Number.MAX_SAFE_INTEGER,
         nativeMachineCode: ${nativeMachineCode},
         nativeMachineCodeThreshold: ${nativeMachineCodeThreshold},
         nativeMachineCodeDiagnostics: ${nativeMachineCode},
       });
       await engine.executeAsync(${JSON.stringify(source)});
-      const operation = engine.parse(${JSON.stringify(invocation)});
+      const benchmark = engine.global.get('benchmark');
+      const argument = engine.global.get(${JSON.stringify(workload.argumentName ?? 'n')});
       const timings = [];
+      let sampleRepetitions = 1;
+      if (${mode === 'startup' ? 'false' : 'true'}) {
+        for (let calibration = 0; calibration < 8; calibration++) {
+          const calibrationStart = performance.now();
+          for (let repetition = 0; repetition < sampleRepetitions; repetition++) {
+            benchmark(argument);
+          }
+          const elapsedMs = performance.now() - calibrationStart;
+          if (elapsedMs >= ${TARGET_SAMPLE_DURATION_MS}
+            || sampleRepetitions >= ${MAX_SAMPLE_REPETITIONS}) break;
+          const scale = Math.max(2, Math.min(10,
+            Math.ceil(${TARGET_SAMPLE_DURATION_MS} / Math.max(elapsedMs, 1))));
+          sampleRepetitions = Math.min(
+            ${MAX_SAMPLE_REPETITIONS},
+            sampleRepetitions * scale,
+          );
+        }
+      }
       let result;
       const sampleCount = ${mode === 'startup' ? 1 : samples + 1};
       for (let sample = 0; sample < sampleCount; sample++) {
         const started = performance.now();
-        for (let repetition = 0; repetition < ${repetitions}; repetition++) await engine.executeAsync(operation);
+        for (let repetition = 0; repetition < sampleRepetitions; repetition++) {
+          result = benchmark(argument);
+        }
         const elapsedMs = performance.now() - started;
-        result = engine.global.get('result');
         if (sample > 0 || ${mode === 'startup'}) timings.push(elapsedMs);
       }
       const usage = process.resourceUsage();
@@ -296,6 +461,7 @@ function runtimeSource(engine, workload, iterations, samples, mode) {
         version: process.version,
         result,
         timings,
+        sampleRepetitions,
         nativeMachineCodeStats: engine.getNativeMachineCodeStats(),
         maxRssBytes: usage.maxRSS * 1024,
       }));
@@ -305,10 +471,28 @@ function runtimeSource(engine, workload, iterations, samples, mode) {
     return `
       ${workload.javascript(n)}
       const timings = [];
+      let sampleRepetitions = 1;
+      if (${mode === 'startup' ? 'false' : 'true'}) {
+        for (let calibration = 0; calibration < 8; calibration++) {
+          const calibrationStart = performance.now();
+          for (let repetition = 0; repetition < sampleRepetitions; repetition++) {
+            result = ${invocation.replace('result = ', '')};
+          }
+          const elapsedMs = performance.now() - calibrationStart;
+          if (elapsedMs >= ${TARGET_SAMPLE_DURATION_MS}
+            || sampleRepetitions >= ${MAX_SAMPLE_REPETITIONS}) break;
+          const scale = Math.max(2, Math.min(10,
+            Math.ceil(${TARGET_SAMPLE_DURATION_MS} / Math.max(elapsedMs, 1))));
+          sampleRepetitions = Math.min(
+            ${MAX_SAMPLE_REPETITIONS},
+            sampleRepetitions * scale,
+          );
+        }
+      }
       const sampleCount = ${mode === 'startup' ? 1 : samples + 1};
       for (let sample = 0; sample < sampleCount; sample++) {
         const started = performance.now();
-        for (let repetition = 0; repetition < ${repetitions}; repetition++) {
+        for (let repetition = 0; repetition < sampleRepetitions; repetition++) {
           result = ${invocation.replace('result = ', '')};
         }
         const elapsedMs = performance.now() - started;
@@ -320,6 +504,7 @@ function runtimeSource(engine, workload, iterations, samples, mode) {
         version: ${engine === 'bun' ? 'Bun.version' : 'process.version'},
         result,
         timings,
+        sampleRepetitions,
         maxRssBytes: usage.maxRSS * 1024,
       }));
     `;
@@ -332,10 +517,22 @@ import platform
 
 ${workload.python(n)}
 timings = []
+sample_repetitions = 1
+if ${mode === 'startup' ? 'False' : 'True'}:
+    for calibration in range(8):
+        calibration_started = time.perf_counter_ns()
+        for repetition in range(sample_repetitions):
+            ${invocation}
+        elapsed_ms = (time.perf_counter_ns() - calibration_started) / 1_000_000
+        if elapsed_ms >= ${TARGET_SAMPLE_DURATION_MS} or sample_repetitions >= ${MAX_SAMPLE_REPETITIONS}:
+            break
+        scale = max(2, min(10, int(${TARGET_SAMPLE_DURATION_MS} / max(elapsed_ms, 1)) + 1))
+        sample_repetitions = min(${MAX_SAMPLE_REPETITIONS}, sample_repetitions * scale)
+
 sample_count = ${mode === 'startup' ? 1 : samples + 1}
 for sample in range(sample_count):
     started = time.perf_counter_ns()
-    for repetition in range(${repetitions}):
+    for repetition in range(sample_repetitions):
         ${invocation}
     elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
     if sample > 0 or ${mode === 'startup' ? 'True' : 'False'}:
@@ -383,6 +580,7 @@ print(json.dumps({
     'version': platform.python_version(),
     'result': result,
     'timings': timings,
+    'sampleRepetitions': sample_repetitions,
     'maxRssBytes': max_rss_bytes,
 }))
 `;
@@ -450,12 +648,12 @@ function benchmarkWorkload(engine, workload, options) {
     name: workload.name,
     units: workload.units,
     iterations,
-    sampleRepetitions: SAMPLE_REPETITIONS,
-    operationsPerSample: iterations * SAMPLE_REPETITIONS,
+    sampleRepetitions: report.sampleRepetitions,
+    operationsPerSample: iterations * report.sampleRepetitions,
     expected: workload.expected(iterations),
     throughput: {
       medianMs,
-      operationsPerSecond: Math.round(iterations * SAMPLE_REPETITIONS / (medianMs / 1000)),
+      operationsPerSecond: Math.round(iterations * report.sampleRepetitions / (medianMs / 1000)),
       samplesMs: report.timings,
     },
     nativeMachineCodeStats: report.nativeMachineCodeStats,
@@ -524,8 +722,8 @@ function main() {
       return comparison.nativeTiers[engine.id]?.beatsNode === true;
     })]));
   const result = {
-    schemaVersion: 3,
-    benchmark: 'naidevm-representative-workloads-v3',
+    schemaVersion: 4,
+    benchmark: 'naidevm-representative-workloads-v6',
     generatedAt: new Date().toISOString(),
     host: {
       platform: `${os.type()} ${os.release()}`,
@@ -537,11 +735,11 @@ function main() {
       iterations: options.iterations,
       samples: options.samples,
       warmupSamples: 1,
-      sampleRepetitions: SAMPLE_REPETITIONS,
-      statistic: 'Median of independent in-process batches after one warm-up batch. Each runtime executes the same deterministic workload; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.',
+      statistic: 'Median of independent in-process batches targeted at a minimum duration after one warm-up batch. Each runtime repeatedly invokes the same deterministic benchmark function; NAIDE setup and parsing are excluded from steady-state timing. Startup includes process launch, initialization, and one correctness execution.',
+      targetSampleDurationMs: TARGET_SAMPLE_DURATION_MS,
       memory: 'OS process high-water RSS. Node/Bun use process.resourceUsage(); CPython uses GetProcessMemoryInfo on Windows or getrusage elsewhere.',
       limitations: 'Single host and fixed local runtime versions. Workloads measure only their named constructs and do not establish general language or application performance.',
-      executionPath: 'NaideVM is invoked through executeAsync(); the interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report.',
+      executionPath: 'The NaideVM benchmark function is obtained once from the VM global environment and invoked directly, matching Node and CPython function-call measurements; setup and parsing are excluded from steady-state timing. The interpreter tier, direct Windows x64 machine-code tier, and hotness-tiered x64 machine-code tier are measured separately when the native bridge is available. Native tier diagnostics are enabled and included in each report.',
     },
     acceptance: {
       baselineEngine: 'node',

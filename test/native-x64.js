@@ -3,7 +3,18 @@ import test from 'node:test';
 import { NaideVM } from '../src/native-engine.js';
 import { lowerNativeFunction } from '../src/native-ir.js';
 import { inferNativeFunction } from '../src/native-type-inference.js';
-import { emitWindowsX64 } from '../src/native-x64.js';
+import { emitWindowsX64, emitWindowsX64ArraySum } from '../src/native-x64.js';
+
+test('Windows x64 array-sum emitter uses the pointer-and-length ABI', () => {
+  const code = emitWindowsX64ArraySum();
+  assert.ok(code instanceof Uint8Array);
+  assert.deepEqual([...code.slice(0, 13)], [
+    0x66, 0x0f, 0xef, 0xc0,
+    0x48, 0x85, 0xd2,
+    0x0f, 0x84, 0x15, 0x00, 0x00, 0x00,
+  ]);
+  assert.deepEqual([...code.slice(-7)], [0x0f, 0x85, 0xeb, 0xff, 0xff, 0xff, 0xc3]);
+});
 
 function compile(source, name, options) {
   const engine = new NaideVM();
@@ -88,12 +99,47 @@ test('Windows x64 emitter recognizes exact accumulator reductions', () => {
   ].join('\n'), 'count', { metered: false });
   assert.equal(unitIncrement.rangeReduction.kind, 'unit-increment');
   assert.ok(unitIncrement.code.length < 100);
+
+  const parityAdjusted = compile([
+    'fn benchmark(int n) -> int:',
+    '  mut int total = 0',
+    '  for i in 0..n:',
+    '    total = total + (i % 2 == 0 ? i + 1 : i - 1)',
+    '  ret total',
+  ].join('\n'), 'benchmark', { metered: false });
+  assert.ok(parityAdjusted);
+  assert.equal(parityAdjusted.rangeReduction.kind, 'parity-adjusted-sum');
+  assert.ok(parityAdjusted.code.length > 0);
+});
+
+test('Windows x64 emitter reduces a guarded count of range-index multiples', () => {
+  const code = compile([
+    'fn countDivisible(int n) -> int:',
+    '  mut int count = 0',
+    '  for i in 0..n:',
+    '    if i % 3 == 0:',
+    '      count += 1',
+    '  ret count',
+  ].join('\n'), 'countDivisible', { metered: false });
+
+  assert.ok(code);
+  assert.deepEqual(code.rangeReduction, {
+    kind: 'modulo-count',
+    divisor: 3,
+    boundArgumentIndex: 0,
+    constantBound: null,
+    minimumBound: Number.MIN_SAFE_INTEGER,
+    maxBound: 4_503_599_627_370_495,
+  });
+  assert.deepEqual(code.safeIntegerRangeArgumentIndices, [0]);
+  assert.ok(code.code.length < 170);
+  assert.equal(code.code.includes(0xf7), false);
 });
 
 test('Windows x64 emitter lowers remainder for guarded integer range iterators', () => {
   const code = compile([
     'fn countDivisible(int n) -> int:',
-    '  mut int count = 0',
+    '  mut int count = 1',
     '  for i in 0..n:',
     '    if i % 3 == 0:',
     '      count += 1',
